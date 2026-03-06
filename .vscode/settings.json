@@ -1,0 +1,22 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "flutter": true,
+        "awk": true,
+        "dart": true,
+        "pkill": true,
+        "true": true,
+        "/^zsh -c \"cat /tmp/shadcn_demo/shadcn_demo_app/lib/main\\.dart \\| head -5\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        },
+        "killall": true,
+        "clear": true,
+        "flutter_shadcn": true,
+        "cp": true,
+        "comm": true,
+        "/^python - <<'PY'\nimport os, re, glob, json\nroot='/Users/ibrar/Desktop/infinora\\.noworkspace/shadcn_copy_paste/shadcn_flutter/docs/lib/pages/docs/components'\ncomposites=\\[\n\"animated_value_builder\",\"app\",\"app_bar\",\"avatar_group\",\"choices\",\"circular_progress\",\"expandable_sidebar\",\"form\",\"formatted_input\",\"input\",\"input_otp\",\"item_picker\",\"keyboard_display\",\"linear_progress\",\"material\",\"menubar\",\"multiselect\",\"navigation_bar\",\"navigation_menu\",\"navigation_rail\",\"navigation_sidebar\",\"number_input\",\"overflow_marquee\",\"pagination\",\"phone_input\",\"radio_card\",\"radio_group\",\"refresh_trigger\",\"repeated_animation_builder\",\"resizable\",\"scaffold\",\"sheet\",\"slider\",\"star_rating\",\"stepper\",\"steps\",\"swiper\",\"switcher\",\"tab_list\",\"tab_pane\",\"time_picker\",\"timeline\",\"timeline_animation\",\"toggle\",\"tree\",\"window\",\"wrapper\",\n\\]\n# common flutter/core identifiers to exclude\nexclude=set\\('''\nContainer Row Column Text Icon IconButton SizedBox Padding Center Alignment Align Expanded Flexible\nScaffold AppBar Material Theme EdgeInsets BorderRadius Border Color BoxDecoration\nSingleChildScrollView ListView GridView GestureDetector InkWell Divider\nTextStyle BorderSide BoxConstraints SizedBox Spacer SizedBox Positioned Stack\nWrap ClipRRect ClipRect ClipPath OverflowBox IntrinsicHeight IntrinsicWidth\nSafeArea MediaQuery LayoutBuilder Builder Focus FocusNode FocusScope\nAnimatedContainer AnimatedSwitcher AnimatedOpacity AnimatedPadding AnimatedAlign\nAnimatedSize AnimatedPositioned AnimatedBuilder AnimatedList\nState StatefulWidget StatelessWidget BuildContext\n'''\\.split\\(\\)\\)\n\ndef find_example\\(name\\):\n    # check subdir\n    sub=glob\\.glob\\(os\\.path\\.join\\(root,name,f\"\\{name\\}_example_1\\.dart\"\\)\\)\n    if sub: return sub\\[0\\]\n    sub=glob\\.glob\\(os\\.path\\.join\\(root,name,f\"\\{name\\}_example\\.dart\"\\)\\)\n    if sub: return sub\\[0\\]\n    # top-level file\n    top=glob\\.glob\\(os\\.path\\.join\\(root,f\"\\{name\\}_example_1\\.dart\"\\)\\)\n    if top: return top\\[0\\]\n    top=glob\\.glob\\(os\\.path\\.join\\(root,f\"\\{name\\}_example\\.dart\"\\)\\)\n    if top: return top\\[0\\]\n    # any \\*_example_1\\.dart in subdir\n    sub=glob\\.glob\\(os\\.path\\.join\\(root,name,\"\\*_example_1\\.dart\"\\)\\)\n    if sub: return sub\\[0\\]\n    sub=glob\\.glob\\(os\\.path\\.join\\(root,name,\"\\*_example\\.dart\"\\)\\)\n    if sub: return sub\\[0\\]\n    return None\n\nresults=\\{\\}\nfor name in composites:\n    path=find_example\\(name\\)\n    if not path:\n        results\\[name\\]=\\{'file':None,'components':\\[\\]\\}\n        continue\n    text=open\\(path,'r',encoding='utf-8'\\)\\.read\\(\\)\n    # find capitalized identifiers followed by \\(\n    ids=set\\(re\\.findall\\(r'\\\\b\\(\\[A-Z\\]\\[A-Za-z0-9_\\]\\*\\)\\\\s\\*\\\\\\(', text\\)\\)\n    # remove excluded\n    comps=sorted\\(\\[i for i in ids if i not in exclude\\]\\)\n    results\\[name\\]=\\{'file':path,'components':comps\\}\n\nprint\\(json\\.dumps\\(results,indent=2\\)\\)\nPY$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

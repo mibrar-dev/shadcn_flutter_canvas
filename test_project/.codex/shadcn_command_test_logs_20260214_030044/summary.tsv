@@ -1,0 +1,23 @@
+1	install_cli	0	0	0	0	0	dart pub global activate --source path '/Users/ibrar/Desktop/infinora.noworkspace/shadcn_copy_paste/shadcn_flutter_cli'
+2	init	0	3	46	0	5	/Users/ibrar/.pub-cache/bin/flutter_shadcn init --yes --install-icons --install-fonts
+3	theme	0	3	46	0	5	/Users/ibrar/.pub-cache/bin/flutter_shadcn theme --list
+4	add	0	3	86	69	3	/Users/ibrar/.pub-cache/bin/flutter_shadcn add @shadcn/button
+5	dry_run	30	3	58	73	3	/Users/ibrar/.pub-cache/bin/flutter_shadcn dry-run @shadcn/button
+6	remove	0	3	58	0	7	/Users/ibrar/.pub-cache/bin/flutter_shadcn remove @shadcn/button --force
+7	sync	0	3	58	0	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn sync
+8	assets	255	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn assets --icons
+9	platform	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn platform --list
+10	registries	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn registries
+11	default	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn default
+12	list	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn list
+13	search	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn search button
+14	info	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn info @shadcn/button
+15	validate	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn validate
+16	audit	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn audit
+17	deps	50	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn deps
+18	docs	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn docs --generate
+19	install_skill	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn install-skill --available
+20	version	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn version --check
+21	doctor	60	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn doctor
+22	feedback	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn feedback --type invalid --title 'Smoke test' --body 'Command smoke test'
+23	upgrade	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn upgrade

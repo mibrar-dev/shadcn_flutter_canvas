@@ -1,0 +1,2 @@
+[console_scripts]
+mcp-server-notify = mcp_server_notify:main

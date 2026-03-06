@@ -1,0 +1,23 @@
+1	install_cli	0	0	0	0	0	dart pub global activate --source path '/Users/ibrar/Desktop/infinora.noworkspace/shadcn_copy_paste/shadcn_flutter_cli'
+2	init	0	3	46	0	5	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' init --yes --install-icons --install-fonts
+3	theme	0	3	46	0	5	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' theme --list
+4	add	0	3	86	69	3	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' add @shadcn/button
+5	dry_run	30	3	58	72	3	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' dry-run @shadcn/button
+6	remove	0	3	58	0	7	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' remove @shadcn/button --force
+7	sync	0	3	58	0	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' sync
+8	assets	255	3	86	2	4	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' assets --icons
+9	platform	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' platform --list
+10	registries	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' registries
+11	default	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' default
+12	list	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' list
+13	search	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' search button
+14	info	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' info @shadcn/button
+15	validate	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' validate
+16	audit	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' audit
+17	deps	50	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' deps
+18	docs	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' docs --generate
+19	install_skill	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' install-skill --available
+20	version	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' version --check
+21	doctor	60	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' doctor
+22	feedback	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' feedback --type invalid --title 'Smoke test' --body 'Command smoke test'
+23	upgrade	0	3	43	1	2	/Users/ibrar/.pub-cache/bin/flutter_shadcn --registries-url 'http://127.0.0.1:18765/registries.json' upgrade

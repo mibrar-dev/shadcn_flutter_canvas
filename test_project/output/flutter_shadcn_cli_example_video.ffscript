@@ -1,0 +1,10 @@
+color=c=0x0b1220:s=1280x720:d=10:r=30,format=yuv420p,
+drawbox=x=0:y=0:w=iw:h=ih:color=0x1d2e54@0.35:t=fill,
+drawbox=x=80:y=86:w=1120:h=548:color=0x0a1328@0.72:t=fill,
+drawbox=x=80:y=86:w=1120:h=2:color=0x4d73cc@0.95:t=fill,
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='Meet flutter_shadcn_cli':fontsize=68:fontcolor=white:x=(w-text_w)/2:y=170:alpha='if(lt(t,0.6),0,if(lt(t,1.4),(t-0.6)/0.8,if(lt(t,3.2),1,if(lt(t,4.0),(4.0-t)/0.8,0))))',
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='Build shadcn-style Flutter UI faster':fontsize=34:fontcolor=0xd5e3ff:x=(w-text_w)/2:y=260:alpha='if(lt(t,1.0),0,if(lt(t,1.8),(t-1.0)/0.8,if(lt(t,3.2),1,if(lt(t,4.0),(4.0-t)/0.8,0))))',
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='\$ dart pub global activate --source path ./shadcn_flutter_cli':fontsize=29:fontcolor=0xe5eeff:x=130:y=350:alpha='if(lt(t,4.0),0,if(lt(t,4.7),(t-4.0)/0.7,if(lt(t,8.8),1,if(lt(t,9.6),(9.6-t)/0.8,0))))',
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='\$ flutter_shadcn init --yes --install-icons --install-fonts':fontsize=29:fontcolor=0xe5eeff:x=130:y=400:alpha='if(lt(t,4.3),0,if(lt(t,5.0),(t-4.3)/0.7,if(lt(t,8.8),1,if(lt(t,9.6),(9.6-t)/0.8,0))))',
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='\$ flutter_shadcn add @shadcn/button @shadcn/input':fontsize=29:fontcolor=0xe5eeff:x=130:y=450:alpha='if(lt(t,4.6),0,if(lt(t,5.3),(t-4.6)/0.7,if(lt(t,8.8),1,if(lt(t,9.6),(9.6-t)/0.8,0))))',
+drawtext=fontfile=/System/Library/Fonts/Supplemental/Arial.ttf:text='Faster setup. Consistent UI. Cleaner workflow.':fontsize=36:fontcolor=white:x=(w-text_w)/2:y=560:alpha='if(lt(t,6.0),0,if(lt(t,7.0),(t-6.0),if(lt(t,9.4),1,if(lt(t,10.0),(10.0-t)/0.6,0))))'
