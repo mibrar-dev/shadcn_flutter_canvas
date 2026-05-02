@@ -70,8 +70,12 @@ If base/destBase NOT provided:
     destination = projectRoot + "/" + file
 
 If base/destBase provided:
-    assert file startsWith base + "/"
-    stripped = file.removePrefix(base + "/")
+    if file startsWith base + "/":
+        source = file
+        stripped = file.removePrefix(base + "/")
+    else:
+        source = base + "/" + file
+        stripped = file
     destination = projectRoot + "/" + destBase + "/" + stripped
 
 Apply filesystem safety checks before writing.
@@ -87,8 +91,12 @@ Resolve file list via:
 For each file:
 
 If base/destBase provided:
-    assert file startsWith base + "/" + from + "/"
-    stripped = file.removePrefix(base + "/")
+    if file startsWith base + "/":
+        source = file
+    else:
+        source = base + "/" + file
+    assert source startsWith base + "/" + from + "/"
+    stripped = source.removePrefix(base + "/")
 Else:
     assert file startsWith from + "/"
     stripped = file

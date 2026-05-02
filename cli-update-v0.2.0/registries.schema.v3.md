@@ -47,8 +47,15 @@ If provided, both must exist together.
 
 If base/destBase exist:
 
--   Strip base prefix
--   Write into destBase
+-   `files[]` entries may already start with `base + "/"` or may be relative to
+    `base`
+-   For source reads, use prefixed entries as-is and prepend `base` to
+    base-relative entries
+-   For destination mapping, strip `base + "/"` when present, otherwise treat the
+    entry as already relative to `base`
+-   Write into `destBase`
+-   When `from`/`to` directory mapping is used, first align the source under
+    `base`, then reject entries outside `base/from/`
 
 Otherwise:
 

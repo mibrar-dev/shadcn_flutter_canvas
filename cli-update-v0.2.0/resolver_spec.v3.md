@@ -27,7 +27,19 @@ Before writing:
 
 ## base/destBase Mapping Safety
 
-If base/destBase present:
+For `copyFiles` actions with `files[]`, entries are interpreted relative to the
+action `base` when they do not already start with `base + "/"`. This keeps
+registry manifests compact while still resolving source reads under the declared
+base.
+
+-   If `file` starts with `base + "/"`, use it as the source path and remove the
+    prefix for destination mapping
+-   If `file` does not start with `base + "/"`, prepend `base` for source reads
+    and map the file relative to `destBase`
+-   Validate the resulting destination path
+
+For directory-mapped `copyFiles` actions using `from`/`to` with an explicit file
+index, strict prefix matching remains required:
 
 -   file must start with base + "/"
 -   Remove prefix
