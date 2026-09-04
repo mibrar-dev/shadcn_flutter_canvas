@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:canvas_app/canvas/screen_doc.dart';
 import 'package:canvas_app/canvas/share_codec.dart' as codec;
@@ -36,8 +35,8 @@ Map<String, dynamic> _smallRaw() => {
       'meta': {'title': 'Checkout', 'brief': '2-screen pay flow'},
     };
 
-/// Deterministic pseudo-random printable string (low compressibility so the
-/// over-limit test cannot pass by accident on highly repetitive input).
+/// Deterministic pseudo-random printable string (avoids highly repetitive
+/// input so the over-limit test cannot pass by accident).
 String _noise(int seed, int length) {
   var s = seed;
   final codes = List<int>.generate(length, (_) {
@@ -95,10 +94,7 @@ void main() {
     expect(() => codec.decode('not-a-link'), throwsFormatException);
     expect(() => codec.decode('#d=!!!not-base64!!!'), throwsFormatException);
 
-    final badShape = '#d=' +
-        base64Url.encode(
-          ZLibCodec().encode(utf8.encode('{"nope":true}')),
-        );
+    final badShape = '#d=' + base64Url.encode(utf8.encode('{"nope":true}'));
     expect(() => codec.decode(badShape), throwsFormatException);
   });
 
@@ -127,10 +123,7 @@ void main() {
     final raw = _smallRaw();
     raw['nodes'] = [];
     (raw['meta'] as Map<String, dynamic>)['brief'] = 'a' * (210 * 1024);
-    final link = '#d=' +
-        base64Url.encode(
-          ZLibCodec().encode(utf8.encode(jsonEncode(raw))),
-        );
+    final link = '#d=' + base64Url.encode(utf8.encode(jsonEncode(raw)));
     expect(
       () => codec.decode(link),
       throwsA(

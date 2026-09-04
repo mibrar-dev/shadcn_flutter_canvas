@@ -1,16 +1,12 @@
-/// Share-link codec: `ScreenDoc` <-> LZ-compressed URL hash.
+/// Share-link codec: `ScreenDoc` <-> base64url URL hash.
 ///
-/// Pure Dart (Dart SDK core libs only, no Flutter imports) so the CLI can
-/// reuse it alongside `screen_doc.dart`. Wire format: `ZLibCodec`-compressed
-/// UTF-8 JSON, base64Url-encoded, carried in the URL fragment as
-/// `#d=<payload>`.
-///
-/// NOTE: `ZLibCodec` lives in `dart:io` (there is no zlib codec in
-/// `dart:convert`), so this file imports `dart:io` in addition to
-/// `dart:convert`. That keeps the CLI-reuse property (the CLI runs on the
-/// Dart VM) and keeps the no-Flutter-imports gate green.
+/// Pure Dart (`dart:convert` only, no Flutter imports, no `dart:io`) so the
+/// codec compiles for Flutter web AND the pure-Dart CLI. Wire format:
+/// base64url-encoded UTF-8 JSON carried in the URL fragment as `#d=<payload>`.
+/// Deliberately uncompressed: `dart:convert` has no zlib codec and `dart:io`
+/// is unavailable on web. The [kShareMaxUrlLength] guard (not compression)
+/// is what keeps links shareable.
 import 'dart:convert';
-import 'dart:io';
 
 import 'screen_doc.dart';
 
@@ -20,17 +16,17 @@ const String kShareFragmentPrefix = '#d=';
 /// Max share-link length [encode] allows before throwing [StateError].
 const int kShareMaxUrlLength = 6000;
 
-/// Max decompressed payload size [decode] accepts (200 KB).
+/// Max decoded payload size [decode] accepts (200 KB).
 const int kShareMaxPayloadBytes = 200 * 1024;
 
 /// Encodes [doc] as a `#d=...` share-link fragment.
 ///
 /// Throws [StateError] with `'doc too large for link; use file export'`
-/// when the link exceeds [kShareMaxUrlLength] chars (gzip+base64 inflates
-/// ~33% and safe URLs cap at ~8KB, so large docs must use file export).
+/// when the link exceeds [kShareMaxUrlLength] chars (safe URLs cap at ~8KB,
+/// so large docs must use file export).
 String encode(ScreenDoc doc) {
   final raw = utf8.encode(jsonEncode(doc.toJson()));
-  final payload = base64Url.encode(ZLibCodec().encode(raw));
+  final payload = base64Url.encode(raw);
   final link = '$kShareFragmentPrefix$payload';
   if (link.length > kShareMaxUrlLength) {
     throw StateError('doc too large for link; use file export');
@@ -42,7 +38,7 @@ String encode(ScreenDoc doc) {
 ///
 /// Validates shape via [ScreenDoc.fromJson] (throws [FormatException] on
 /// bad JSON) plus [ScreenDoc.validateRefs] (dangling `action.to` targets
-/// throw [FormatException]), and rejects decompressed payloads over
+/// throw [FormatException]), and rejects decoded payloads over
 /// [kShareMaxPayloadBytes].
 ScreenDoc decode(String link) {
   if (!link.startsWith(kShareFragmentPrefix)) {
@@ -50,17 +46,11 @@ ScreenDoc decode(String link) {
         'invalid share link: missing "$kShareFragmentPrefix" prefix');
   }
   final payload = link.substring(kShareFragmentPrefix.length);
-  late final List<int> compressed;
-  try {
-    compressed = base64Url.decode(_normalizeBase64(payload));
-  } on FormatException catch (e) {
-    throw FormatException('invalid share payload: not base64url ($e)');
-  }
   late final List<int> raw;
   try {
-    raw = ZLibCodec().decode(compressed);
-  } catch (e) {
-    throw FormatException('invalid share payload: zlib decode failed ($e)');
+    raw = base64Url.decode(_normalizeBase64(payload));
+  } on FormatException catch (e) {
+    throw FormatException('invalid share payload: not base64url ($e)');
   }
   if (raw.length > kShareMaxPayloadBytes) {
     throw FormatException(
