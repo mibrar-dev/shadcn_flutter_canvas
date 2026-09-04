@@ -10,6 +10,7 @@ dependencies:
   flutter_shadcn_kit:
     path: ../shadcn_flutter_kit/flutter_shadcn_kit
   go_router: ^14.2.3
+  http: ^1.2.2
   shared_preferences: ^2.3.2
 dev_dependencies:
   flutter_test:
