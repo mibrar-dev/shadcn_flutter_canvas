@@ -247,6 +247,53 @@ class CanvasStore extends ChangeNotifier {
     return [];
   }
 
+  /// Appends a screen named [name] (default 'Screen N') with bg 'surface'.
+  /// Returns the id. Undoable and autosaved like every other mutation.
+  String addScreen({String? name}) {
+    final screen = CanvasScreen(
+      id: uid(),
+      name: name ?? 'Screen ${_doc.screens.length + 1}',
+      x: 0.0,
+      y: 0.0,
+      bg: 'surface',
+    );
+    _commit(ScreenDoc(
+      screens: [..._doc.screens, screen],
+      nodes: List.of(_doc.nodes),
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+    return screen.id;
+  }
+
+  /// Renames a screen. Throws [StateError] when [id] is unknown.
+  /// Undoable and autosaved like every other mutation.
+  void renameScreen(String id, String name) {
+    final index = _doc.screens.indexWhere((s) => s.id == id);
+    if (index < 0) throw StateError('Unknown screen: $id');
+    final screens = List.of(_doc.screens);
+    final current = screens[index];
+    screens[index] = CanvasScreen(
+      id: current.id,
+      name: name,
+      x: current.x,
+      y: current.y,
+      bg: current.bg,
+    );
+    _commit(ScreenDoc(
+      screens: screens,
+      nodes: List.of(_doc.nodes),
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+  }
+
+  /// Replaces the whole doc (undoable import path for the Open dialog).
+  /// Commits verbatim.
+  void replaceDoc(ScreenDoc doc) {
+    _commit(doc);
+  }
+
   bool undo() {
     if (_undo.isEmpty) return false;
     _redo.add(_snapshot(_doc));

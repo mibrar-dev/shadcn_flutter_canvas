@@ -59,10 +59,14 @@ class DesignCanvas extends StatefulWidget {
   });
 
   /// Store-level drop handler: adds exactly one node carrying [kind] at
-  /// [offset] (frame-local logical px) to [screenId], seeded with the
+  /// [offset] (frame-local logical px) to the target screen, seeded with the
   /// catalog defaults. Unknown kinds are accepted — [ScreenSurface] renders
   /// them via the catalog fallback instead of crashing. Returns the node id.
-  String onAccept(String kind, Offset offset) {
+  ///
+  /// Pass [screenId] to target a specific screen (per-surface drops do this);
+  /// when omitted the drop lands on [this.screenId], preserving the original
+  /// single-screen call shape.
+  String onAccept(String kind, Offset offset, {String? screenId}) {
     final entry = findEntry(kind);
     final item = CanvasItem(
       id: store.uid(),
@@ -72,7 +76,7 @@ class DesignCanvas extends StatefulWidget {
           : Map<String, dynamic>.of(entry.defaults),
     );
     return store.addNode(
-      screenId: screenId,
+      screenId: screenId ?? this.screenId,
       x: offset.dx,
       y: offset.dy,
       items: [item],
@@ -101,12 +105,7 @@ class _DesignCanvasState extends State<DesignCanvas> {
       listenable: _relay,
       builder: (context, _) {
         final doc = widget.store.doc;
-        CanvasScreen? screen;
-        for (final s in doc.screens) {
-          if (s.id == widget.screenId) screen = s;
-        }
-        screen ??= doc.screens.isEmpty ? null : doc.screens.first;
-        if (screen == null) {
+        if (doc.screens.isEmpty) {
           return Center(
             child: Text(
               'No screens',
@@ -114,28 +113,43 @@ class _DesignCanvasState extends State<DesignCanvas> {
             ),
           );
         }
-        final current = screen;
-        final nodes = [
-          for (final n in doc.nodes)
-            if (n.screenId == current.id) n,
-        ];
-        final surface = Column(
+        // All screens side by side. No dividers between screens (the
+        // reference shares one background across columns). Gap: no screen-gap
+        // token exists in EditorMetrics, so a local 48.0 const.
+        const screenGap = 48.0;
+        final surfaces = Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ScreenLabel(name: current.name),
-            const SizedBox(height: 10),
-            ScreenSurface(
-              screen: current,
-              nodes: nodes,
-              selectedNodeId: _selectedNodeId,
-              onSelectNode: (id) {
-                setState(() => _selectedNodeId = id);
-                widget.onSelectNode?.call(id);
-              },
-              onDropKind: (kind, position) =>
-                  widget.onAccept(kind, position),
-            ),
+            for (var i = 0; i < doc.screens.length; i++) ...[
+              if (i > 0) const SizedBox(width: screenGap),
+              Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  ScreenLabel(name: doc.screens[i].name),
+                  const SizedBox(height: 10),
+                  ScreenSurface(
+                    screen: doc.screens[i],
+                    nodes: [
+                      for (final n in doc.nodes)
+                        if (n.screenId == doc.screens[i].id) n,
+                    ],
+                    selectedNodeId: _selectedNodeId,
+                    zoom: widget.zoom,
+                    onSelectNode: (id) {
+                      setState(() => _selectedNodeId = id);
+                      widget.onSelectNode?.call(id);
+                    },
+                    onDropKind: (kind, position) => widget.onAccept(
+                      kind,
+                      position,
+                      screenId: doc.screens[i].id,
+                    ),
+                  ),
+                ],
+              ),
+            ],
           ],
         );
         return GestureDetector(
@@ -152,7 +166,7 @@ class _DesignCanvasState extends State<DesignCanvas> {
                 offset: _pan,
                 child: Transform.scale(
                   scale: widget.zoom,
-                  child: surface,
+                  child: surfaces,
                 ),
               ),
             ),

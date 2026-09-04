@@ -14,10 +14,13 @@ import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/icon_rail.dart';
-import 'package:canvas_app/ui/inspector_panel.dart';
+import 'package:canvas_app/ui/layers_panel.dart';
+import 'package:canvas_app/ui/open_dialog.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/preview_player.dart';
+import 'package:canvas_app/ui/right_aside.dart';
 import 'package:canvas_app/ui/theme_bar.dart';
+import 'package:canvas_app/ui/theme_panels.dart';
 import 'package:canvas_app/ui/zoom_controls.dart';
 
 /// Package asset prefix for fonts bundled by `flutter_shadcn_kit`.
@@ -164,9 +167,10 @@ class _EditorShellState extends State<EditorShell> {
                   Expanded(child: _canvasArea()),
                   SizedBox(
                     width: EditorMetrics.promptPanelWidth,
-                    child: InspectorPanel(
+                    child: RightAside(
                       store: widget.store,
                       nodeId: _selectedNodeId,
+                      itemId: _selectedItemId(),
                     ),
                   ),
                 ],
@@ -178,17 +182,56 @@ class _EditorShellState extends State<EditorShell> {
     );
   }
 
+  /// First item of the selected node, so the inspector has something to
+  /// edit: selection is tracked per node, while the inspector binds per item.
+  String? _selectedItemId() {
+    final nodeId = _selectedNodeId;
+    if (nodeId == null) return null;
+    for (final node in widget.store.doc.nodes) {
+      if (node.id == nodeId && node.items.isNotEmpty) {
+        return node.items.first.id;
+      }
+    }
+    return null;
+  }
+
   /// The left aside's body, switched by the icon rail's selection.
   Widget _leftPanel() {
     switch (_railId) {
       case kRailParts:
         return const PartsPalette();
+      case kRailLayers:
+        return LayersPanel(
+          store: widget.store,
+          selectedNodeId: _selectedNodeId,
+          onSelectNode: (id) => setState(() => _selectedNodeId = id),
+        );
+      // Theme panels hug their content: the loose scroll constraints stop
+      // the panel Card from stretching to the full column height.
       case kRailColor:
+        return SingleChildScrollView(
+          child: ColorPanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
       case kRailShape:
+        return SingleChildScrollView(
+          child: ShapePanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
+      case kRailType:
+        return SingleChildScrollView(
+          child: TypePanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
       case kRailMotion:
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(EditorMetrics.panelInset),
-          child: ThemeBar(
+          child: MotionPanel(
             theme: widget.store.doc.theme,
             onChanged: widget.store.setTheme,
           ),
@@ -232,7 +275,7 @@ class _EditorShellState extends State<EditorShell> {
               onUndo: widget.store.canUndo ? () => widget.store.undo() : null,
               onRedo: widget.store.canRedo ? () => widget.store.redo() : null,
               onClear: _clearScreen,
-              onOpen: () {},
+              onOpen: () => showOpenDialog(context, widget.store),
             ),
           ),
         ),
@@ -250,10 +293,7 @@ class _EditorShellState extends State<EditorShell> {
     );
   }
 
-  void _addScreen() {
-    // Screens are not yet mutable through the store; keep the affordance
-    // inert rather than faking it.
-  }
+  void _addScreen() => widget.store.addScreen();
 
   void _clearScreen() {
     final doc = widget.store.doc;

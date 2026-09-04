@@ -136,6 +136,10 @@ class ScreenSurface extends StatelessWidget {
   /// coordinates (already relative to the phone's inner area).
   final void Function(String kind, Offset position)? onDropKind;
 
+  /// Current viewport scale of the enclosing [DesignCanvas]. Kept so drop
+  /// math can stay zoom-aware if the hit-testing path ever changes.
+  final double zoom;
+
   const ScreenSurface({
     super.key,
     required this.screen,
@@ -143,6 +147,7 @@ class ScreenSurface extends StatelessWidget {
     this.selectedNodeId,
     this.onSelectNode,
     this.onDropKind,
+    this.zoom = 1.0,
   });
 
   @override
@@ -155,6 +160,15 @@ class ScreenSurface extends StatelessWidget {
           final box = context.findRenderObject() as RenderBox?;
           if (box == null) return;
           final local = box.globalToLocal(details.offset);
+          // ZOOM FINDING (test-driven, see canvas_store_screens_test.dart
+          // 'drop at zoom 2.0 lands at unscaled screen coords'): pass the
+          // converted point through WITHOUT dividing by [zoom].
+          // `globalToLocal` already inverts every ancestor transform,
+          // including the `Transform.scale` in DesignCanvas, so `local` is
+          // already in unscaled screen px. Dividing by `zoom` again would
+          // double-correct and land the node at ~half the intended point.
+          // [zoom] is therefore kept as a parameter for future-proofing but
+          // intentionally unused in this conversion.
           onDropKind?.call(
             details.data,
             Offset(
