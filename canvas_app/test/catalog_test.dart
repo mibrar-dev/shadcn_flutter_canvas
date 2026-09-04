@@ -53,6 +53,10 @@ void main() {
       buildCatalogItem('button', {...base, 'variant': 'link'}),
       isA<shadcn.LinkButton>(),
     );
+    expect(
+      buildCatalogItem('button', {...base, 'variant': 'text'}),
+      isA<shadcn.TextButton>(),
+    );
     // Unknown variants fall back to primary, never crash.
     expect(
       buildCatalogItem('button', {...base, 'variant': 'bogus'}),
@@ -68,6 +72,7 @@ void main() {
       'ghost',
       'destructive',
       'link',
+      'text',
     ]) {
       await tester.pumpWidget(
         MaterialApp(
@@ -193,4 +198,105 @@ void main() {
     expect(find.byType(Placeholder), findsOneWidget);
     expect(find.text('unknown: mystery'), findsOneWidget);
   });
+
+  group('catalog defaults validate against block propsSchema', () {
+    for (final entry in kCatalog) {
+      test('${entry.kind} defaults exist in schema with matching types', () {
+        final schema = kBlockSchemas[entry.kind];
+        expect(schema, isNotNull, reason: 'no schema copy for ${entry.kind}');
+        for (final defaultProp in entry.defaults.entries) {
+          final prop = schema!.where((p) => p['name'] == defaultProp.key);
+          expect(prop, hasLength(1), reason: '${entry.kind}.${defaultProp.key}');
+          final type = prop.single['type'] as String;
+          final value = defaultProp.value;
+          switch (type) {
+            case 'bool':
+              expect(value, isA<bool>(), reason: '${entry.kind}.${defaultProp.key}');
+            case 'string':
+              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
+            case 'enum':
+              final options = prop.single['enum'] as List<String>;
+              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(
+                options,
+                contains(value),
+                reason: '${entry.kind}.${defaultProp.key} default not in $options',
+              );
+            default:
+              fail('unknown schema type $type for ${entry.kind}.${defaultProp.key}');
+          }
+          // Shared keys must agree on the default value (block is the source
+          // of truth for canvas-level content props).
+          expect(
+            value,
+            prop.single['default'],
+            reason: '${entry.kind}.${defaultProp.key} default drifted from block',
+          );
+        }
+      });
+    }
+
+    test('switch intentionally omits the block-only label prop', () {
+      // The switch canvas block declares a `label` prop, but `Switch` takes
+      // no label (only `leading`/`trailing`) — reported as a follow-up
+      // blocks finding, so the catalog stays constructor-true here.
+      expect(findEntry('switch')!.defaults, {'value': false, 'disabled': false});
+      expect(
+        kBlockSchemas['switch']!.map((p) => p['name']),
+        contains('label'),
+      );
+    });
+  });
 }
+
+/// Compact copy of the canvas blocks' `propsSchema` for the five catalog
+/// kinds, transcribed from
+/// `shadcn_flutter_kit/flutter_shadcn_kit/lib/registry/manifests/components.json`
+/// (`components[].canvas.propsSchema`).
+///
+/// Tests cannot read kit files (the kit package is not a dependency of
+/// canvas_app), so this copy is hard-coded — re-transcribe it if
+/// `components.json` changes.
+const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
+  'button': [
+    {'name': 'label', 'type': 'string', 'default': 'Button'},
+    {
+      'name': 'variant',
+      'type': 'enum',
+      'enum': ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link'],
+      'default': 'primary',
+    },
+    {
+      'name': 'size',
+      'type': 'enum',
+      'enum': ['sm', 'md', 'lg', 'icon'],
+      'default': 'md',
+    },
+    {'name': 'disabled', 'type': 'bool', 'default': false},
+  ],
+  'card': [
+    {'name': 'title', 'type': 'string', 'default': 'Title'},
+    {'name': 'description', 'type': 'string', 'default': 'Description'},
+    {'name': 'showFooter', 'type': 'bool', 'default': false},
+  ],
+  'input': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Type here'},
+    {'name': 'label', 'type': 'string', 'default': ''},
+    {'name': 'disabled', 'type': 'bool', 'default': false},
+    {'name': 'obscure', 'type': 'bool', 'default': false},
+  ],
+  'badge': [
+    {'name': 'label', 'type': 'string', 'default': 'Badge'},
+    {
+      'name': 'variant',
+      'type': 'enum',
+      'enum': ['primary', 'secondary', 'outline', 'destructive'],
+      'default': 'primary',
+    },
+  ],
+  'switch': [
+    {'name': 'label', 'type': 'string', 'default': ''},
+    {'name': 'value', 'type': 'bool', 'default': false},
+    {'name': 'disabled', 'type': 'bool', 'default': false},
+  ],
+};

@@ -12,10 +12,16 @@
 /// Verified: button → `Button` family (`PrimaryButton`, …), card → `Card`,
 /// input → `TextField`, badge → `*Badge`, switch → `Switch`.
 ///
-/// Prop defaults mirror plan Task 3 JSON for button/card/input; entry labels
-/// mirror `components.json` descriptions; badge/switch defaults come from the
-/// discovered constructors. Post-merge follow-up (not this task): regenerate
-/// defaults from manifests once canvas blocks land.
+/// Prop defaults mirror the canvas blocks' `propsSchema` in `components.json`
+/// (reconciled 2026-09-04; entry labels mirror `components.json`
+/// descriptions); badge/switch defaults match the discovered constructors.
+/// Known block-vs-constructor mismatches live in the kit's `components.json`
+/// (NOT patched here) and are tracked as follow-up findings: button `size`
+/// enum lists `icon` but `ButtonSize` has no icon member (falls back to
+/// normal); button `variant` enum omits `text` though `ButtonVariance.text` /
+/// `TextButton` exist (builder supports it anyway); switch schema has a
+/// `label` prop but `Switch` takes no label (only `leading`/`trailing`), so
+/// the catalog intentionally omits it.
 library;
 
 import 'package:flutter/material.dart';
@@ -94,6 +100,15 @@ Widget _buildButton(Map<String, dynamic> props) {
         size: size,
         child: child,
       );
+    case 'text':
+      // `ButtonVariance.text` / `TextButton` exist in the kit, though the
+      // button canvas block's variant enum omits `text` (reported follow-up).
+      return shadcn.TextButton(
+        onPressed: () {},
+        enabled: !disabled,
+        size: size,
+        child: child,
+      );
     case 'primary':
     default:
       return shadcn.PrimaryButton(
@@ -106,8 +121,11 @@ Widget _buildButton(Map<String, dynamic> props) {
 }
 
 Widget _buildCard(Map<String, dynamic> props) {
-  final title = (props['title'] ?? 'Card Title') as String;
-  final description = (props['description'] ?? 'Card description') as String;
+  // Fallbacks mirror the card canvas block's propsSchema defaults
+  // (`components.json`): `Card` takes a bare child, so title/description are
+  // canvas-level content props with no constructor counterpart.
+  final title = (props['title'] ?? 'Title') as String;
+  final description = (props['description'] ?? 'Description') as String;
   final showFooter = (props['showFooter'] ?? false) as bool;
   return shadcn.Card(
     padding: const EdgeInsets.all(16),
@@ -218,8 +236,8 @@ final List<CatalogEntry> kCatalog = [
     kind: 'card',
     label: 'Card container with optional surface blur variant.',
     defaults: const {
-      'title': 'Card Title',
-      'description': 'Card description',
+      'title': 'Title',
+      'description': 'Description',
       'showFooter': false,
     },
     build: _buildCard,
