@@ -1,0 +1,21 @@
+# Flutter / Dart build outputs
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+
+# Local kit checkout for tool/embed_sources.dart regen (see README)
+# The app itself resolves the kit from GitHub, not from this path.
+/shadcn_flutter_kit/

@@ -1,0 +1,23 @@
+name: canvas_app
+publish_to: none
+version: 0.1.0
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  canvas_core:
+    path: ../canvas_core
+  flutter:
+    sdk: flutter
+  flutter_shadcn_kit:
+    git:
+      url: https://github.com/mibrar-dev/shadcn_flutter_kit.git
+      ref: main
+      path: flutter_shadcn_kit
+  http: ^1.2.2
+  shared_preferences: ^2.3.2
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+flutter:
+  uses-material-design: true
