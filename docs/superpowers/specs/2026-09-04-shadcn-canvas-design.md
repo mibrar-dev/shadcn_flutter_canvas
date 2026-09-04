@@ -63,6 +63,14 @@ State model (Dart port of m3e `Doc`, JSON-serializable):
 
 `Transition = slide|slideLeft|slideUp|slideDown|fade|expand|none`. Pure-Dart ports of `layoutOf/groupBounds/frameOfGroup/explodeGroup` for rows/zones/overlap text.
 
+### Dogfooding rule (user requirement)
+
+The canvas website itself is built ENTIRELY from the registry's shadcn components — same precedent as the docs site, whose UI consumes the registry through the generated barrel `shadcn_flutter_kit/docs/lib/shadcn_ui.dart` ("GENERATED BARREL FILE - DO NOT EDIT BY HAND", ~337 importing files). Concretely:
+
+- `canvas_app/lib/shadcn_ui.dart` is a GENERATED mirror barrel (same generation approach as docs; never hand-edit component code into the app). All editor chrome — palette tiles, inspector controls, theme panel, toolbar, dialogs, toasts — uses registry widgets (`Button`, `Card`, `TextField`, `Switch`, `Tabs`, `Dialog`, `Badge`, `Tooltip`, …).
+- No raw Material/Cupertino widgets in chrome code (`lib/ui/palette_panel.dart`, `inspector_panel.dart`, `theme_bar.dart`, toolbar). Allowed exceptions, documented at use site: `main.dart` app shell (`MaterialApp`), and `preview_player.dart` + `phone_frame.dart` content areas (they render USER-chosen widgets, which may be anything).
+- Effect: the canvas is the registry's ultimate integration test — every chrome interaction exercises real components, and registry regressions surface immediately in the tool itself.
+
 ## 5. Canvas-ready component metadata
 
 Extend `components.schema.json` with an **optional** `canvas{}` block (optional so all 134 components keep validating during rollout):
@@ -102,7 +110,6 @@ Reuse `tokens.json` + `ThemeExtension`s from `registry/shared`; canvas theme pan
 - Schema drift (Dart constructors vs `propsSchema`): CI validator is load-bearing; keep `canvas{}` optional until coverage passes.
 
 ## 9. Phased delivery
-
 - P0 metadata schema + validator + 20 components.
 - P1 canvas MVP (palette/frames/inspector/theme/undo/autosave/preview).
 - P2a prompt export → P2b single-file → P2c bundle zip.
@@ -110,4 +117,4 @@ Reuse `tokens.json` + `ThemeExtension`s from `registry/shared`; canvas theme pan
 - P4 CLI `screen add/prompt`.
 - P5 AI `ScreenDoc` generation.
 
-Success criteria: 20 canvas-ready components; prompt/single/bundle outputs for a 2-screen flow verified by `flutter analyze` + widget test render; CLI installs bundle into a fixture app with zero manual import fixes; share link round-trips.
+Success criteria: 20 canvas-ready components; prompt/single/bundle outputs for a 2-screen flow verified by `flutter analyze` + widget test render; CLI installs bundle into a fixture app with zero manual import fixes; share link round-trips; editor chrome builds exclusively from registry components via the generated barrel (dogfooding gate green).
