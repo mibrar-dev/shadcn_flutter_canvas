@@ -10,7 +10,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'persistence.dart';
-import 'screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 
 /// Minimal listener registry mirroring Flutter's `ChangeNotifier` API.
 class ChangeNotifier {

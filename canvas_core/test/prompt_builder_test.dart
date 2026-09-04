@@ -1,5 +1,5 @@
-import 'package:canvas_app/canvas/prompt_builder.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:canvas_core/canvas_core.dart';
+import 'package:test/test.dart';
 
 import 'fixtures/two_screen_doc.dart';
 

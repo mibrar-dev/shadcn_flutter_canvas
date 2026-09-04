@@ -23,7 +23,7 @@ library;
 
 import 'package:flutter/material.dart';
 
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 
 /// Palette ids offered by the bar. All verified present in

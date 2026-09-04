@@ -5,6 +5,8 @@ environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:
   archive: ^4.0.0
+  canvas_core:
+    path: ../canvas_core
   flutter:
     sdk: flutter
   flutter_shadcn_kit:

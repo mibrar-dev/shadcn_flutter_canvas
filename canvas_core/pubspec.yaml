@@ -1,0 +1,10 @@
+name: canvas_core
+description: Pure-Dart canvas document model, exporters, and AI contract shared by canvas_app and the CLI.
+version: 0.1.0
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+dependencies:
+  archive: ^4.0.0
+dev_dependencies:
+  lints: ^5.0.0
+  test: ^1.24.0

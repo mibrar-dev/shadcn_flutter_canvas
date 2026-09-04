@@ -10,7 +10,7 @@ import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/ui/palette_panel.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 

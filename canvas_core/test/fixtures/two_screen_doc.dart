@@ -1,4 +1,4 @@
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 
 /// Two-screen Pay → Done fixture for exporter golden tests.
 ///

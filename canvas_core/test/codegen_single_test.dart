@@ -1,8 +1,22 @@
-import 'package:canvas_app/canvas/_impl/embedded_sources.dart';
-import 'package:canvas_app/canvas/codegen_single.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:canvas_core/canvas_core.dart';
+import 'package:test/test.dart';
 
 import 'fixtures/two_screen_doc.dart';
+
+/// Minimal registry-source stub: keys only need to contain the kind needle
+/// (`/button/`); the body carries a `class Button` plus directives the
+/// exporter must strip. The real `kEmbeddedSources` map stays in canvas_app
+/// (generated Flutter-app data, not shared logic).
+const kTestSources = {
+  'registry/components/button/button.dart': '''
+import 'package:flutter/widgets.dart';
+import '../relative.dart';
+
+class Button extends StatelessWidget {
+  const Button({super.key});
+}
+''',
+};
 
 /// Golden structure for [buildSingleFile] on [buildTwoScreenDoc].
 ///
@@ -11,7 +25,7 @@ import 'fixtures/two_screen_doc.dart';
 /// bodies are large and regenerate independently of this exporter.
 void main() {
   test('buildSingleFile inlines used kinds for two-screen doc', () {
-    final out = buildSingleFile(buildTwoScreenDoc(), kEmbeddedSources);
+    final out = buildSingleFile(buildTwoScreenDoc(), kTestSources);
 
     // Screen widget classes.
     expect(out, contains('class CanvasScreen_Pay'));

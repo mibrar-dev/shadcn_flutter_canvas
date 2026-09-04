@@ -13,9 +13,9 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import '../screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
+
 import 'ai_parse.dart';
-import 'screen_doc_schema.dart';
 
 /// Settings for direct-to-provider AI calls.
 class AiSettings {

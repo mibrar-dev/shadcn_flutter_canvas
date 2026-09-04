@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:canvas_app/canvas/ai/ai_client.dart';
 import 'package:canvas_app/canvas/ai/ai_parse.dart';
-import 'package:canvas_app/canvas/prompt_builder.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';

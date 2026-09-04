@@ -1,5 +1,5 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:flutter/material.dart';

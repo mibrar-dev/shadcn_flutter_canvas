@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:canvas_app/canvas/screen_doc.dart';
-import 'package:canvas_app/canvas/share_codec.dart' as codec;
-import 'package:flutter_test/flutter_test.dart';
+import 'package:canvas_core/canvas_core.dart';
+import 'package:test/test.dart';
 
 Map<String, dynamic> _smallRaw() => {
       'screens': [
@@ -78,11 +77,11 @@ ScreenDoc _hugeDoc() {
 void main() {
   test('roundtrip preserves screens, nodes, theme', () {
     final doc = ScreenDoc.fromJson(_smallRaw());
-    final link = codec.encode(doc);
+    final link = encode(doc);
     expect(link, startsWith('#d='));
-    expect(link.length, lessThanOrEqualTo(codec.kShareMaxUrlLength));
+    expect(link.length, lessThanOrEqualTo(kShareMaxUrlLength));
 
-    final back = codec.decode(link);
+    final back = decode(link);
     expect(back.screens, hasLength(2));
     expect(back.nodes.single.screenId, 's1');
     expect(back.nodes.single.items.single.action?.to, 's9');
@@ -91,11 +90,11 @@ void main() {
   });
 
   test('decode rejects garbage and bad shapes', () {
-    expect(() => codec.decode('not-a-link'), throwsFormatException);
-    expect(() => codec.decode('#d=!!!not-base64!!!'), throwsFormatException);
+    expect(() => decode('not-a-link'), throwsFormatException);
+    expect(() => decode('#d=!!!not-base64!!!'), throwsFormatException);
 
     final badShape = '#d=' + base64Url.encode(utf8.encode('{"nope":true}'));
-    expect(() => codec.decode(badShape), throwsFormatException);
+    expect(() => decode(badShape), throwsFormatException);
   });
 
   test('decode rejects dangling action refs', () {
@@ -106,9 +105,9 @@ void main() {
       'to': 'missing',
       'transition': 'slide'
     };
-    final link = codec.encode(ScreenDoc.fromJson(raw));
+    final link = encode(ScreenDoc.fromJson(raw));
     expect(
-      () => codec.decode(link),
+      () => decode(link),
       throwsA(
         isA<FormatException>().having(
           (e) => e.message,
@@ -125,7 +124,7 @@ void main() {
     (raw['meta'] as Map<String, dynamic>)['brief'] = 'a' * (210 * 1024);
     final link = '#d=' + base64Url.encode(utf8.encode(jsonEncode(raw)));
     expect(
-      () => codec.decode(link),
+      () => decode(link),
       throwsA(
         isA<FormatException>().having(
           (e) => e.message,
@@ -139,7 +138,7 @@ void main() {
   test('encode throws StateError when URL exceeds 6000 chars', () {
     final doc = _hugeDoc();
     expect(
-      () => codec.encode(doc),
+      () => encode(doc),
       throwsA(
         isA<StateError>().having(
           (e) => e.message,

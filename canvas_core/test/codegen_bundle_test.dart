@@ -1,16 +1,24 @@
 import 'dart:convert';
 
 import 'package:archive/archive.dart';
-import 'package:canvas_app/canvas/_impl/embedded_sources.dart';
-import 'package:canvas_app/canvas/codegen_bundle.dart';
-import 'package:canvas_app/canvas/screen_doc.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:canvas_core/canvas_core.dart';
+import 'package:test/test.dart';
 
 import 'fixtures/two_screen_doc.dart';
 
+/// Minimal registry-source stub keyed by the exact bundle destination
+/// templates. The real `kTestSources` map stays in canvas_app
+/// (generated Flutter-app data, not shared logic).
+const kTestSources = {
+  '{installPath}/components/control/button/button.dart':
+      'class Button extends StatelessWidget {}',
+  '{installPath}/components/layout/card/card.dart':
+      'class Card extends StatelessWidget {}',
+};
+
 void main() {
   test('buildCleanBundle manifest has the Task 12 shape', () {
-    final bundle = buildCleanBundle(buildTwoScreenDoc(), kEmbeddedSources);
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
     final manifest = jsonDecode(bundle.manifestJson) as Map<String, dynamic>;
 
     expect(manifest['screens'], ['pay', 'done']);
@@ -39,7 +47,7 @@ void main() {
   });
 
   test('buildCleanBundle files hold screens plus shadcn bodies', () {
-    final bundle = buildCleanBundle(buildTwoScreenDoc(), kEmbeddedSources);
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
 
     expect(
       bundle.files.keys,
@@ -68,7 +76,7 @@ void main() {
   });
 
   test('buildCleanBundle zip decodes listing the same entries', () {
-    final bundle = buildCleanBundle(buildTwoScreenDoc(), kEmbeddedSources);
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
     final archive = ZipDecoder().decodeBytes(bundle.zipBytes);
     final names = {for (final f in archive.files) f.name};
 
@@ -87,7 +95,7 @@ void main() {
   });
 
   test('buildCleanBundle pubspec patch merges component dependencies', () {
-    final bundle = buildCleanBundle(buildTwoScreenDoc(), kEmbeddedSources);
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
     expect(bundle.pubspecPatch, contains('gap'));
     expect(bundle.pubspecPatch, contains('dependencies:'));
   });
@@ -117,7 +125,7 @@ void main() {
       'meta': {'title': 'Weird', 'brief': 'unknown kind doc'},
     });
 
-    final bundle = buildCleanBundle(doc, kEmbeddedSources);
+    final bundle = buildCleanBundle(doc, kTestSources);
     final manifest = jsonDecode(bundle.manifestJson) as Map<String, dynamic>;
     expect((manifest['warnings'] as List), isNotEmpty);
     expect(bundle.files.keys, contains('lib/ui/screens/pay_screen.dart'));

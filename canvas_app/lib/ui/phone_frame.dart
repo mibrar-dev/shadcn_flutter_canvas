@@ -8,7 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 
 /// Phone-sized canvas surface for a single [screen].
 class PhoneFrame extends StatelessWidget {

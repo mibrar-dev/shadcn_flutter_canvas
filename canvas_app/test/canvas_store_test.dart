@@ -2,7 +2,7 @@ import 'dart:convert';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/persistence.dart';
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class FakePrefs implements PrefsPort {

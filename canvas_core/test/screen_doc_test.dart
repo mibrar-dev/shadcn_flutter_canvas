@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'package:canvas_app/canvas/screen_doc.dart';
-import 'package:flutter_test/flutter_test.dart';
+import 'package:canvas_core/canvas_core.dart';
+import 'package:test/test.dart';
 
 void main() {
   test('ScreenDoc JSON roundtrip preserves screens, nodes, theme', () {

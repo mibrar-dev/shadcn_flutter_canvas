@@ -1,5 +1,5 @@
 import 'package:canvas_app/canvas/ai/ai_parse.dart';
-import 'package:canvas_app/canvas/ai/screen_doc_schema.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 const _validJson = '''

@@ -1,4 +1,4 @@
-import 'package:canvas_app/canvas/screen_doc.dart';
+import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/theme_bar.dart';
 import 'package:flutter/material.dart';

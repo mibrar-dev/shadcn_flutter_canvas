@@ -10,8 +10,7 @@ library;
 
 import 'dart:convert';
 
-import '../screen_doc.dart';
-import 'screen_doc_schema.dart';
+import 'package:canvas_core/canvas_core.dart';
 
 /// Base failure for the AI ScreenDoc pipeline.
 ///
