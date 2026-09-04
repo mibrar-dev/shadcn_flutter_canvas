@@ -1,0 +1,15 @@
+name: Validate registry
+on:
+  pull_request:
+    paths:
+      - 'shadcn_flutter_kit/flutter_shadcn_kit/lib/registry/manifests/**'
+      - 'tool/validate_canvas.dart'
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+      - run: dart tool/validate_canvas.dart
+      - run: dart test test/canvas_schema_test.dart test/canvas_validator_test.dart
+        working-directory: shadcn_flutter_cli
