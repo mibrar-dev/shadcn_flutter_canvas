@@ -63,6 +63,24 @@ Regression caught during verification: schema-validator remote-prefer broke
 `e2e_multi_registry_fixture_test` (fixture HTTP server serves only the
 advertised root schema path). Fixed as try-primary-then-fallback; e2e green.
 
+## Publish status (2026-09-04)
+
+- CLI 0.2.7: committed + pushed (`brar-x/flutter_shadcn_cli`
+  `branch-cli-add-speed-feedback-fix` b6b89ed). `dart pub publish
+  --dry-run`: 0 warnings. NOT on pub.dev yet — no auth on this machine
+  (`dart pub login` required).
+- Kit dep closures + index 134: pushed (`mibrar-dev/shadcn_flutter_kit`
+  main 15941251). Raw URLs at this commit serve 200 (components.json,
+  index.json 134 entries, schema).
+- Registry directory: official entry repointed to the commit above,
+  registries.json rebuilt (1 entry), pushed to
+  `flutter-shadcn/registry-directory`
+  `branch-registry-init-default-app-localizations`, PR:
+  https://github.com/flutter-shadcn/registry-directory/pull/1
+  (merge to update the live flutter-shadcn.github.io directory).
+- OPEN: @ai registry home (no kit repo contains ai_agent_registry);
+  pub.dev auth; PR merge.
+
 ## New findings (remote registry DATA, not CLI code — needs republish)
 
 - R1: remote `index.json` lists 133 components; local manifest has 134.
