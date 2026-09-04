@@ -25,7 +25,7 @@ Non-goals for v1: backend accounts/DB, multi-user collaboration, desktop-frame e
 
 1. **Standalone web app**, Flutter web (not Next.js). Rationale: rendering must be real Flutter widgets; a React mirror would re-implement 134 components and drift permanently. Copy the `shadcn_flutter_kit/docs/` build/deploy pattern (`flutter-gh-pages`, own `baseHref`, CanvasKit, tree-shaken icons, stripped font list).
 2. **Triple export, build order: prompt → single file → bundle → CLI.** Prompt is zero-dependency and freezes the `ScreenDoc` schema; single-file proves shared-closure import resolution; bundle proves multi-namespace paths; CLI reuses the tested graph.
-3. **Real-widget rendering** via a generated `component_catalog` that imports registry widgets directly (never hand-mirrored).
+3. **Real-widget rendering** via a generated `component_catalog`: prop defaults are generated from `components.json` canvas blocks by a build-time embedder; widget builders are hand-mapped to real classes (`Button`, `Card`, `TextField`, … — discovered per component, never assumed) using each component's `preview.dart` as the construction reference. Web codegen inlines component bodies from sources embedded at build time; the CLI reads them from disk.
 
 ## 4. Architecture
 
@@ -79,7 +79,7 @@ Extend `components.schema.json` with an **optional** `canvas{}` block (optional 
 }
 ```
 
-Prop types: `string|bool|double|enum|color|icon|slot`; groups: `content|style|state|layout|behavior|advanced`. Non-canvas params (gesture callbacks, controllers, focus nodes — e.g. `button_widget.dart`'s ~15 callbacks) stay excluded via constructor allowlist mapping (e.g. `label→child:Text`, `variant/size→style`, `disabled→enabled` inverted). Validator (CI): parse Dart constructors via analyzer, assert required named params ⊆ `propsSchema` ∪ denylist, type-check defaults, cross-check enums against `*_variants.dart`. First 20 components cover 7 categories: button, checkbox, switch, input, select, radio_group, form, card, badge, avatar, skeleton, dialog, sheet, toast, tabs, breadcrumb, accordion, separator, tooltip, progress.
+Prop types: `string|bool|double|enum|color|icon|slot`; groups: `content|style|state|layout|behavior|advanced`. Non-canvas params (gesture callbacks, controllers, focus nodes — e.g. `button_widget.dart`'s callbacks) stay excluded via constructor allowlist mapping (e.g. `label→child:Text`, `variant/size→style`, `disabled→enabled` inverted). Validator (CI, static JSON only — no analyzer in P0): shape + type/group allowlists + `default ∈ enum` + default-type match. Constructor cross-check (required Dart params ⊆ `propsSchema` ∪ denylist, enums vs variant source files) is a P1 follow-up; precedent for analyzer tooling is `tool/generate_schemas_convention.dart` which already depends on `package:analyzer`. Note: `components.schema.json` is hand-maintained (no generator emits it — verified), while `components.json` IS rewritten by `tool/registry/registry_components_manifest.dart`; that tool copies entries whole (`Map.from`), so `canvas` blocks survive regen, and the plan gates on this. First 20 components cover 7 categories: button, checkbox, switch, input, select, radio_group, form, card, badge, avatar, skeleton, dialog, sheet, toast, tabs, breadcrumb, accordion, separator, tooltip, progress.
 
 ## 6. Export / share / CLI
 
