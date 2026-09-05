@@ -66,13 +66,13 @@ void main() {
       );
     });
 
-    test('pinned counts: 51 bridges + 10 bare builders + row = 62 ready', () {
-      expect(gen.bridgeKindsForTest, hasLength(51));
+    test('pinned counts: 68 bridges + 10 bare builders + row = 79 ready', () {
+      expect(gen.bridgeKindsForTest, hasLength(68));
       expect(gen.readyKindsForTest, hasLength(10));
-      expect(kCatalog, hasLength(51));
+      expect(kCatalog, hasLength(68));
       expect(
         [for (final e in kRegistry) if (e.canvasReady) e.kind],
-        hasLength(62),
+        hasLength(79),
       );
     });
   });

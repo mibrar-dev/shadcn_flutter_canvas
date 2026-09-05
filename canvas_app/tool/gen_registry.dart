@@ -3,7 +3,7 @@
 // Reads `components.json` (id + description + category per component) and
 // emits one [RegistryEntry] per kit component id plus the `row` pseudo-kind.
 // Entry builders are NOT generated from previews (previews render full
-// `Scaffold`s — see component_catalog.dart): the 51 catalog kinds bridge to
+// `Scaffold`s — see component_catalog.dart): the 68 catalog kinds bridge to
 // `buildCatalogWithDefaults`, 10 hand-verified EASY kinds get bare-widget
 // builders (sources embedded below, each verified by grepping the kit
 // `_impl/` sources for a ctor taking only string/num/bool/enum/child
@@ -114,6 +114,25 @@ const _bridgeKinds = <String>{
   'tab_pane',
   'stepper',
   'slider',
+  // Track P additions (2026-09-05): hand-built catalog builders bridged in
+  // component_registry.dart; listed here so a regen byte-preserves them.
+  'input_otp',
+  'calendar',
+  'date_picker',
+  'time_picker',
+  'carousel',
+  'tree',
+  'table',
+  'form',
+  'form_field',
+  'formatted_input',
+  'validated',
+  'color_picker',
+  'color_input',
+  'hsl',
+  'hsv',
+  'history',
+  'feature_carousel',
 };
 
 /// Hand-verified EASY kinds with real bare-widget builders below
@@ -510,7 +529,7 @@ void main(List<String> args) {
     ..writeln('//')
     ..writeln('// One entry per kit component id plus the `row` pseudo-kind.')
     ..writeln('// `canvasReady` is true only where a real bare-widget builder')
-    ..writeln('// exists: the 51 catalog kinds bridge to')
+    ..writeln('// exists: the 68 catalog kinds bridge to')
     ..writeln('// `catalog.buildCatalogWithDefaults` (no duplication), the 10')
     ..writeln('// hand-verified EASY kinds below build real widgets, and the')
     ..writeln('// `row` pseudo-kind renders its structural Row (rows carry no')
@@ -570,6 +589,21 @@ void main(List<String> args) {
   for (final kind in _hiddenUtilities.toList()..sort()) {
     out.writeln('  ${_dartStr(kind)},');
   }
+  // Track Q (2026-09-05) semantics decision: registryMatchesQuery is
+  // deliberately KIND-ONLY (kind-id words; descriptions/labels NOT matched).
+  // Rationale: palette tiles show humanized kind ids ([_tileLabel]), so
+  // kind-word matching is exactly what the user sees. Label/description
+  // word matching over-matches: e.g. query 'chip' would hit Filter Bar via
+  // the 'chips' in its blurb, and query 'card' would hit Feature Carousel
+  // ('Animated feature card carousel ...') and Tab Pane ('... content
+  // card.') whose tiles show no 'card' word. Counter-example that is NOT
+  // over-matching: query 'card' DOES match 'card_image' under kind-only
+  // (kind splits on '_' into [card, image]; the tile shows 'Card Image').
+  // The emitted doc header below ('kind id or label') is kept verbatim for
+  // byte-compat with the hand-edited lib/canvas/component_registry.dart;
+  // the true kind-only behavior is pinned by the emitted inline comment.
+  // If the header is ever corrected, update both files together (a regen
+  // must byte-preserve the hand function).
   out
     ..writeln('};')
     ..writeln()
@@ -585,10 +619,18 @@ void main(List<String> args) {
     ..writeln('      .where((t) => t.isNotEmpty)')
     ..writeln('      .toList();')
     ..writeln('  if (tokens.isEmpty) return true;')
-    ..writeln('  final words = <String>[')
-    ..writeln('    ...entry.kind.toLowerCase().split(RegExp(r\'[^a-z0-9]+\')),')
-    ..writeln('    ...entry.label.toLowerCase().split(RegExp(r\'[^a-z0-9]+\')),')
-    ..writeln('  ].where((w) => w.isNotEmpty).toList();')
+    ..writeln('  final words = entry.kind')
+    ..writeln('      .toLowerCase()')
+    ..writeln("      .split(RegExp(r'[^a-z0-9]+'))")
+    ..writeln('      .where((w) => w.isNotEmpty)')
+    ..writeln('      .toList();')
+    ..writeln(
+      '  // Tile labels are prettified kind ids ([_tileLabel] in the palette), so')
+    ..writeln(
+      '  // matching kind-id words is exactly what the user sees. Descriptions are')
+    ..writeln(
+      "  // deliberately NOT matched — 'chips' in a Filter Bar blurb must not make")
+    ..writeln("  // it match 'chip'.")
     ..writeln(
       '  return tokens.every((t) => words.any((w) => w.startsWith(t)));')
     ..writeln('}')

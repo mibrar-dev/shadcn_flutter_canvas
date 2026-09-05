@@ -56,9 +56,27 @@ void main() {
         'tab_pane',
         'stepper',
         'slider',
+        // Track P additions (2026-09-05).
+        'input_otp',
+        'calendar',
+        'date_picker',
+        'time_picker',
+        'carousel',
+        'tree',
+        'table',
+        'form',
+        'form_field',
+        'formatted_input',
+        'validated',
+        'color_picker',
+        'color_input',
+        'hsl',
+        'hsv',
+        'history',
+        'feature_carousel',
       ]),
     );
-    expect(kCatalog, hasLength(51));
+    expect(kCatalog, hasLength(68));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -732,5 +750,100 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   ],
   'slider': [
     {'name': 'value', 'type': 'double', 'default': 0.6},
+  ],
+  // No canvas blocks exist for these seventeen kinds either (same pinned-kit
+  // scan — no `canvas` key on any of the 134 components), so these copies
+  // likewise mirror the invented catalog defaults until real blocks land.
+  // (Track P additions, 2026-09-05.)
+  'input_otp': [
+    {'name': 'length', 'type': 'int', 'default': 6},
+  ],
+  'calendar': [
+    {
+      'name': 'mode',
+      'type': 'enum',
+      'enum': ['single', 'range', 'multi', 'none'],
+      'default': 'single',
+    },
+  ],
+  'date_picker': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select date'},
+    {'name': 'label', 'type': 'string', 'default': ''},
+  ],
+  'time_picker': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select time'},
+    {'name': 'label', 'type': 'string', 'default': ''},
+  ],
+  'carousel': [
+    {'name': 'slides', 'type': 'int', 'default': 3},
+  ],
+  'tree': [
+    {'name': 'node1', 'type': 'string', 'default': 'Design'},
+    {'name': 'child1', 'type': 'string', 'default': 'Research'},
+    {'name': 'child2', 'type': 'string', 'default': 'Wireframes'},
+    {'name': 'node2', 'type': 'string', 'default': 'Launch'},
+  ],
+  'table': [
+    {'name': 'header1', 'type': 'string', 'default': 'Name'},
+    {'name': 'header2', 'type': 'string', 'default': 'Role'},
+    {'name': 'name1', 'type': 'string', 'default': 'Avery'},
+    {'name': 'role1', 'type': 'string', 'default': 'Designer'},
+    {'name': 'name2', 'type': 'string', 'default': 'Jordan'},
+    {'name': 'role2', 'type': 'string', 'default': 'Engineer'},
+  ],
+  'form': [
+    {'name': 'label', 'type': 'string', 'default': 'Name'},
+    {'name': 'placeholder', 'type': 'string', 'default': 'Jane Doe'},
+    {'name': 'submitLabel', 'type': 'string', 'default': 'Submit'},
+  ],
+  'form_field': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select item'},
+    {'name': 'value', 'type': 'string', 'default': ''},
+  ],
+  'formatted_input': [
+    {'name': 'label', 'type': 'string', 'default': ''},
+  ],
+  'validated': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Name'},
+    {'name': 'errorText', 'type': 'string', 'default': 'Required'},
+  ],
+  'color_picker': [
+    {'name': 'hex', 'type': 'string', 'default': '#2196F3'},
+  ],
+  'color_input': [
+    {'name': 'hex', 'type': 'string', 'default': '#2196F3'},
+  ],
+  'hsl': [
+    {
+      'name': 'mode',
+      'type': 'enum',
+      'enum': ['hue', 'sat', 'lum', 'alpha'],
+      'default': 'hue',
+    },
+  ],
+  'hsv': [
+    {
+      'name': 'mode',
+      'type': 'enum',
+      'enum': ['hue', 'sat', 'val', 'alpha'],
+      'default': 'hue',
+    },
+  ],
+  'history': [
+    {'name': 'columns', 'type': 'int', 'default': 6},
+  ],
+  'feature_carousel': [
+    {'name': 'title1', 'type': 'string', 'default': 'Palette Selector'},
+    {
+      'name': 'description1',
+      'type': 'string',
+      'default': 'Pick a palette to refine results.',
+    },
+    {'name': 'title2', 'type': 'string', 'default': 'Style Presets'},
+    {
+      'name': 'description2',
+      'type': 'string',
+      'default': 'Choose a curated style preset.',
+    },
   ],
 };

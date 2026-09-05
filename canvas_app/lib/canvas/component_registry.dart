@@ -3,7 +3,7 @@
 //
 // One entry per kit component id plus the `row` pseudo-kind.
 // `canvasReady` is true only where a real bare-widget builder
-// exists: the 51 catalog kinds bridge to
+// exists: the 68 catalog kinds bridge to
 // `catalog.buildCatalogWithDefaults` (no duplication), the 10
 // hand-verified EASY kinds below build real widgets, and the
 // `row` pseudo-kind renders its structural Row (rows carry no
@@ -539,8 +539,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Resizable table layout with headers, footers, and frozen cells.",
     section: "Layout & Structure",
     icon: Icons.table_chart,
-    build: (context) => RegistryPlaceholder(kind: "table", label: "Resizable table layout with headers, footers, and frozen cells."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("table"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "timeline",
@@ -588,16 +588,16 @@ final List<RegistryEntry> kRegistry = [
     label: "Date picker and calendar widgets for single, range, and multi selection.",
     section: "Display",
     icon: Icons.calendar_month,
-    build: (context) => RegistryPlaceholder(kind: "calendar", label: "Date picker and calendar widgets for single, range, and multi selection."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("calendar"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "carousel",
     label: "Interactive carousel with sliding/fading transitions and autoplay controls.",
     section: "Display",
     icon: Icons.slideshow,
-    build: (context) => RegistryPlaceholder(kind: "carousel", label: "Interactive carousel with sliding/fading transitions and autoplay controls."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("carousel"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "chat",
@@ -660,8 +660,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Animated feature card carousel with autoplay, swipe, and CTA support. (WIP)",
     section: "Display",
     icon: Icons.view_carousel,
-    build: (context) => RegistryPlaceholder(kind: "feature_carousel", label: "Animated feature card carousel with autoplay, swipe, and CTA support. (WIP)"),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("feature_carousel"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "file_diff_viewer",
@@ -772,8 +772,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Hierarchical tree view with expandable, selectable nodes.",
     section: "Display",
     icon: Icons.account_tree,
-    build: (context) => RegistryPlaceholder(kind: "tree", label: "Hierarchical tree view with expandable, selectable nodes."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("tree"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "triple_dots",
@@ -813,16 +813,16 @@ final List<RegistryEntry> kRegistry = [
     label: "Popover/dialog color selector that integrates the picker, history, and eye-dropper tools.",
     section: "Forms & Inputs",
     icon: Icons.colorize,
-    build: (context) => RegistryPlaceholder(kind: "color_input", label: "Popover/dialog color selector that integrates the picker, history, and eye-dropper tools."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("color_input"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "color_picker",
     label: "HSV/HSL/HEX color picker with popovers, eye dropper, and history controls.",
     section: "Forms & Inputs",
     icon: Icons.palette,
-    build: (context) => RegistryPlaceholder(kind: "color_picker", label: "HSV/HSL/HEX color picker with popovers, eye dropper, and history controls."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("color_picker"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "control",
@@ -837,8 +837,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Popover/dialog calendar for single-date and range selection.",
     section: "Forms & Inputs",
     icon: Icons.date_range,
-    build: (context) => RegistryPlaceholder(kind: "date_picker", label: "Popover/dialog calendar for single-date and range selection."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("date_picker"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "dropzone",
@@ -869,24 +869,24 @@ final List<RegistryEntry> kRegistry = [
     label: "Composable form state, validation, and submit helpers.",
     section: "Forms & Inputs",
     icon: Icons.assignment,
-    build: (context) => RegistryPlaceholder(kind: "form", label: "Composable form state, validation, and submit helpers."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("form"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "form_field",
     label: "Modal or popover editor field for complex objects.",
     section: "Forms & Inputs",
     icon: Icons.edit_note,
-    build: (context) => RegistryPlaceholder(kind: "form_field", label: "Modal or popover editor field for complex objects."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("form_field"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "formatted_input",
     label: "Low-level formatted-field helpers that sync multiple InputPart segments.",
     section: "Forms & Inputs",
     icon: Icons.text_snippet,
-    build: (context) => RegistryPlaceholder(kind: "formatted_input", label: "Low-level formatted-field helpers that sync multiple InputPart segments."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("formatted_input"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "formatter",
@@ -901,24 +901,24 @@ final List<RegistryEntry> kRegistry = [
     label: "Grid + storage helpers that track recently used colors for reuse.",
     section: "Forms & Inputs",
     icon: Icons.history,
-    build: (context) => RegistryPlaceholder(kind: "history", label: "Grid + storage helpers that track recently used colors for reuse."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("history"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "hsl",
     label: "Gradient slider that controls hue, saturation, lightness, or alpha for HSL colors.",
     section: "Forms & Inputs",
     icon: Icons.gradient,
-    build: (context) => RegistryPlaceholder(kind: "hsl", label: "Gradient slider that controls hue, saturation, lightness, or alpha for HSL colors."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("hsl"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "hsv",
     label: "Gradient slider for HSV color component control (hue, saturation, value, alpha).",
     section: "Forms & Inputs",
     icon: Icons.color_lens,
-    build: (context) => RegistryPlaceholder(kind: "hsv", label: "Gradient slider for HSV color component control (hue, saturation, value, alpha)."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("hsv"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "input",
@@ -933,8 +933,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Fixed-length OTP input field with clipboard integration, paste handling, and focus management.",
     section: "Forms & Inputs",
     icon: Icons.dialpad,
-    build: (context) => RegistryPlaceholder(kind: "input_otp", label: "Fixed-length OTP input field with clipboard integration, paste handling, and focus management."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("input_otp"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "item_picker",
@@ -1029,16 +1029,16 @@ final List<RegistryEntry> kRegistry = [
     label: "Popover/dialog picker for time and duration values.",
     section: "Forms & Inputs",
     icon: Icons.schedule,
-    build: (context) => RegistryPlaceholder(kind: "time_picker", label: "Popover/dialog picker for time and duration values."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("time_picker"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "validated",
     label: "Validation wrapper that exposes form error state.",
     section: "Forms & Inputs",
     icon: Icons.verified,
-    build: (context) => RegistryPlaceholder(kind: "validated", label: "Validation wrapper that exposes form error state."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("validated"),
+    canvasReady: true,
   ),
   // Controls.
   RegistryEntry(

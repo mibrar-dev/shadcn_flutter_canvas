@@ -25,7 +25,7 @@ void main() {
       }
     });
 
-    test('all 51 catalog kinds are covered', () {
+    test('all 68 catalog kinds are covered', () {
       const expected = {
         'button',
         'card',
@@ -80,6 +80,24 @@ void main() {
         'tab_pane',
         'stepper',
         'slider',
+        // Track P additions (2026-09-05).
+        'input_otp',
+        'calendar',
+        'date_picker',
+        'time_picker',
+        'carousel',
+        'tree',
+        'table',
+        'form',
+        'form_field',
+        'formatted_input',
+        'validated',
+        'color_picker',
+        'color_input',
+        'hsl',
+        'hsv',
+        'history',
+        'feature_carousel',
       };
       expect(Set.of(kCatalog.map((e) => e.kind)), expected);
       expect(Set.of(kInspectorSchemas.keys), containsAll(expected));

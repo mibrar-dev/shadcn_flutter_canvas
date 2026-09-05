@@ -15,6 +15,34 @@ import 'package:flutter_test/flutter_test.dart';
 // `TabChild` family is hidden from the kit barrel (see component_catalog).
 import 'package:flutter_shadcn_kit/registry/components/navigation/tabs/tabs.dart'
     as tabs;
+// Direct import: `Table`/`TableRow` are hidden from the kit barrel
+// (material conflicts), so the `shadcn.` prefix resolves to material's
+// `Table` instead of the kit's (see component_catalog).
+import 'package:flutter_shadcn_kit/registry/components/layout/table/table.dart'
+    as table;
+
+/// The 17 Track P kinds: pickers (input_otp, calendar, date/time, carousel,
+/// color), grids (tree, table), form shells, color shells, and the
+/// feature carousel.
+const _kTrackPKinds = [
+  'input_otp',
+  'calendar',
+  'date_picker',
+  'time_picker',
+  'carousel',
+  'tree',
+  'table',
+  'form',
+  'form_field',
+  'formatted_input',
+  'validated',
+  'color_picker',
+  'color_input',
+  'hsl',
+  'hsv',
+  'history',
+  'feature_carousel',
+];
 
 /// The 15 Track M kinds: 10 overlay-driven inline forms plus the
 /// tab-controller trio, stepper, and slider.
@@ -1155,6 +1183,671 @@ void main() {
           find.byType(shadcn.Slider),
         );
         expect(slider.value, 0.25);
+      }
+    });
+  });
+
+  group('track P wiring', () {
+    test('all new kinds are catalog entries bridged by the registry', () {
+      expect(_kTrackPKinds, hasLength(17));
+      for (final kind in _kTrackPKinds) {
+        final entry = findEntry(kind);
+        expect(entry, isNotNull, reason: 'no catalog entry $kind');
+        expect(entry!.defaults, isNotEmpty, reason: '$kind defaults');
+        final reg = findRegistryEntry(kind);
+        expect(reg, isNotNull, reason: 'no registry entry $kind');
+        expect(reg!.canvasReady, isTrue, reason: kind);
+        expect(reg.label, entry.label, reason: kind);
+      }
+    });
+
+    testWidgets('new builders never render the unknown-kind fallback', (
+      tester,
+    ) async {
+      for (final kind in _kTrackPKinds) {
+        await _pump(tester, buildCatalogItem(kind, {}));
+        expect(find.text('unknown: $kind'), findsNothing, reason: kind);
+        expect(find.text('canvas-ready coming soon'), findsNothing);
+      }
+    });
+
+    testWidgets('new builders tolerate empty props (defaults kick in)', (
+      tester,
+    ) async {
+      for (final kind in _kTrackPKinds) {
+        await _pump(
+          tester,
+          buildCatalogItem(kind, Map<String, dynamic>.of(
+            findEntry(kind)!.defaults,
+          )),
+        );
+      }
+      for (final kind in _kTrackPKinds) {
+        await _pump(tester, buildCatalogItem(kind, {}));
+      }
+    });
+  });
+
+  group('input_otp', () {
+    testWidgets('defaults render the six-box row (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('input_otp', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.InputOTP), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('input_otp', {'length': 4}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.InputOTP), findsOneWidget);
+      }
+    });
+  });
+
+  group('calendar', () {
+    testWidgets('defaults render the static month grid (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('calendar', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.Calendar), findsOneWidget);
+        final calendar = tester.widget<shadcn.Calendar>(
+          find.byType(shadcn.Calendar),
+        );
+        expect(
+          calendar.selectionMode,
+          shadcn.CalendarSelectionMode.single,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('calendar', {'mode': 'multi'}),
+          dark: dark,
+        );
+        final calendar = tester.widget<shadcn.Calendar>(
+          find.byType(shadcn.Calendar),
+        );
+        expect(
+          calendar.selectionMode,
+          shadcn.CalendarSelectionMode.multi,
+        );
+      }
+    });
+
+    testWidgets('unknown mode falls back to single (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('calendar', {'mode': 'bogus'}),
+          dark: dark,
+        );
+        final calendar = tester.widget<shadcn.Calendar>(
+          find.byType(shadcn.Calendar),
+        );
+        expect(
+          calendar.selectionMode,
+          shadcn.CalendarSelectionMode.single,
+        );
+      }
+    });
+  });
+
+  group('date_picker', () {
+    testWidgets('defaults render the trigger (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('date_picker', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.DatePicker), findsOneWidget);
+        expect(find.text('Select date'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'placeholder': 'Birthday', 'label': 'Date of birth'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('date_picker', props),
+          dark: dark,
+        );
+        expect(find.text('Birthday'), findsOneWidget);
+        expect(find.text('Date of birth'), findsOneWidget);
+      }
+    });
+  });
+
+  group('time_picker', () {
+    testWidgets('defaults render the trigger (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('time_picker', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.TimePicker), findsOneWidget);
+        expect(find.text('Select time'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'placeholder': 'Alarm', 'label': 'Wake up'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('time_picker', props),
+          dark: dark,
+        );
+        expect(find.text('Alarm'), findsOneWidget);
+        expect(find.text('Wake up'), findsOneWidget);
+      }
+    });
+  });
+
+  group('carousel', () {
+    testWidgets('defaults render first page + dots (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('carousel', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.Carousel), findsOneWidget);
+        expect(find.byType(shadcn.DotIndicator), findsOneWidget);
+        expect(find.text('Slide 1'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('carousel', {'slides': 5}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.Carousel), findsOneWidget);
+        final dots = tester.widget<shadcn.DotIndicator>(
+          find.byType(shadcn.DotIndicator),
+        );
+        expect(dots.length, 5);
+      }
+    });
+  });
+
+  group('tree', () {
+    testWidgets('defaults render the two-level list (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('tree', {}),
+          dark: dark,
+        );
+        // `TreeView<String>` never equals the raw `TreeView` type object, so
+        // `byType` cannot match it — predicate on the generic family instead
+        // (same idiom as the tab_pane test above).
+        expect(
+          find.byWidgetPredicate((w) => w is shadcn.TreeView),
+          findsOneWidget,
+        );
+        expect(find.text('Design'), findsOneWidget);
+        expect(find.text('Research'), findsOneWidget);
+        expect(find.text('Wireframes'), findsOneWidget);
+        expect(find.text('Launch'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'node1': 'Docs',
+        'child1': 'Guide',
+        'child2': 'API',
+        'node2': 'Blog',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('tree', props), dark: dark);
+        expect(find.text('Docs'), findsOneWidget);
+        expect(find.text('Guide'), findsOneWidget);
+        expect(find.text('API'), findsOneWidget);
+        expect(find.text('Blog'), findsOneWidget);
+      }
+    });
+  });
+
+  group('table', () {
+    testWidgets('defaults render header + two rows (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('table', {}),
+          dark: dark,
+        );
+        // The kit `Table` is imported directly (barrel hides it behind
+        // material's name) — `table.` disambiguates, like `tabs.` above.
+        expect(find.byType(table.Table), findsOneWidget);
+        expect(find.text('Name'), findsOneWidget);
+        expect(find.text('Role'), findsOneWidget);
+        expect(find.text('Avery'), findsOneWidget);
+        expect(find.text('Designer'), findsOneWidget);
+        expect(find.text('Jordan'), findsOneWidget);
+        expect(find.text('Engineer'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'header1': 'City',
+        'header2': 'Country',
+        'name1': 'Paris',
+        'role1': 'France',
+        'name2': 'Rome',
+        'role2': 'Italy',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('table', props), dark: dark);
+        expect(find.text('City'), findsOneWidget);
+        expect(find.text('Paris'), findsOneWidget);
+        expect(find.text('Italy'), findsOneWidget);
+      }
+    });
+  });
+
+  group('form', () {
+    testWidgets('defaults render shell + field + submit (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('form', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.Form), findsOneWidget);
+        expect(find.text('Name'), findsOneWidget);
+        expect(find.text('Jane Doe'), findsOneWidget);
+        expect(find.text('Submit'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'label': 'Email',
+        'placeholder': 'jane@example.com',
+        'submitLabel': 'Send',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('form', props), dark: dark);
+        expect(find.text('Email'), findsOneWidget);
+        expect(find.text('jane@example.com'), findsOneWidget);
+        expect(find.text('Send'), findsOneWidget);
+      }
+    });
+  });
+
+  group('form_field', () {
+    testWidgets('defaults render the placeholder trigger (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('form_field', {}),
+          dark: dark,
+        );
+        expect(
+          find.byWidgetPredicate((w) => w is shadcn.ObjectFormField),
+          findsOneWidget,
+        );
+        expect(find.text('Select item'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'placeholder': 'Pick one', 'value': 'Giraffe'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('form_field', props),
+          dark: dark,
+        );
+        expect(find.text('Giraffe'), findsOneWidget);
+      }
+    });
+  });
+
+  group('formatted_input', () {
+    testWidgets('defaults render the date mask (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('formatted_input', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.FormattedInput), findsOneWidget);
+        expect(find.text('MM'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('formatted_input', {'label': 'Birthday'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.FormattedInput), findsOneWidget);
+        expect(find.text('Birthday'), findsOneWidget);
+      }
+    });
+  });
+
+  group('validated', () {
+    testWidgets('defaults render field + attach-time error (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('validated', {}),
+          dark: dark,
+        );
+        expect(
+          find.byWidgetPredicate((w) => w is shadcn.Validated),
+          findsOneWidget,
+        );
+        expect(find.byType(shadcn.TextField), findsOneWidget);
+        expect(find.text('Name'), findsOneWidget);
+        // The kit validates on attach, so canvas shows that initial error
+        // state (later validation executes at runtime only).
+        expect(find.text('Required'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'placeholder': 'Email', 'errorText': 'Enter an email'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('validated', props),
+          dark: dark,
+        );
+        expect(find.text('Email'), findsOneWidget);
+        expect(find.text('Enter an email'), findsOneWidget);
+      }
+    });
+  });
+
+  group('color_picker', () {
+    testWidgets('defaults render sliders + hex label (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('color_picker', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorPicker), findsOneWidget);
+        expect(find.text('#2196F3'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative + malformed hex never crash (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('color_picker', {'hex': '#FF5733'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorPicker), findsOneWidget);
+        expect(find.text('#FF5733'), findsOneWidget);
+        await _pump(
+          tester,
+          buildCatalogItem('color_picker', {'hex': 'not-a-color'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorPicker), findsOneWidget);
+      }
+    });
+  });
+
+  group('color_input', () {
+    testWidgets('defaults render the swatch trigger (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('color_input', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorInput), findsOneWidget);
+        // The kit trigger renders the hex in lowercase (`colorToHex`).
+        expect(
+          find.textContaining(RegExp('2196f3', caseSensitive: false)),
+          findsOneWidget,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('color_input', {'hex': '#4CAF50'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorInput), findsOneWidget);
+        expect(
+          find.textContaining(RegExp('4caf50', caseSensitive: false)),
+          findsOneWidget,
+        );
+      }
+    });
+  });
+
+  group('hsl', () {
+    testWidgets('defaults render hue slider + swatch (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('hsl', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.HSLColorSlider), findsOneWidget);
+        expect(find.text('#2196F3'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('hsl', {'mode': 'sat'}),
+          dark: dark,
+        );
+        final slider = tester.widget<shadcn.HSLColorSlider>(
+          find.byType(shadcn.HSLColorSlider),
+        );
+        expect(slider.sliderType, shadcn.HSLColorSliderType.sat);
+      }
+    });
+  });
+
+  group('hsv', () {
+    testWidgets('defaults render hue slider + swatch (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('hsv', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.HSVColorSlider), findsOneWidget);
+        expect(find.text('#2196F3'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('hsv', {'mode': 'val'}),
+          dark: dark,
+        );
+        final slider = tester.widget<shadcn.HSVColorSlider>(
+          find.byType(shadcn.HSVColorSlider),
+        );
+        expect(slider.sliderType, shadcn.HSVColorSliderType.val);
+      }
+    });
+  });
+
+  group('history', () {
+    testWidgets('defaults render the color grid (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('history', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.ColorHistoryGrid), findsOneWidget);
+        final grid = tester.widget<shadcn.ColorHistoryGrid>(
+          find.byType(shadcn.ColorHistoryGrid),
+        );
+        expect(grid.crossAxisCount, 6);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('history', {'columns': 4}),
+          dark: dark,
+        );
+        final grid = tester.widget<shadcn.ColorHistoryGrid>(
+          find.byType(shadcn.ColorHistoryGrid),
+        );
+        expect(grid.crossAxisCount, 4);
+      }
+    });
+  });
+
+  group('feature_carousel', () {
+    testWidgets('defaults render the first page (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('feature_carousel', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.FeatureCardCarousel), findsOneWidget);
+        expect(find.text('Palette Selector'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'title1': 'Dark Mode',
+        'description1': 'Easy on the eyes.',
+        'title2': 'Widgets',
+        'description2': 'Compose anything.',
+      };
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('feature_carousel', props),
+          dark: dark,
+        );
+        // The centered first card shows its title + description; the second
+        // item renders as a ghost card, so only its data is asserted via the
+        // first card's content.
+        expect(find.text('Dark Mode'), findsOneWidget);
+        expect(find.text('Easy on the eyes.'), findsOneWidget);
+      }
+    });
+  });
+
+  group('track P unbounded canvas columns', () {
+    testWidgets('heavy kinds pump inside an unbounded canvas column', (
+      tester,
+    ) async {
+      // Mirrors phone_frame.dart root columns (mainAxisSize.min, unbounded
+      // height): the fixed-height shells (carousel), shrink-wrapped lists
+      // (tree), and self-sized widgets (table, form, color kinds, feature
+      // carousel) must all stay bounded. The scroll view mirrors the
+      // scrollable canvas surface.
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                buildCatalogItem('input_otp', {}),
+                buildCatalogItem('calendar', {}),
+                buildCatalogItem('carousel', {}),
+                buildCatalogItem('tree', {}),
+                buildCatalogItem('table', {}),
+                buildCatalogItem('form', {}),
+                buildCatalogItem('color_picker', {}),
+                buildCatalogItem('history', {}),
+                buildCatalogItem('feature_carousel', {}),
+              ],
+            ),
+          ),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.InputOTP), findsOneWidget);
+        expect(find.byType(shadcn.Calendar), findsOneWidget);
+        expect(find.byType(shadcn.Carousel), findsOneWidget);
+        expect(find.byType(table.Table), findsOneWidget);
+        expect(find.byType(shadcn.Form), findsOneWidget);
+        expect(find.byType(shadcn.ColorPicker), findsOneWidget);
+        expect(find.byType(shadcn.ColorHistoryGrid), findsOneWidget);
+        expect(
+          find.byType(shadcn.FeatureCardCarousel),
+          findsOneWidget,
+        );
       }
     });
   });

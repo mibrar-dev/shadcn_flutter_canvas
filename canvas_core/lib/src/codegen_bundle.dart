@@ -45,7 +45,7 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 61 canvas-ready kinds (19 seed + 10 W1: chip, alert,
+// Exact metadata for the 78 canvas-ready kinds (19 seed + 10 W1: chip, alert,
 // circular_progress_indicator, linear_progress_indicator, triple_dots,
 // dot_indicator, empty_state, code_snippet, number_ticker, text_area + 17
 // Track J: basic, card_image, scaffold, collapsible, steps, timeline,
@@ -53,7 +53,10 @@ class _KindSpec {
 // star_rating, clickable, scrollbar, pagination, alert_dialog + 15 Track M:
 // menu, popover, popup, menubar, dropdown_menu, context_menu, hover_card,
 // command, swiper, refresh_trigger, tab_container, tab_list, tab_pane,
-// stepper, slider — snapshotted from the pinned kit's `components.json`:
+// stepper, slider + 17 Track P: input_otp, calendar, date_picker,
+// time_picker, carousel, tree, table, form, form_field, formatted_input,
+// validated, color_picker, color_input, hsl, hsv, history, feature_carousel
+// — snapshotted from the pinned kit's `components.json`:
 // destination prefix from `files[].destination`
 // (`{installPath}/components/<category>/<id>/`), alphabetized `shared`,
 // `pubspec.dependencies`, `dependsOn` verbatim — unknown dep ids warn at
@@ -82,6 +85,21 @@ class _KindSpec {
 // (`icon`, `text`), and `tab_pane`'s (`outlined_container`, `sortable`,
 // `tab_container`) partially warn — `text`/`text_field`/`icon`/`sortable`
 // have no `_KindSpec` (verbatim policy).
+// NOTE (Track P): `calendar`'s (`button`), `carousel`'s (`dot_indicator`),
+// `date_picker`'s (`calendar`, `form_field`), `validated`'s (`form`),
+// `form_field`'s (`alert_dialog`, `button`, `card`, `dialog`),
+// `color_input`'s (`button`, `color_picker`, `form_field`, `history`),
+// `history`'s (`button`, part of [`alpha`, `button`]), and
+// `feature_carousel`'s/`table`'s (no deps) all resolve.
+// `input_otp`'s (`text_field`), `hsl`'s/`hsv`'s (`alpha`),
+// `tree`'s (`icon`), `form`'s (`text_field`, part of
+// [`button`, `text_field`, `checkbox`]), `formatted_input`'s (`text_field`,
+// part of [`button`, `form`, `outlined_container`, `text_field`]),
+// `time_picker`'s (`text`/`text_field`, part of
+// [`button`, `form_field`, `text`, `text_field`]), and `color_picker`'s
+// (`alpha`/`color`/`eye_dropper`/`formatter`/`text_field`, part of
+// [`alpha`, `button`, `color`, `eye_dropper`, `formatter`, `history`,
+// `select`, `text_field`]) partially warn (verbatim policy).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -266,6 +284,57 @@ const _kinds = <String, _KindSpec>{
   'slider': _KindSpec('{installPath}/components/form/slider/',
       ['color_extensions', 'component_schema', 'form_control', 'form_value_supplier', 'slider_value', 'style_value', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'input_otp': _KindSpec('{installPath}/components/form/input_otp/',
+      ['color_extensions', 'component_schema', 'focus_outline', 'form_value_supplier', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['text_field']),
+  'calendar': _KindSpec('{installPath}/components/display/calendar/',
+      ['component_schema', 'icon_extensions', 'localizations', 'lucide_icons', 'style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button']),
+  'date_picker': _KindSpec('{installPath}/components/form/date_picker/',
+      ['component_schema', 'form_control', 'localizations', 'localizations_extensions', 'lucide_icons', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['calendar', 'form_field']),
+  'time_picker': _KindSpec('{installPath}/components/form/time_picker/',
+      ['component_schema', 'form_control', 'localizations', 'localizations_extensions', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'form_field', 'text', 'text_field']),
+  'carousel': _KindSpec('{installPath}/components/display/carousel/',
+      ['animation_queue', 'component_schema', 'style_value', 'theme', 'wrap_utils'],
+      {'gap': '^3.0.1'}, ['dot_indicator']),
+  'tree': _KindSpec('{installPath}/components/display/tree/',
+      ['clickable', 'color_extensions', 'constants', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['icon']),
+  'table': _KindSpec('{installPath}/components/layout/table/',
+      ['clickable', 'component_schema', 'resizer', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'form': _KindSpec('{installPath}/components/form/form/',
+      ['color_extensions', 'focus_outline', 'localizations', 'phone_number', 'slider_value', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'email_validator': '^3.0.0', 'gap': '^3.0.1'}, ['button', 'text_field', 'checkbox']),
+  'form_field': _KindSpec('{installPath}/components/form/form_field/',
+      ['form_value_supplier', 'localizations', 'overlay', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['alert_dialog', 'button', 'card', 'dialog']),
+  'formatted_input': _KindSpec('{installPath}/components/form/formatted_input/',
+      ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'overlay', 'text_input_utils', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'form', 'outlined_container', 'text_field']),
+  'validated': _KindSpec('{installPath}/components/form/validated/',
+      [],
+      {}, ['form']),
+  'color_picker': _KindSpec('{installPath}/components/form/color_picker/',
+      ['component_schema', 'localizations', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['alpha', 'button', 'color', 'eye_dropper', 'formatter', 'history', 'select', 'text_field']),
+  'color_input': _KindSpec('{installPath}/components/form/color_input/',
+      ['component_schema', 'constants', 'form_control', 'form_value_supplier', 'localizations', 'lucide_icons', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'color', 'color_picker', 'eye_dropper', 'form_field', 'history']),
+  'hsl': _KindSpec('{installPath}/components/form/hsl/',
+      ['theme'],
+      {'gap': '^3.0.1'}, ['alpha']),
+  'hsv': _KindSpec('{installPath}/components/form/hsv/',
+      ['theme'],
+      {'gap': '^3.0.1'}, ['alpha']),
+  'history': _KindSpec('{installPath}/components/form/history/',
+      ['theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['alpha', 'button']),
+  'feature_carousel': _KindSpec('{installPath}/components/display/feature_carousel/',
+      ['component_schema', 'theme'],
+      {'gap': '^3.0.1'}, []),
 };
 
 const _installPath = '{installPath}/';

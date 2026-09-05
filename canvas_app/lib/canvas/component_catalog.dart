@@ -54,6 +54,8 @@
 /// already established by the seed kinds.
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -64,6 +66,11 @@ import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 // Only `Tabs` itself is unique to this library.
 import 'package:flutter_shadcn_kit/registry/components/navigation/tabs/tabs.dart'
     as tabs;
+// Direct component-library import: the barrel hides `Table`/`TableRow`
+// (material conflicts), so the `shadcn.` prefix resolves to material's
+// `Table` instead of the kit's — same trap as the `tabs` import above.
+import 'package:flutter_shadcn_kit/registry/components/layout/table/table.dart'
+    as table;
 
 /// Builds a canvas node widget from stringly-typed props.
 typedef NodeBuilder = Widget Function(Map<String, dynamic> props);
@@ -724,6 +731,25 @@ Widget _buildDrawer(Map<String, dynamic> props) {
 /// of rendering empty gaps (mirrors the input builder's empty-label
 /// convention).
 Widget? _textOrNull(String value) => value.isEmpty ? null : Text(value);
+
+/// Localization-free required-field validator (see [_buildValidated]).
+class _CanvasRequiredValidator extends shadcn.Validator<String> {
+  final String message;
+
+  const _CanvasRequiredValidator([this.message = 'Required']);
+
+  @override
+  FutureOr<shadcn.ValidationResult?> validate(
+    BuildContext context,
+    String? value,
+    shadcn.FormValidationMode lifecycle,
+  ) {
+    if (value == null || value.isEmpty) {
+      return shadcn.InvalidResult(message, state: lifecycle);
+    }
+    return null;
+  }
+}
 
 Widget _buildBasic(Map<String, dynamic> props) {
   // No canvas block in `components.json` — defaults invented from the
@@ -1667,6 +1693,647 @@ Widget _buildSlider(Map<String, dynamic> props) {
   return _SliderCell(initialValue: value);
 }
 
+/// Parses a canvas-level hex string (`'#2196F3'`, `'2196F3'`, `'80FFFFFF'`)
+/// into a [Color] for the color-kind builders. Malformed input falls back to
+/// the invented default blue (the same `0xFF2196F3` the kit's own history
+/// preview seeds), so hand-written docs never crash.
+Color _parseHexColor(String raw) {
+  var hex = raw.trim().replaceAll('#', '');
+  if (hex.length == 3) hex = hex.split('').map((c) => '$c$c').join();
+  if (hex.length == 6) hex = 'FF$hex';
+  final value = int.tryParse(hex, radix: 16);
+  if (value == null || hex.length != 8) return const Color(0xFF2196F3);
+  return Color(value);
+}
+
+/// Formats a [Color] as an uppercase `'#RRGGBB'` label for the color-kind
+/// swatch rows (mirrors the kit's `colorToHex` without the dependency).
+String _toHexLabel(Color color) {
+  final rgb = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+  return '#$rgb';
+}
+
+/// Track P builders (2026-09-05): the hardest kinds — pickers, grids, and
+/// form/color shells. Same honesty rules as Track M: no canvas blocks exist
+/// in `components.json` for any of these, so defaults are invented and
+/// documented per builder; only bool/string/num/enum prop types already
+/// established by the seed kinds; theme-token styling only (the swatch
+/// colors below are data values, not chrome — a color kind must show a
+/// color, and the hex prop drives them).
+Widget _buildInputOtp(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: a six-box OTP
+  // row like the component's own preview (`form/input_otp/preview.dart`:
+  // digit-only character children). The real `InputOTP` builds bare (focus
+  // moves on tap at runtime); clipboard/paste handling is runtime-only, so
+  // canvas shows the static boxes.
+  final length = ((props['length'] as num?)?.toInt() ?? 6).clamp(4, 8);
+  return shadcn.InputOTP(
+    onChanged: (_) {},
+    children: [
+      for (var i = 0; i < length; i++)
+        shadcn.InputOTPChild.character(allowDigit: true),
+    ],
+  );
+}
+
+Widget _buildCalendar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: the current
+  // month in single-select mode. The real `Calendar` builds bare (view
+  // navigation is internal state); value stays null and selection no-ops,
+  // so canvas shows the static month grid. The canvas-level `mode` string
+  // maps onto `CalendarSelectionMode` (unknown falls back to single, same
+  // fallback idiom as the tracker builder).
+  final mode = switch (props['mode']) {
+    'range' => shadcn.CalendarSelectionMode.range,
+    'multi' => shadcn.CalendarSelectionMode.multi,
+    'none' => shadcn.CalendarSelectionMode.none,
+    _ => shadcn.CalendarSelectionMode.single,
+  };
+  return shadcn.Calendar(
+    view: shadcn.CalendarView.now(),
+    selectionMode: mode,
+    onChanged: (_) {},
+  );
+}
+
+Widget _buildDatePicker(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `DatePicker` (an `ObjectFormField` trigger) builds bare; the calendar
+  // opens in the overlay at runtime, so canvas shows the trigger with the
+  // placeholder — the same honest-static convention as the tooltip catalog
+  // builder. The optional `label` renders as a caption above (mirrors the
+  // input builder; `DatePicker` takes no label param).
+  final placeholder = (props['placeholder'] ?? 'Select date') as String;
+  final label = (props['label'] ?? '') as String;
+  final field = shadcn.DatePicker(
+    value: null,
+    onChanged: (_) {},
+    placeholder: Text(placeholder),
+  );
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 6),
+      field,
+    ],
+  );
+}
+
+Widget _buildTimePicker(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented, mirroring the
+  // date picker builder above (trigger + placeholder statically; the clock
+  // opens in the overlay at runtime).
+  final placeholder = (props['placeholder'] ?? 'Select time') as String;
+  final label = (props['label'] ?? '') as String;
+  final field = shadcn.TimePicker(
+    value: null,
+    onChanged: (_) {},
+    placeholder: Text(placeholder),
+  );
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 6),
+      field,
+    ],
+  );
+}
+
+/// Theme-token art for a carousel slide: a tonal container with a centered
+/// glyph plus the slide label. Never network/asset images (same rule as the
+/// card-image art above).
+class _CarouselArt extends StatelessWidget {
+  final int index;
+
+  const _CarouselArt({required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.slideshow,
+              size: 32,
+              color: scheme.onSurfaceVariant,
+            ),
+            const SizedBox(height: 8),
+            Text('Slide ${index + 1}'),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildCarousel(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: three tonal
+  // slides. The real `Carousel` builds bare around `itemBuilder`
+  // (`autoplaySpeed` stays null, so no timers run on canvas); the fixed
+  // height mirrors the scaffold builder's fixed shell (the kit's own preview
+  // pins 200px the same way). The dots below mirror the first page
+  // statically (`DotIndicator` is its own catalog-ready kind).
+  final slides = ((props['slides'] as num?)?.toInt() ?? 3).clamp(1, 5);
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      SizedBox(
+        height: 160,
+        child: shadcn.Carousel(
+          transition: const shadcn.CarouselTransition.sliding(),
+          itemCount: slides,
+          itemBuilder: (context, index) => _CarouselArt(index: index),
+        ),
+      ),
+      const SizedBox(height: 8),
+      shadcn.DotIndicator(index: 0, length: slides),
+    ],
+  );
+}
+
+Widget _buildTree(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`display/tree/preview.dart`: Design{Research,
+  // Wireframes} + Launch, both parents expanded). The real `TreeView` builds
+  // bare around `TreeItem` nodes; `shrinkWrap: true` keeps the inner
+  // `ListView` bounded (root canvas columns are unbounded, so the default
+  // false would crash — the fixed-shell precedent in the other direction).
+  final node1 = (props['node1'] ?? 'Design') as String;
+  final child1 = (props['child1'] ?? 'Research') as String;
+  final child2 = (props['child2'] ?? 'Wireframes') as String;
+  final node2 = (props['node2'] ?? 'Launch') as String;
+  return shadcn.TreeView<String>(
+    shrinkWrap: true,
+    nodes: [
+      shadcn.TreeItem(
+        data: node1,
+        expanded: true,
+        children: [
+          shadcn.TreeItem(data: child1),
+          shadcn.TreeItem(data: child2),
+        ],
+      ),
+      shadcn.TreeItem(data: node2),
+    ],
+    builder: (context, item) => Text(item.data),
+  );
+}
+
+Widget _buildTable(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`layout/table/preview.dart`: Name/Role/Status
+  // header plus data rows), trimmed to a header plus two rows. The kit
+  // `Table` is imported directly (the barrel hides `Table`/`TableRow` behind
+  // material's names — see the `table.` import above) and builds bare;
+  // frozen/scroll behavior is runtime-only.
+  final header1 = (props['header1'] ?? 'Name') as String;
+  final header2 = (props['header2'] ?? 'Role') as String;
+  final name1 = (props['name1'] ?? 'Avery') as String;
+  final role1 = (props['role1'] ?? 'Designer') as String;
+  final name2 = (props['name2'] ?? 'Jordan') as String;
+  final role2 = (props['role2'] ?? 'Engineer') as String;
+  return table.Table(
+    rows: [
+      table.TableHeader(
+        cells: [
+          table.TableCell(child: Text(header1)),
+          table.TableCell(child: Text(header2)),
+        ],
+      ),
+      table.TableRow(
+        cells: [
+          table.TableCell(child: Text(name1)),
+          table.TableCell(child: Text(role1)),
+        ],
+      ),
+      table.TableRow(
+        cells: [
+          table.TableCell(child: Text(name2)),
+          table.TableCell(child: Text(role2)),
+        ],
+      ),
+    ],
+  );
+}
+
+Widget _buildForm(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`form/form/preview.dart`: a `FormTableLayout`
+  // row plus a submit button). The real `Form` (qualified: material's `Form`
+  // is also imported here) builds bare with an internal controller;
+  // validation/submission execute at runtime, so the submit button is a
+  // no-op on canvas and the field shows no error state.
+  final label = (props['label'] ?? 'Name') as String;
+  final placeholder = (props['placeholder'] ?? 'Jane Doe') as String;
+  final submitLabel = (props['submitLabel'] ?? 'Submit') as String;
+  return shadcn.Form(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        shadcn.FormTableLayout(
+          rows: [
+            shadcn.FormField<String>(
+              key: const shadcn.FormKey<String>(#name),
+              label: Text(label),
+              child: shadcn.TextField(placeholder: Text(placeholder)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        shadcn.PrimaryButton(
+          onPressed: () {},
+          child: Text(submitLabel),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildFormField(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: an empty
+  // object field showing its placeholder. The real `ObjectFormField` builds
+  // bare (the editor opens in a dialog/popover at runtime); the canvas-level
+  // `value` string renders through `builder` when non-empty (same
+  // empty-means-null convention as the input builder's label). The static
+  // editor content reuses the input builder's `TextField` idiom (never shown
+  // on canvas, but kept theme-true for export fidelity — the hover-card
+  // precedent).
+  final placeholder = (props['placeholder'] ?? 'Select item') as String;
+  final value = (props['value'] ?? '') as String;
+  return shadcn.ObjectFormField<String>(
+    value: value.isEmpty ? null : value,
+    onChanged: (_) {},
+    placeholder: Text(placeholder),
+    builder: (context, selected) => Text(selected),
+    editorBuilder: (context, _) => shadcn.TextField(
+      placeholder: const Text('Search...'),
+    ),
+  );
+}
+
+Widget _buildFormattedInput(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented from the
+  // component's own preview (`form/formatted_input/preview.dart`: an
+  // MM/DD/YYYY date mask). The real `FormattedInput` builds bare around its
+  // `FormattedValue` segments (static separators + editable parts with
+  // placeholders); the optional `label` renders as a caption above (mirrors
+  // the input builder; `FormattedInput` takes no label param).
+  final label = (props['label'] ?? '') as String;
+  final field = shadcn.FormattedInput(
+    onChanged: (_) {},
+    initialValue: shadcn.FormattedValue([
+      shadcn.InputPart.editable(
+        length: 2,
+        width: 40,
+        placeholder: const Text('MM'),
+      ).withValue('01'),
+      shadcn.InputPart.static('/'),
+      shadcn.InputPart.editable(
+        length: 2,
+        width: 40,
+        placeholder: const Text('DD'),
+      ).withValue('02'),
+      shadcn.InputPart.static('/'),
+      shadcn.InputPart.editable(
+        length: 4,
+        width: 60,
+        placeholder: const Text('YYYY'),
+      ).withValue('2021'),
+    ]),
+  );
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 6),
+      field,
+    ],
+  );
+}
+
+Widget _buildValidated(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`form/validated/preview.dart`: a `TextField`
+  // under a required-field validator whose builder shows the error message).
+  // The real `Validated` builds bare (it owns its `Form` internally, so no
+  // ancestor is needed); the kit validates on attach, so canvas shows that
+  // initial error state — subsequent validation executes at runtime only.
+  // The validator is catalog-local: the kit's `NotEmptyValidator` reads its
+  // message from `ShadcnLocalizations` at attach time (null without
+  // delegates — canvas nodes must build bare), so the message rides the
+  // canvas-level `errorText` prop instead (same required-field semantics).
+  final placeholder = (props['placeholder'] ?? 'Name') as String;
+  final errorText = (props['errorText'] ?? 'Required') as String;
+  return shadcn.Validated<String>(
+    validator: _CanvasRequiredValidator(errorText),
+    builder: (context, error, child) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        child!,
+        const SizedBox(height: 6),
+        Text(error is shadcn.InvalidResult ? error.message : errorText),
+      ],
+    ),
+    child: shadcn.TextField(placeholder: Text(placeholder)),
+  );
+}
+
+Widget _buildColorPicker(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: the kit-history
+  // blue (`0xFF2196F3`) with its hex label. The real `ColorPicker` builds
+  // bare; the `RecentColorsScope` ancestor documents the storage precondition
+  // the history panel needs (same ancestor-proof idiom as the menu builder's
+  // `MenuGroupData`). History UI and the eye-dropper stay off
+  // (`showHistoryButton`/`initialShowHistory` false, `enableEyeDropper`
+  // false) — canvas shows the static sliders plus the hex label, and drags
+  // no-op (no `onChanged`).
+  final hex = (props['hex'] ?? '#2196F3') as String;
+  final color = _parseHexColor(hex);
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      shadcn.RecentColorsScope(
+        initialRecentColors: [color],
+        child: shadcn.ColorPicker(
+          value: shadcn.ColorDerivative.fromColor(color),
+          showHistoryButton: false,
+          initialShowHistory: false,
+          enableEyeDropper: false,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(hex),
+    ],
+  );
+}
+
+Widget _buildColorInput(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented, mirroring the
+  // color picker builder (same hex-driven data color). The real `ColorInput`
+  // (an `ObjectFormField` trigger showing the swatch plus the kit's hex
+  // label) builds bare; the picker opens in the overlay at runtime, so
+  // canvas shows the trigger — the same honest-static convention as the
+  // tooltip catalog builder. Eye-dropper and history stay off per the color
+  // brief; the scope guards the history lookup the change path performs.
+  final hex = (props['hex'] ?? '#2196F3') as String;
+  final color = _parseHexColor(hex);
+  return shadcn.RecentColorsScope(
+    initialRecentColors: [color],
+    child: shadcn.ColorInput(
+      value: shadcn.ColorDerivative.fromColor(color),
+      onChanged: (_) {},
+      placeholder: Text(hex),
+      showLabel: true,
+      enableEyeDropper: false,
+      showHistory: false,
+    ),
+  );
+}
+
+/// Local color state for the catalog HSL slider (builders are stateless).
+/// `HSLColorSlider` is controlled (`color` + `onChanged`), so the cell owns
+/// an `HSLColor` exactly like `_StarRatingCell` owns its rating. The swatch
+/// row shows the live color plus its hex label (the color brief's static
+/// swatch + hex, kept in sync while dragging).
+class _HslCell extends StatefulWidget {
+  final String mode;
+
+  const _HslCell({required this.mode});
+
+  @override
+  State<_HslCell> createState() => _HslCellState();
+}
+
+class _HslCellState extends State<_HslCell> {
+  late HSLColor _color = HSLColor.fromColor(const Color(0xFF2196F3));
+
+  @override
+  Widget build(BuildContext context) {
+    final type = switch (widget.mode) {
+      'sat' => shadcn.HSLColorSliderType.sat,
+      'lum' => shadcn.HSLColorSliderType.lum,
+      'alpha' => shadcn.HSLColorSliderType.alpha,
+      _ => shadcn.HSLColorSliderType.hue,
+    };
+    final swatch = _color.toColor();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Fixed height: the slider paints into a fill-positioned `Stack`
+        // (needs bounded height, which root canvas columns do not provide) —
+        // the drawer/scaffold fixed-shell precedent.
+        SizedBox(
+          height: 32,
+          child: shadcn.HSLColorSlider(
+            color: _color,
+            sliderType: type,
+            onChanged: (c) => setState(() => _color = c),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 24, height: 24, color: swatch),
+            const SizedBox(width: 8),
+            Text(_toHexLabel(swatch)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+Widget _buildHsl(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented from the
+  // component's own preview (`form/hsl/preview.dart`: a hue slider plus a
+  // preview swatch). The canvas-level `mode` string maps onto the kit's
+  // `HSLColorSliderType` single-channel members (unknown falls back to hue,
+  // same fallback idiom as the tracker builder).
+  final mode = (props['mode'] ?? 'hue') as String;
+  return _HslCell(mode: mode);
+}
+
+/// Local color state for the catalog HSV slider — mirrors [_HslCell] for the
+/// kit's `HSVColorSlider` (whose value param is named `value`, not `color`).
+class _HsvCell extends StatefulWidget {
+  final String mode;
+
+  const _HsvCell({required this.mode});
+
+  @override
+  State<_HsvCell> createState() => _HsvCellState();
+}
+
+class _HsvCellState extends State<_HsvCell> {
+  late HSVColor _color = HSVColor.fromColor(const Color(0xFF2196F3));
+
+  @override
+  Widget build(BuildContext context) {
+    final type = switch (widget.mode) {
+      'sat' => shadcn.HSVColorSliderType.sat,
+      'val' => shadcn.HSVColorSliderType.val,
+      'alpha' => shadcn.HSVColorSliderType.alpha,
+      _ => shadcn.HSVColorSliderType.hue,
+    };
+    final swatch = _color.toColor();
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Fixed height: same fill-positioned `Stack` constraint as the HSL
+        // slider above — root canvas columns are unbounded.
+        SizedBox(
+          height: 32,
+          child: shadcn.HSVColorSlider(
+            value: _color,
+            sliderType: type,
+            onChanged: (c) => setState(() => _color = c),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(width: 24, height: 24, color: swatch),
+            const SizedBox(width: 8),
+            Text(_toHexLabel(swatch)),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+Widget _buildHsv(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented from the
+  // component's own preview (`form/hsv/preview.dart`: a hue slider plus a
+  // preview swatch), mirroring the HSL builder above.
+  final mode = (props['mode'] ?? 'hue') as String;
+  return _HsvCell(mode: mode);
+}
+
+Widget _buildHistory(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented from the
+  // component's own preview (`form/history/preview.dart`: a
+  // `RecentColorsScope` seeding two colors around a `ColorHistoryGrid` that
+  // reads `ColorHistoryStorage.of`). The grid is all-optional past storage;
+  // the canvas-level `columns` prop wires into `crossAxisCount` (parsed via
+  // `num`, clamped like the tracker builder's segments).
+  final columns = ((props['columns'] as num?)?.toInt() ?? 6).clamp(2, 10);
+  return shadcn.RecentColorsScope(
+    initialRecentColors: const [Color(0xFF2196F3), Color(0xFF9C27B0)],
+    child: Builder(
+      builder: (context) => shadcn.ColorHistoryGrid(
+        storage: shadcn.ColorHistoryStorage.of(context),
+        onColorPicked: (_) {},
+        crossAxisCount: columns,
+      ),
+    ),
+  );
+}
+
+/// Local controller ownership for the catalog feature carousel (builders are
+/// stateless). Mirrors the kit's own preview items, minus autoplay: the
+/// controller is created with `autoPlay: false` so no timers run on canvas
+/// (the carousel renders its first page statically), and disposed with the
+/// cell — the stepper-cell precedent.
+class _FeatureCarouselCell extends StatefulWidget {
+  final String title1;
+  final String description1;
+  final String title2;
+  final String description2;
+
+  const _FeatureCarouselCell({
+    required this.title1,
+    required this.description1,
+    required this.title2,
+    required this.description2,
+  });
+
+  @override
+  State<_FeatureCarouselCell> createState() => _FeatureCarouselCellState();
+}
+
+class _FeatureCarouselCellState extends State<_FeatureCarouselCell> {
+  late final shadcn.FeatureCarouselController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = shadcn.FeatureCarouselController(
+      autoPlay: false,
+      showCta: false,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Item data (icons + accent colors) mirrors the component's own preview
+    // (`display/feature_carousel/preview.dart`); the explicit width keeps
+    // the 420px theme default narrow-safe on canvas.
+    return shadcn.FeatureCardCarousel(
+      controller: _controller,
+      width: 320,
+      items: [
+        shadcn.FeatureCarouselItem(
+          title: widget.title1,
+          description: widget.description1,
+          icon: Icons.auto_awesome,
+          accentColor: const Color(0xFF7EA3FF),
+        ),
+        shadcn.FeatureCarouselItem(
+          title: widget.title2,
+          description: widget.description2,
+          icon: Icons.palette,
+          accentColor: const Color(0xFF9B87FF),
+        ),
+      ],
+    );
+  }
+}
+
+Widget _buildFeatureCarousel(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two feature
+  // items (title + description each). Despite the "(WIP)" manifest tag, the
+  // kit API is usable: `FeatureCardCarousel` self-sizes from its theme
+  // (height falls back to `carouselHeight`), so it builds bare with no
+  // overlay, network, or asset dependencies.
+  final title1 = (props['title1'] ?? 'Palette Selector') as String;
+  final description1 =
+      (props['description1'] ?? 'Pick a palette to refine results.') as String;
+  final title2 = (props['title2'] ?? 'Style Presets') as String;
+  final description2 =
+      (props['description2'] ?? 'Choose a curated style preset.') as String;
+  return _FeatureCarouselCell(
+    title1: title1,
+    description1: description1,
+    title2: title2,
+    description2: description2,
+  );
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -2127,6 +2794,142 @@ final List<CatalogEntry> kCatalog = [
         'General-purpose single and range slider engine with snapping and pluggable builders.',
     defaults: const {'value': 0.6},
     build: _buildSlider,
+  ),
+  // Track P additions (2026-09-05): the hardest kinds — pickers (calendar,
+  // date/time, carousel, color), grids (tree, table), and form/color shells.
+  // Labels mirror `components.json` descriptions; defaults are invented and
+  // documented per builder above. Only bool/string/num/enum prop types
+  // already established by the seed kinds.
+  CatalogEntry(
+    kind: 'input_otp',
+    label:
+        'Fixed-length OTP input field with clipboard integration, paste handling, and focus management.',
+    defaults: const {'length': 6},
+    build: _buildInputOtp,
+  ),
+  CatalogEntry(
+    kind: 'calendar',
+    label:
+        'Date picker and calendar widgets for single, range, and multi selection.',
+    defaults: const {'mode': 'single'},
+    build: _buildCalendar,
+  ),
+  CatalogEntry(
+    kind: 'date_picker',
+    label: 'Popover/dialog calendar for single-date and range selection.',
+    defaults: const {'placeholder': 'Select date', 'label': ''},
+    build: _buildDatePicker,
+  ),
+  CatalogEntry(
+    kind: 'time_picker',
+    label: 'Popover/dialog picker for time and duration values.',
+    defaults: const {'placeholder': 'Select time', 'label': ''},
+    build: _buildTimePicker,
+  ),
+  CatalogEntry(
+    kind: 'carousel',
+    label:
+        'Interactive carousel with sliding/fading transitions and autoplay controls.',
+    defaults: const {'slides': 3},
+    build: _buildCarousel,
+  ),
+  CatalogEntry(
+    kind: 'tree',
+    label: 'Hierarchical tree view with expandable, selectable nodes.',
+    defaults: const {
+      'node1': 'Design',
+      'child1': 'Research',
+      'child2': 'Wireframes',
+      'node2': 'Launch',
+    },
+    build: _buildTree,
+  ),
+  CatalogEntry(
+    kind: 'table',
+    label: 'Resizable table layout with headers, footers, and frozen cells.',
+    defaults: const {
+      'header1': 'Name',
+      'header2': 'Role',
+      'name1': 'Avery',
+      'role1': 'Designer',
+      'name2': 'Jordan',
+      'role2': 'Engineer',
+    },
+    build: _buildTable,
+  ),
+  CatalogEntry(
+    kind: 'form',
+    label: 'Composable form state, validation, and submit helpers.',
+    defaults: const {
+      'label': 'Name',
+      'placeholder': 'Jane Doe',
+      'submitLabel': 'Submit',
+    },
+    build: _buildForm,
+  ),
+  CatalogEntry(
+    kind: 'form_field',
+    label: 'Modal or popover editor field for complex objects.',
+    defaults: const {'placeholder': 'Select item', 'value': ''},
+    build: _buildFormField,
+  ),
+  CatalogEntry(
+    kind: 'formatted_input',
+    label: 'Low-level formatted-field helpers that sync multiple InputPart segments.',
+    defaults: const {'label': ''},
+    build: _buildFormattedInput,
+  ),
+  CatalogEntry(
+    kind: 'validated',
+    label: 'Validation wrapper that exposes form error state.',
+    defaults: const {'placeholder': 'Name', 'errorText': 'Required'},
+    build: _buildValidated,
+  ),
+  CatalogEntry(
+    kind: 'color_picker',
+    label:
+        'HSV/HSL/HEX color picker with popovers, eye dropper, and history controls.',
+    defaults: const {'hex': '#2196F3'},
+    build: _buildColorPicker,
+  ),
+  CatalogEntry(
+    kind: 'color_input',
+    label:
+        'Popover/dialog color selector that integrates the picker, history, and eye-dropper tools.',
+    defaults: const {'hex': '#2196F3'},
+    build: _buildColorInput,
+  ),
+  CatalogEntry(
+    kind: 'hsl',
+    label:
+        'Gradient slider that controls hue, saturation, lightness, or alpha for HSL colors.',
+    defaults: const {'mode': 'hue'},
+    build: _buildHsl,
+  ),
+  CatalogEntry(
+    kind: 'hsv',
+    label:
+        'Gradient slider for HSV color component control (hue, saturation, value, alpha).',
+    defaults: const {'mode': 'hue'},
+    build: _buildHsv,
+  ),
+  CatalogEntry(
+    kind: 'history',
+    label: 'Grid + storage helpers that track recently used colors for reuse.',
+    defaults: const {'columns': 6},
+    build: _buildHistory,
+  ),
+  CatalogEntry(
+    kind: 'feature_carousel',
+    label:
+        'Animated feature card carousel with autoplay, swipe, and CTA support. (WIP)',
+    defaults: const {
+      'title1': 'Palette Selector',
+      'description1': 'Pick a palette to refine results.',
+      'title2': 'Style Presets',
+      'description2': 'Choose a curated style preset.',
+    },
+    build: _buildFeatureCarousel,
   ),
 ];
 

@@ -22,8 +22,19 @@
 //   shape [CanvasStore.addRow] creates.
 // - One extra `Tier demo` screen exercising responsive fields: four nodes
 //   with hiddenOn {mobile} / {tablet} / {desktop} / {} plus one node with
-//   breakpointValues overrides, so per-device-width screenshots show
-//   filtering live.
+//   breakpointValues overrides. It previews at tablet width (device
+//   'tablet', 768) so per-device-width screenshots show filtering live
+//   (the tablet-hidden node drops out).
+// - One `Showcase` screen demonstrating a realistic mini-app: a scaffold
+//   node with app-bar title plus card/basic/badge content nodes, and the
+//   out leg of the tap chain Showcase -> Display -> back to Showcase (a
+//   button routing to the Display section screen). The return leg is one
+//   additive footer node on the Display screen routing back to Showcase,
+//   appended below the last section row so existing rows keep their exact
+//   positions. Together with the existing Controls <-> Display pair this
+//   is 4 tap actions total, so preview navigation across Showcase,
+//   Display, and Controls is screenshottable. Only 6 new nodes, keeping
+//   screenshots readable.
 // - Two tap actions between the Controls screen (button -> Display) and
 //   back (Display's first item -> Controls), so preview navigation is
 //   screenshottable. Only one `button` kind exists in the catalog, so the
@@ -31,22 +42,37 @@
 //   with an action — see preview_player.dart).
 // - Theme mirrors [CanvasStore.emptyDoc]: clean-slate dark, no chrome
 //   override. Screens use bg 'surface' with device null (phone default),
-//   except the Display screen which uses device 'tablet' to demo
-//   per-screen device mode.
+//   except the Display and Tier demo screens which use device 'tablet' to
+//   demo per-screen device mode.
 //
 // Self-validation (no checked-in JSON, no test file — see below): the
 // script validates refs, writes the file, reads it back through
 // ScreenDoc.fromJson, and asserts equal screens/nodes/items/actions
-// counts, globally unique ids, every catalog kind present, and the exact
-// tier/action wiring. Any violation fails non-zero. A test file was
-// deliberately skipped: tool/ scripts run under plain `dart run` outside
-// the flutter_test harness, and asserting on a checked-in JSON snapshot
-// would rot; the script's own round-trip + refs + coverage checks are the
-// verification, run on every seed.
+// counts, globally unique ids, every catalog kind present, the exact
+// tier/action wiring, the Showcase screen shape plus both legs of its tap
+// chain, that every non-null device id is within the legal set, and the
+// expected totals (10 screens, 4 actions). Any violation fails non-zero.
+// A test file was deliberately skipped: tool/ scripts run under plain
+// `dart run` outside the flutter_test harness, and asserting on a
+// checked-in JSON snapshot would rot; the script's own round-trip + refs
+// + coverage checks are the verification, run on every seed.
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:canvas_core/canvas_core.dart';
+
+/// Legal per-screen device ids.
+///
+/// Mirrors `kScreenDeviceIds` in lib/canvas/canvas_store.dart (which mirrors
+/// the `PreviewDeviceSpec` ids in lib/ui/device_picker.dart): null means the
+/// phone default. The seed writes raw JSON, so any non-null device must be
+/// in this set to round-trip through `CanvasScreen.fromJson` exactly.
+const _legalDeviceIds = <String>{
+  'phone',
+  'tablet',
+  'desktop-fluid',
+  'desktop-wide',
+};
 
 /// Palette sections in display order.
 ///
@@ -333,9 +359,11 @@ ScreenDoc buildFullPaletteDoc() {
   final screens = <CanvasScreen>[];
   final nodes = <CanvasNode>[];
 
-  // Screen ids are positional: s1..s8 follow _sectionOrder, s9 is Tier demo.
+  // Screen ids are positional: s1..s8 follow _sectionOrder, s9 is Tier
+  // demo, s10 is Showcase.
   String screenIdForSection(int index) => 's${index + 1}';
   const tierScreenId = 's9';
+  const showcaseScreenId = 's10';
   // Nav pair: Controls button -> Display, Display's first item -> Controls.
   final displayScreenId =
       screenIdForSection(_sectionOrder.indexOf('Display'));
@@ -403,6 +431,8 @@ ScreenDoc buildFullPaletteDoc() {
   }
 
   // Tier demo screen: hiddenOn variants plus one breakpointValues node.
+  // Device 'tablet' (768 wide) so the tablet-hidden node filters live in
+  // per-screen device screenshots.
   screens.add(
     const CanvasScreen(
       id: tierScreenId,
@@ -410,6 +440,7 @@ ScreenDoc buildFullPaletteDoc() {
       x: 8 * 420.0,
       y: 0.0,
       bg: 'surface',
+      device: 'tablet',
     ),
   );
   Map<String, dynamic> labeled(String kind, String key, String value) {
@@ -488,6 +519,109 @@ ScreenDoc buildFullPaletteDoc() {
           id: _nextId(),
           kind: 'button',
           props: labeled('button', 'label', 'Responsive CTA'),
+        ),
+      ],
+    ),
+  ]);
+
+  // Showcase return leg: one additive footer node on the Display screen
+  // routing back to Showcase, closing the tap chain
+  // Showcase -> Display -> Showcase. Appended below the last section row
+  // so every existing row keeps its exact position (screenshots stay
+  // comparable); only this footer row is new on this screen.
+  nodes.add(
+    CanvasNode(
+      id: _nextId(),
+      screenId: displayScreenId,
+      x: 0.0,
+      y: _sectionKinds['Display']!.length * 48.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'clickable',
+          props: labeled('clickable', 'label', 'Back to Showcase'),
+          action: NodeAction(to: showcaseScreenId, transition: 'fade'),
+        ),
+      ],
+    ),
+  );
+
+  // Showcase screen: a realistic mini-app (scaffold with app-bar title +
+  // card/basic/badge content) with the out leg of the Showcase -> Display
+  // -> Showcase tap chain on its button.
+  screens.add(
+    const CanvasScreen(
+      id: showcaseScreenId,
+      name: 'Showcase',
+      x: 9 * 420.0,
+      y: 0.0,
+      bg: 'surface',
+    ),
+  );
+  nodes.addAll([
+    CanvasNode(
+      id: _nextId(),
+      screenId: showcaseScreenId,
+      x: 0.0,
+      y: 0.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'scaffold',
+          props: labeled('scaffold', 'title', 'Showcase'),
+        ),
+      ],
+    ),
+    CanvasNode(
+      id: _nextId(),
+      screenId: showcaseScreenId,
+      x: 0.0,
+      y: 48.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'card',
+          props: _dropProps('card'),
+        ),
+      ],
+    ),
+    CanvasNode(
+      id: _nextId(),
+      screenId: showcaseScreenId,
+      x: 0.0,
+      y: 96.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'basic',
+          props: _dropProps('basic'),
+        ),
+      ],
+    ),
+    CanvasNode(
+      id: _nextId(),
+      screenId: showcaseScreenId,
+      x: 0.0,
+      y: 144.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'badge',
+          props: _dropProps('badge'),
+        ),
+      ],
+    ),
+    CanvasNode(
+      id: _nextId(),
+      screenId: showcaseScreenId,
+      x: 0.0,
+      y: 192.0,
+      items: [
+        CanvasItem(
+          id: _nextId(),
+          kind: 'button',
+          props: labeled('button', 'label', 'Open Display section'),
+          action: NodeAction(to: displayScreenId, transition: 'slide'),
         ),
       ],
     ),
@@ -636,8 +770,64 @@ void main(List<String> args) {
   if (!tierNodes.any((node) => node.breakpointValues.isNotEmpty)) {
     _fail('Tier demo has no breakpointValues node');
   }
-  if (_actionCount(back) != 2) {
-    _fail('expected 2 tap actions, found ${_actionCount(back)}');
+  final tierScreen =
+      back.screens.singleWhere((screen) => screen.id == 's9');
+  if (tierScreen.device != 'tablet') {
+    _fail('Tier demo device should be tablet, found ${tierScreen.device}');
+  }
+  if (_actionCount(back) != 4) {
+    _fail('expected 4 tap actions, found ${_actionCount(back)}');
+  }
+
+  // Every non-null device id must be a known PreviewDeviceSpec id (the
+  // seed writes raw JSON, so it must match fromJson exactly).
+  for (final screen in back.screens) {
+    if (screen.device != null && !_legalDeviceIds.contains(screen.device)) {
+      _fail('screen ${screen.id} has illegal device ${screen.device}');
+    }
+  }
+
+  // Showcase screen shape: 5 nodes (scaffold + card/basic/badge content +
+  // the chain out-leg button), all on s10.
+  if (back.screens.length != 10) {
+    _fail('expected 10 screens, found ${back.screens.length}');
+  }
+  final showcaseScreen =
+      back.screens.singleWhere((screen) => screen.id == 's10');
+  if (showcaseScreen.name != 'Showcase') {
+    _fail('s10 should be Showcase, found ${showcaseScreen.name}');
+  }
+  final showcaseNodes = [
+    for (final node in back.nodes)
+      if (node.screenId == 's10') node,
+  ];
+  if (showcaseNodes.length != 5) {
+    _fail('expected 5 Showcase nodes, found ${showcaseNodes.length}');
+  }
+  final showcaseKinds = {
+    for (final node in showcaseNodes)
+      for (final item in node.items) item.kind,
+  };
+  if (!showcaseKinds
+      .containsAll({'scaffold', 'card', 'basic', 'badge', 'button'})) {
+    _fail('Showcase kinds incomplete: ${showcaseKinds.join(', ')}');
+  }
+
+  // Showcase tap chain: out leg Showcase -> Display plus return leg
+  // Display -> Showcase. (validateRefs above already proves both targets
+  // resolve; this asserts the chain direction.)
+  final displayId =
+      back.screens.singleWhere((screen) => screen.name == 'Display').id;
+  bool hasAction(String from, String to) => back.nodes.any(
+        (node) =>
+            node.screenId == from &&
+            node.items.any((item) => item.action?.to == to),
+      );
+  if (!hasAction('s10', displayId)) {
+    _fail('Showcase out leg (s10 -> $displayId) missing');
+  }
+  if (!hasAction(displayId, 's10')) {
+    _fail('Showcase return leg ($displayId -> s10) missing');
   }
 
   stdout.writeln(

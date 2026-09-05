@@ -66,6 +66,24 @@ const _expectedKinds = {
   'tab_pane',
   'stepper',
   'slider',
+  // Track P additions (2026-09-05).
+  'input_otp',
+  'calendar',
+  'date_picker',
+  'time_picker',
+  'carousel',
+  'tree',
+  'table',
+  'form',
+  'form_field',
+  'formatted_input',
+  'validated',
+  'color_picker',
+  'color_input',
+  'hsl',
+  'hsv',
+  'history',
+  'feature_carousel',
 };
 
 (CanvasStore, String, String) _storeWithButton() {
@@ -108,7 +126,7 @@ void main() {
       }
     });
 
-    test('all 51 catalog kinds plus the row container are covered', () {
+    test('all 68 catalog kinds plus the row container are covered', () {
       expect(Set.of(kCatalog.map((e) => e.kind)), _expectedKinds);
       expect(Set.of(kPropSchemas.keys), containsAll(_expectedKinds));
       expect(kPropSchemas.containsKey('row'), isTrue);
