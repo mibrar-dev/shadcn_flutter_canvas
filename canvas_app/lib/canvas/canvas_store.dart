@@ -12,6 +12,16 @@ import 'dart:convert';
 import 'persistence.dart';
 import 'package:canvas_core/canvas_core.dart';
 
+/// Known per-screen device ids (mirror the `PreviewDeviceSpec` ids in
+/// `lib/ui/device_picker.dart`; duplicated as plain strings because
+/// `lib/canvas/` must stay Flutter-free).
+const Set<String> kScreenDeviceIds = {
+  'phone',
+  'tablet',
+  'desktop-fluid',
+  'desktop-wide',
+};
+
 /// Minimal listener registry mirroring Flutter's `ChangeNotifier` API.
 class ChangeNotifier {
   final List<void Function()> _listeners = [];
@@ -383,7 +393,8 @@ class CanvasStore extends ChangeNotifier {
   }
 
   /// Renames a screen. Throws [StateError] when [id] is unknown.
-  /// Undoable and autosaved like every other mutation.
+  /// Undoable and autosaved like every other mutation. Preserves the
+  /// screen's [CanvasScreen.device].
   void renameScreen(String id, String name) {
     final index = _doc.screens.indexWhere((s) => s.id == id);
     if (index < 0) throw StateError('Unknown screen: $id');
@@ -395,6 +406,38 @@ class CanvasStore extends ChangeNotifier {
       x: current.x,
       y: current.y,
       bg: current.bg,
+      device: current.device,
+    );
+    _commit(ScreenDoc(
+      screens: screens,
+      nodes: List.of(_doc.nodes),
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+  }
+
+  /// Sets a screen's preview device ([CanvasScreen.device], a member of
+  /// [kScreenDeviceIds] or null for the phone default). Throws
+  /// [ArgumentError] on an unknown non-null [device]. An unknown [screenId]
+  /// or an unchanged value is a no-op without committing (matching
+  /// [deleteNode], so history stays clean). Otherwise undoable and autosaved
+  /// like every other mutation; all other screen fields are preserved.
+  void setScreenDevice(String screenId, String? device) {
+    if (device != null && !kScreenDeviceIds.contains(device)) {
+      throw ArgumentError('Unknown device: $device');
+    }
+    final index = _doc.screens.indexWhere((s) => s.id == screenId);
+    if (index < 0) return;
+    if (_doc.screens[index].device == device) return;
+    final screens = List.of(_doc.screens);
+    final current = screens[index];
+    screens[index] = CanvasScreen(
+      id: current.id,
+      name: current.name,
+      x: current.x,
+      y: current.y,
+      bg: current.bg,
+      device: device,
     );
     _commit(ScreenDoc(
       screens: screens,

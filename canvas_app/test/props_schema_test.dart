@@ -32,6 +32,24 @@ const _expectedKinds = {
   'tooltip',
   'toast',
   'drawer',
+  // Track J additions (2026-09-05).
+  'basic',
+  'card_image',
+  'scaffold',
+  'collapsible',
+  'steps',
+  'timeline',
+  'outlined_container',
+  'hidden',
+  'keyboard_shortcut',
+  'tracker',
+  'chat',
+  'selectable',
+  'star_rating',
+  'clickable',
+  'scrollbar',
+  'pagination',
+  'alert_dialog',
 };
 
 (CanvasStore, String, String) _storeWithButton() {
@@ -74,27 +92,39 @@ void main() {
       }
     });
 
-    test('all 19 catalog kinds plus the row container are covered', () {
+    test('all 36 catalog kinds plus the row container are covered', () {
       expect(Set.of(kCatalog.map((e) => e.kind)), _expectedKinds);
       expect(Set.of(kPropSchemas.keys), containsAll(_expectedKinds));
       expect(kPropSchemas.containsKey('row'), isTrue);
       expect(kPropSchemas.length, _expectedKinds.length + 1);
     });
 
-    test('schema defaults mirror catalog defaults in both directions', () {
+    test('schema covers catalog defaults; extras resolve via spec defaults', () {
       for (final entry in kCatalog) {
         final specs = kPropSchemas[entry.kind]!;
-        final specNames = {for (final s in specs) s.name};
-        expect(
-          specNames,
-          equals(entry.defaults.keys.toSet()),
-          reason: 'schema/catalog key mismatch for kind ${entry.kind}',
-        );
-        for (final spec in specs) {
+        final byName = {for (final s in specs) s.name: s};
+        // Every catalog default key has a spec with a matching default
+        // (subset direction — the schema may carry spec-only extras).
+        for (final key in entry.defaults.keys) {
           expect(
-            entry.defaults[spec.name],
+            byName.containsKey(key),
+            isTrue,
+            reason: 'missing spec for ${entry.kind}.$key',
+          );
+          expect(
+            entry.defaults[key],
+            byName[key]!.defaultValue,
+            reason: 'default mismatch for ${entry.kind}.$key',
+          );
+        }
+        // Spec-only extras (Track I functional/layout props with no catalog
+        // counterpart) still resolve through the spec default.
+        for (final spec in specs) {
+          if (entry.defaults.containsKey(spec.name)) continue;
+          expect(
+            resolveProp(entry.kind, spec.name, {}, entry.defaults),
             spec.defaultValue,
-            reason: 'default mismatch for ${entry.kind}.${spec.name}',
+            reason: 'spec-only ${entry.kind}.${spec.name} does not resolve',
           );
         }
       }
@@ -161,6 +191,24 @@ void main() {
         'Mine',
       );
       expect(resolveProp('button', 'nope', {}), isNull);
+    });
+
+    test('resolveProp falls back to spec defaults without a catalog entry', () {
+      // Spec-only Track I props have no catalog default, so the middle
+      // layer is skipped and the spec default wins.
+      expect(resolveProp('avatar', 'size', {}), 40.0);
+      expect(resolveProp('avatar', 'size', {}, const {}), 40.0);
+      expect(
+        resolveProp(
+          'avatar',
+          'size',
+          {},
+          findEntry('avatar')?.defaults,
+        ),
+        40.0,
+      );
+      expect(resolveProp('drawer', 'position', {}), 'end');
+      expect(resolveProp('toast', 'autoDismiss', {}), isFalse);
     });
 
     test('isPropOverridden fires only on a differing value', () {
@@ -405,6 +453,80 @@ void main() {
     });
   });
 
+  group('Track I spec-only functional props', () {
+    // (kind, prop, spec default, edited sample). Every entry is a functional
+    // or layout constructor param with no catalog default: the inspector
+    // shows the spec default, edits persist via patchItem, and reset clears
+    // via clearItemProps back to the spec default.
+    const trackI = [
+      ('input', 'initialValue', '', 'hello'),
+      ('input', 'readOnly', false, true),
+      ('avatar', 'size', 40.0, 56.0),
+      ('checkbox', 'tristate', false, true),
+      ('divider', 'thickness', 1.0, 2.0),
+      ('tabs', 'expand', false, true),
+      ('select', 'disabled', false, true),
+      ('radio_group', 'disabled', false, true),
+      ('breadcrumb', 'separator', 'arrow', 'slash'),
+      ('toast', 'autoDismiss', false, true),
+      ('drawer', 'position', 'end', 'start'),
+    ];
+
+    test('specs exist with the expected defaults', () {
+      for (final (kind, name, defaultValue, _) in trackI) {
+        final spec = findSpec(kind, name);
+        expect(spec, isNotNull, reason: 'missing spec for $kind.$name');
+        expect(
+          spec!.defaultValue,
+          defaultValue,
+          reason: 'default mismatch for $kind.$name',
+        );
+        expect(
+          findEntry(kind)?.defaults.containsKey(name),
+          isFalse,
+          reason: '$kind.$name unexpectedly gained a catalog default',
+        );
+      }
+    });
+
+    test('spec-only props write through patchItem/clearItemProps', () {
+      for (final (kind, name, defaultValue, sample) in trackI) {
+        final store = CanvasStore();
+        const itemId = 'i1';
+        final nodeId = store.addNode(
+          screenId: 's1',
+          x: 0,
+          y: 0,
+          items: [CanvasItem(id: itemId, kind: kind, props: const {})],
+        );
+        Map<String, dynamic> props() => store.doc.nodes
+            .singleWhere((n) => n.id == nodeId)
+            .items
+            .singleWhere((i) => i.id == itemId)
+            .props;
+
+        // Empty diff resolves to the spec default, nothing overridden.
+        expect(
+          resolveProp(kind, name, props(), findEntry(kind)?.defaults),
+          defaultValue,
+        );
+        expect(isPropOverridden(kind, name, props()), isFalse);
+
+        store.patchItem(nodeId, itemId, props: {name: sample});
+        expect(props()[name], sample);
+        expect(isPropOverridden(kind, name, props()), isTrue);
+
+        store.clearItemProps(nodeId, itemId, {name});
+        expect(props().containsKey(name), isFalse);
+        expect(
+          resolveProp(kind, name, props(), findEntry(kind)?.defaults),
+          defaultValue,
+        );
+        expect(isPropOverridden(kind, name, props()), isFalse);
+      }
+    });
+  });
+
   group('dictated W3 params (landed in working tree)', () {
     // The W2 brief expected these patchNode params to be missing (W3-owned).
     // They have since landed in the working tree (`CanvasNode.mainAxis` /
@@ -478,7 +600,7 @@ void main() {
       );
       await _pump(tester, InspectorPanel(store: store, nodeId: rowId));
       expect(find.text('1 child'), findsOneWidget);
-      expect(find.text('child layout'), findsOneWidget);
+      expect(find.text('Child layout'), findsOneWidget);
       expect(find.text('Default (start)'), findsOneWidget);
       expect(find.text('Default (center)'), findsOneWidget);
 

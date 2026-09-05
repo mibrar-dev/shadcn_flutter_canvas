@@ -22,9 +22,27 @@ void main() {
         'tooltip',
         'toast',
         'drawer',
+        // Track J additions (2026-09-05).
+        'basic',
+        'card_image',
+        'scaffold',
+        'collapsible',
+        'steps',
+        'timeline',
+        'outlined_container',
+        'hidden',
+        'keyboard_shortcut',
+        'tracker',
+        'chat',
+        'selectable',
+        'star_rating',
+        'clickable',
+        'scrollbar',
+        'pagination',
+        'alert_dialog',
       ]),
     );
-    expect(kCatalog, hasLength(19));
+    expect(kCatalog, hasLength(36));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -491,5 +509,91 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'drawer': [
     {'name': 'title', 'type': 'string', 'default': 'Drawer'},
     {'name': 'content', 'type': 'string', 'default': 'Drawer content'},
+  ],
+  // No canvas blocks exist for these seventeen kinds either (same pinned-kit
+  // scan — no `canvas` key on any of the 134 components), so these copies
+  // likewise mirror the invented catalog defaults until real blocks land.
+  // (Track J additions, 2026-09-05.)
+  'basic': [
+    {'name': 'title', 'type': 'string', 'default': 'Title'},
+    {'name': 'subtitle', 'type': 'string', 'default': 'Subtitle'},
+    {'name': 'content', 'type': 'string', 'default': 'Content'},
+    {'name': 'showLeading', 'type': 'bool', 'default': true},
+    {'name': 'showTrailing', 'type': 'bool', 'default': true},
+  ],
+  'card_image': [
+    {'name': 'title', 'type': 'string', 'default': 'Card title'},
+    {'name': 'subtitle', 'type': 'string', 'default': 'Card subtitle'},
+  ],
+  'scaffold': [
+    {'name': 'title', 'type': 'string', 'default': 'My App'},
+    {'name': 'body', 'type': 'string', 'default': 'Welcome'},
+  ],
+  'collapsible': [
+    {'name': 'trigger', 'type': 'string', 'default': 'Show more'},
+    {'name': 'content', 'type': 'string', 'default': 'Hidden details'},
+    {'name': 'expanded', 'type': 'bool', 'default': false},
+  ],
+  'steps': [
+    {'name': 'step1', 'type': 'string', 'default': 'Step 1'},
+    {'name': 'detail1', 'type': 'string', 'default': 'First step details'},
+    {'name': 'step2', 'type': 'string', 'default': 'Step 2'},
+    {'name': 'detail2', 'type': 'string', 'default': 'Second step details'},
+  ],
+  'timeline': [
+    {'name': 'time1', 'type': 'string', 'default': '9:00 AM'},
+    {'name': 'title1', 'type': 'string', 'default': 'Kickoff'},
+    {'name': 'detail1', 'type': 'string', 'default': 'Project kickoff meeting'},
+    {'name': 'time2', 'type': 'string', 'default': '2:00 PM'},
+    {'name': 'title2', 'type': 'string', 'default': 'Review'},
+    {'name': 'detail2', 'type': 'string', 'default': 'Design review session'},
+  ],
+  'outlined_container': [
+    {'name': 'label', 'type': 'string', 'default': 'Outlined'},
+  ],
+  'hidden': [
+    {'name': 'label', 'type': 'string', 'default': 'Hidden content'},
+    {'name': 'hidden', 'type': 'bool', 'default': false},
+  ],
+  'keyboard_shortcut': [
+    {'name': 'keys', 'type': 'string', 'default': 'Ctrl+K'},
+  ],
+  'tracker': [
+    {'name': 'segments', 'type': 'int', 'default': 3},
+    {
+      'name': 'level',
+      'type': 'enum',
+      'enum': ['fine', 'warning', 'critical', 'unknown'],
+      'default': 'fine',
+    },
+  ],
+  'chat': [
+    {'name': 'message', 'type': 'string', 'default': 'Hello!'},
+  ],
+  'selectable': [
+    {'name': 'text', 'type': 'string', 'default': 'Select me'},
+  ],
+  'star_rating': [
+    {'name': 'value', 'type': 'double', 'default': 3.0},
+    {'name': 'max', 'type': 'double', 'default': 5.0},
+  ],
+  'clickable': [
+    {'name': 'label', 'type': 'string', 'default': 'Tap me'},
+  ],
+  'scrollbar': [
+    {'name': 'label', 'type': 'string', 'default': 'Scrollable content'},
+  ],
+  'pagination': [
+    {'name': 'page', 'type': 'int', 'default': 1},
+    {'name': 'totalPages', 'type': 'int', 'default': 5},
+  ],
+  'alert_dialog': [
+    {'name': 'title', 'type': 'string', 'default': 'Are you sure?'},
+    {
+      'name': 'message',
+      'type': 'string',
+      'default': 'This action cannot be undone.',
+    },
+    {'name': 'showActions', 'type': 'bool', 'default': true},
   ],
 };

@@ -130,6 +130,18 @@ class _LayersBodyState extends State<_LayersBody> {
                     color: colors.onSurfaceVariant,
                     icon: const Icon(Icons.edit),
                   ),
+                  IconButton(
+                    tooltip: 'Delete screen',
+                    onPressed: () => _deleteScreen(context, screen),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: _kActionButtonSize,
+                      height: _kActionButtonSize,
+                    ),
+                    iconSize: _kActionIconSize,
+                    color: colors.onSurfaceVariant,
+                    icon: const Icon(Icons.delete_outline),
+                  ),
                 ],
               ),
               const SizedBox(height: EditorMetrics.tileGap),
@@ -203,6 +215,28 @@ class _LayersBodyState extends State<_LayersBody> {
           child: _layerRow(kids[ci], kids.length, ci),
         ),
     ];
+  }
+
+  /// Deletes a screen via [CanvasStore.deleteScreen]. A refusal (dangling
+  /// actions would be left behind) keeps the screen and surfaces the
+  /// blockers in a SnackBar; on success a node selection that lived on the
+  /// removed screen is cleared.
+  void _deleteScreen(BuildContext context, CanvasScreen screen) {
+    final dangling = widget.store.deleteScreen(screen.id);
+    if (dangling.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot delete ${screen.name}: ${dangling.join('; ')}',
+          ),
+        ),
+      );
+      return;
+    }
+    if (widget.selectedNodeId != null &&
+        widget.store.doc.nodes.every((n) => n.id != widget.selectedNodeId)) {
+      widget.onSelectNode(null);
+    }
   }
 
   /// Opens the screen-rename dialog (prefilled; empty Save is a no-op close).

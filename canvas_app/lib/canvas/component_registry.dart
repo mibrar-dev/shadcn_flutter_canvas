@@ -3,7 +3,7 @@
 //
 // One entry per kit component id plus the `row` pseudo-kind.
 // `canvasReady` is true only where a real bare-widget builder
-// exists: the 19 catalog kinds bridge to
+// exists: the 36 catalog kinds bridge to
 // `catalog.buildCatalogWithDefaults` (no duplication), the 10
 // hand-verified EASY kinds below build real widgets, and the
 // `row` pseudo-kind renders its structural Row (rows carry no
@@ -387,8 +387,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Flexible row layout for leading/title/content/trailing sections.",
     section: "Layout & Structure",
     icon: Icons.view_agenda,
-    build: (context) => RegistryPlaceholder(kind: "basic", label: "Flexible row layout for leading/title/content/trailing sections."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("basic"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "card",
@@ -403,16 +403,16 @@ final List<RegistryEntry> kRegistry = [
     label: "Interactive card that pairs an image with title/subtitle content.",
     section: "Layout & Structure",
     icon: Icons.image,
-    build: (context) => RegistryPlaceholder(kind: "card_image", label: "Interactive card that pairs an image with title/subtitle content."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("card_image"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "collapsible",
     label: "Independent sections that toggle their own visibility",
     section: "Layout & Structure",
     icon: Icons.unfold_more,
-    build: (context) => RegistryPlaceholder(kind: "collapsible", label: "Independent sections that toggle their own visibility"),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("collapsible"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "fade_scroll",
@@ -451,8 +451,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Animated visibility helper with axis-aware size control.",
     section: "Layout & Structure",
     icon: Icons.visibility_off,
-    build: (context) => RegistryPlaceholder(kind: "hidden", label: "Animated visibility helper with axis-aware size control."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("hidden"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "media_query",
@@ -467,8 +467,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Animated outlined container with theme-aware borders and blur.",
     section: "Layout & Structure",
     icon: Icons.check_box_outline_blank,
-    build: (context) => RegistryPlaceholder(kind: "outlined_container", label: "Animated outlined container with theme-aware borders and blur."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("outlined_container"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "overflow_marquee",
@@ -491,8 +491,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Layout scaffold with headers, footers, and loading indicators.",
     section: "Layout & Structure",
     icon: Icons.view_quilt,
-    build: (context) => RegistryPlaceholder(kind: "scaffold", label: "Layout scaffold with headers, footers, and loading indicators."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("scaffold"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "scrollable",
@@ -531,8 +531,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Vertical step list with numbered indicators and connectors.",
     section: "Layout & Structure",
     icon: Icons.format_list_numbered,
-    build: (context) => RegistryPlaceholder(kind: "steps", label: "Vertical step list with numbered indicators and connectors."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("steps"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "table",
@@ -547,8 +547,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Vertical timeline for chronological entries.",
     section: "Layout & Structure",
     icon: Icons.timeline,
-    build: (context) => RegistryPlaceholder(kind: "timeline", label: "Vertical timeline for chronological entries."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("timeline"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "window",
@@ -604,8 +604,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Chat bubbles, groups, and tail helpers for conversational layouts.",
     section: "Display",
     icon: Icons.chat_bubble_outline,
-    build: (context) => RegistryPlaceholder(kind: "chat", label: "Chat bubbles, groups, and tail helpers for conversational layouts."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("chat"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "chip",
@@ -684,8 +684,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Displays keyboard shortcuts as styled keycaps.",
     section: "Display",
     icon: Icons.keyboard,
-    build: (context) => RegistryPlaceholder(kind: "keyboard_shortcut", label: "Displays keyboard shortcuts as styled keycaps."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("keyboard_shortcut"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "linear_progress_indicator",
@@ -724,8 +724,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Selectable text with themed cursor and selection behavior.",
     section: "Display",
     icon: Icons.select_all,
-    build: (context) => RegistryPlaceholder(kind: "selectable", label: "Selectable text with themed cursor and selection behavior."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("selectable"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "skeleton",
@@ -764,8 +764,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Horizontal tracker segments with tooltips.",
     section: "Display",
     icon: Icons.track_changes,
-    build: (context) => RegistryPlaceholder(kind: "tracker", label: "Horizontal tracker segments with tooltips."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("tracker"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "tree",
@@ -997,8 +997,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Interactive star rating input with theming support.",
     section: "Forms & Inputs",
     icon: Icons.star,
-    build: (context) => RegistryPlaceholder(kind: "star_rating", label: "Interactive star rating input with theming support."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("star_rating"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "switch",
@@ -1054,8 +1054,8 @@ final List<RegistryEntry> kRegistry = [
     label: "State-aware gesture surface with hover, focus, and press handling.",
     section: "Controls",
     icon: Icons.touch_app,
-    build: (context) => RegistryPlaceholder(kind: "clickable", label: "State-aware gesture surface with hover, focus, and press handling."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("clickable"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "command",
@@ -1086,8 +1086,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Themeable scrollbar wrapper built on RawScrollbar.",
     section: "Controls",
     icon: Icons.swap_vert,
-    build: (context) => RegistryPlaceholder(kind: "scrollbar", label: "Themeable scrollbar wrapper built on RawScrollbar."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("scrollbar"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "scrollview",
@@ -1127,8 +1127,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Page navigation controls with skip, previous/next, and ellipsis handling.",
     section: "Navigation",
     icon: Icons.last_page,
-    build: (context) => RegistryPlaceholder(kind: "pagination", label: "Page navigation controls with skip, previous/next, and ellipsis handling."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("pagination"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "stepper",
@@ -1192,8 +1192,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Modal alert dialog with customizable header, content, and actions.",
     section: "Overlays",
     icon: Icons.error_outline,
-    build: (context) => RegistryPlaceholder(kind: "alert_dialog", label: "Modal alert dialog with customizable header, content, and actions."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("alert_dialog"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "context_menu",

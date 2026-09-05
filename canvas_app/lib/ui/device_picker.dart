@@ -122,6 +122,16 @@ PreviewDeviceSpec resolveDevice(
   return base._copyWith(width: height, height: base.width);
 }
 
+/// Resolves a per-screen device id (as stored on `CanvasScreen.device`) to
+/// its preset. Null (the phone default) and unknown stored ids fall back to
+/// phone so old or foreign docs never crash layout.
+PreviewDeviceSpec specForScreenDevice(String? id) {
+  for (final device in kPreviewDevices) {
+    if (device.id == id) return device;
+  }
+  return kPreviewDevicePhone;
+}
+
 /// Segmented device strip + landscape toggle for the preview top bar.
 ///
 /// Icons/tooltips intentionally keep `Icons.smartphone` (phone) and

@@ -46,6 +46,25 @@ import 'package:canvas_app/ui/property_editors.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 
+/// Inspector vertical rhythm: every intra-card gap and row separation is one
+/// [_kInspectorGap]. NOTE: [EditorMetrics] carries no 8px token (its steps
+/// are 3/4/6/12) and that file is owned by another batch, so the rhythm
+/// lives here as a single named constant rather than scattered literals.
+/// Outer card padding and inter-card separation reuse
+/// [EditorMetrics.panelInset].
+const double _kInspectorGap = 8.0;
+
+/// Fixed width of the row-gap stepper readout (fits two digits plus padding;
+/// mirrors the zoom readout role — see [EditorMetrics.zoomLabelWidth]).
+const double _kGapValueWidth = 48.0;
+
+/// Display title for a spec [group] id (`content` → `Content`). Group ids
+/// stay lowercase in [PropSpec]; only the header paint capitalizes.
+String _groupTitle(String group) {
+  if (group.isEmpty) return group;
+  return group[0].toUpperCase() + group.substring(1);
+}
+
 /// One editable prop (pre-W2 shape; legacy compatibility shim).
 ///
 /// Kept for source compatibility (`inspector_row_test.dart` reads
@@ -248,15 +267,15 @@ class _InspectorPanelState extends State<InspectorPanel> {
         ? 'hidden on: none (always visible)'
         : 'hidden on: ${sorted.join(', ')}';
     return shadcn.Card(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Visibility', style: EditorType.sectionHeader),
-          const SizedBox(height: 8),
+          const SizedBox(height: _kInspectorGap),
           for (final tier in const ['mobile', 'tablet', 'desktop'])
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: _kInspectorGap),
               child: Row(
                 children: [
                   Expanded(
@@ -295,6 +314,42 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
+  /// Shared empty state: centered icon + title + hint. Used for the
+  /// no-selection hint and for kinds with zero editable specs.
+  Widget _emptyState({
+    required IconData icon,
+    required String title,
+    required String hint,
+  }) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(EditorMetrics.panelInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: EditorTheme.of(context).disabled),
+            const SizedBox(height: _kInspectorGap),
+            Text(
+              title,
+              style: EditorType.sectionHeader.copyWith(
+                color: EditorTheme.of(context).onSurface,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: _kInspectorGap),
+            Text(
+              hint,
+              style: EditorType.tileLabel.copyWith(
+                color: EditorTheme.of(context).onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -304,37 +359,80 @@ class _InspectorPanelState extends State<InspectorPanel> {
         if (item == null) {
           final row = _selectedRow(widget.store.doc);
           if (row != null) return _rowCard(row);
-          return const Center(child: Text('Select an item to edit its props'));
+          return _emptyState(
+            icon: Icons.tune,
+            title: 'Select an item to edit its props',
+            hint: 'Click a component on the canvas to edit it.',
+          );
         }
         final schema = kPropSchemas[item.kind];
-        if (schema == null) {
-          return Center(child: Text('No editable props for kind ${item.kind}'));
+        if (schema == null || schema.isEmpty) {
+          final node = _selectedNode(widget.store.doc);
+          return ListView(
+            padding: const EdgeInsets.all(EditorMetrics.panelInset),
+            shrinkWrap: true,
+            children: [
+              shadcn.Card(
+                padding: const EdgeInsets.all(EditorMetrics.panelInset),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        shadcn.PrimaryBadge(child: Text(item.kind)),
+                        const SizedBox(width: _kInspectorGap),
+                        Expanded(child: Text(item.id)),
+                      ],
+                    ),
+                    const SizedBox(height: _kInspectorGap),
+                    Text(
+                      'No editable properties',
+                      style: EditorType.sectionHeader.copyWith(
+                        color: EditorTheme.of(context).onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: _kInspectorGap),
+                    Text(
+                      'Kind “${item.kind}” has no editable props yet.',
+                      style: EditorType.tileLabel.copyWith(
+                        color: EditorTheme.of(context).onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (node != null) ...[
+                const SizedBox(height: EditorMetrics.panelInset),
+                _visibilityCard(node),
+              ],
+            ],
+          );
         }
         final kindDefaults = findEntry(item.kind)?.defaults;
         final node = _selectedNode(widget.store.doc);
         return ListView(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(EditorMetrics.panelInset),
           shrinkWrap: true,
           children: [
             shadcn.Card(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(EditorMetrics.panelInset),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       shadcn.PrimaryBadge(child: Text(item.kind)),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: _kInspectorGap),
                       Expanded(child: Text(item.id)),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: _kInspectorGap),
                   ..._rows(item, schema, kindDefaults),
                 ],
               ),
             ),
             if (node != null) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: EditorMetrics.panelInset),
               _visibilityCard(node),
             ],
           ],
@@ -357,28 +455,31 @@ class _InspectorPanelState extends State<InspectorPanel> {
     final gapMax = gapSpec?.max ?? 32.0;
     final gapStep = gapSpec?.step ?? 4.0;
     return ListView(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
       shrinkWrap: true,
       children: [
         shadcn.Card(
-          padding: const EdgeInsets.all(12),
+          padding: const EdgeInsets.all(EditorMetrics.panelInset),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   shadcn.PrimaryBadge(child: Text('row')),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: _kInspectorGap),
                   Expanded(child: Text(node.id)),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: _kInspectorGap),
               Text(
                 '${children.length} ${children.length == 1 ? 'child' : 'children'}',
               ),
               const Padding(
-                padding: EdgeInsets.only(top: 8, bottom: 4),
-                child: Text('layout', style: EditorType.sectionHeader),
+                padding: EdgeInsets.only(
+                  top: _kInspectorGap,
+                  bottom: _kInspectorGap,
+                ),
+                child: Text('Layout', style: EditorType.sectionHeader),
               ),
               Row(
                 children: [
@@ -398,7 +499,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     child: const Text('−'),
                   ),
                   SizedBox(
-                    width: 48,
+                    width: _kGapValueWidth,
                     child: Text(
                       node.gap.toInt().toString(),
                       textAlign: TextAlign.center,
@@ -418,7 +519,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: _kInspectorGap),
               _containerSelect(
                 name: 'mainAxis',
                 value: node.mainAxis,
@@ -426,7 +527,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 onChanged: (v) =>
                     widget.store.patchNode(node.id, mainAxis: v),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: _kInspectorGap),
               _containerSelect(
                 name: 'crossAxis',
                 value: node.crossAxis,
@@ -435,25 +536,28 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     widget.store.patchNode(node.id, crossAxis: v),
               ),
               if (children.isNotEmpty) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: _kInspectorGap),
                 const Padding(
-                  padding: EdgeInsets.only(top: 8, bottom: 4),
+                  padding: EdgeInsets.only(
+                    top: _kInspectorGap,
+                    bottom: _kInspectorGap,
+                  ),
                   child: Text(
-                    'child layout',
+                    'Child layout',
                     style: EditorType.sectionHeader,
                   ),
                 ),
                 for (final child in children) ...[
                   _childFlexEditor(child),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: _kInspectorGap),
                 ],
               ],
-              const SizedBox(height: 8),
+              const SizedBox(height: _kInspectorGap),
               const Text('Children are arranged on the canvas and in Layers.'),
             ],
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: EditorMetrics.panelInset),
         _visibilityCard(node),
       ],
     );
@@ -492,7 +596,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(child.id, style: EditorType.tileLabel),
-        const SizedBox(height: 4),
+        const SizedBox(height: _kInspectorGap),
         PropSelectEditor(
           value: child.expand,
           options: kExpandOptions,
@@ -501,7 +605,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             if (v != null) widget.store.patchNode(child.id, expand: v);
           },
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: _kInspectorGap),
         PropNumberEditor(
           value: (child.flex ?? 1).toDouble(),
           min: 0,
@@ -526,14 +630,19 @@ class _InspectorPanelState extends State<InspectorPanel> {
         lastGroup = spec.group;
         rows.add(
           Padding(
-            padding: const EdgeInsets.only(top: 8, bottom: 4),
-            child: Text(spec.group, style: EditorType.sectionHeader),
+            // The first header sits directly under the badge row (no top
+            // inset); later headers separate from the previous editor.
+            padding: EdgeInsets.only(
+              top: rows.isEmpty ? 0 : _kInspectorGap,
+              bottom: _kInspectorGap,
+            ),
+            child: Text(_groupTitle(spec.group), style: EditorType.sectionHeader),
           ),
         );
       }
       rows.add(
         Padding(
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: _kInspectorGap),
           child: _editor(item, spec, kindDefaults),
         ),
       );

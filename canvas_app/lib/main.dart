@@ -122,6 +122,10 @@ class _EditorShellState extends State<EditorShell> {
   String _railId = kRailParts;
   String? _selectedNodeId;
 
+  /// Shell-owned screen selection, mutually exclusive with [_selectedNodeId]:
+  /// selecting a node clears the screen selection and vice versa.
+  String? _selectedScreenId;
+
   @override
   void initState() {
     super.initState();
@@ -227,7 +231,10 @@ class _EditorShellState extends State<EditorShell> {
         return LayersPanel(
           store: widget.store,
           selectedNodeId: _selectedNodeId,
-          onSelectNode: (id) => setState(() => _selectedNodeId = id),
+          onSelectNode: (id) => setState(() {
+            _selectedNodeId = id;
+            _selectedScreenId = null;
+          }),
         );
       // Theme panels hug their content: the loose scroll constraints stop
       // the panel Card from stretching to the full column height.
@@ -305,8 +312,19 @@ class _EditorShellState extends State<EditorShell> {
             panMode: _panMode,
             selectedNodeId: _selectedNodeId,
             onSelectNode: (id) {
-            setState(() => _selectedNodeId = id);
-          },
+              setState(() {
+                _selectedNodeId = id;
+                _selectedScreenId = null;
+              });
+            },
+            selectedScreenId: _selectedScreenId,
+            onSelectScreen: (id) {
+              setState(() {
+                _selectedScreenId = id;
+                _selectedNodeId = null;
+              });
+            },
+            onZoomChanged: _setZoom,
           ),
           ),
         ),
@@ -322,7 +340,9 @@ class _EditorShellState extends State<EditorShell> {
               onPreview: () => setState(() => _preview = true),
               onUndo: widget.store.canUndo ? () => widget.store.undo() : null,
               onRedo: widget.store.canRedo ? () => widget.store.redo() : null,
-              onClear: _clearScreen,
+              hasSelection:
+                  _selectedNodeId != null || _selectedScreenId != null,
+              onDelete: _deleteSelection,
               onOpen: () => showOpenDialog(context, widget.store),
             ),
           ),
@@ -344,11 +364,32 @@ class _EditorShellState extends State<EditorShell> {
 
   void _addScreen() => widget.store.addScreen();
 
-  void _clearScreen() {
-    final doc = widget.store.doc;
-    for (final node in List.of(doc.nodes)) {
-      widget.store.deleteNode(node.id);
+  /// Toolbar trash: deletes the current selection. A selected node deletes
+  /// via [CanvasStore.deleteNode] (selection cleared); a selected screen
+  /// deletes via [CanvasStore.deleteScreen], which refuses when an action
+  /// would dangle — the screen stays and a SnackBar names the blockers.
+  /// With nothing selected this is a no-op (the toolbar tooltip says so).
+  void _deleteSelection() {
+    final nodeId = _selectedNodeId;
+    if (nodeId != null) {
+      widget.store.deleteNode(nodeId);
+      setState(() => _selectedNodeId = null);
+      return;
     }
-    setState(() => _selectedNodeId = null);
+    final screenId = _selectedScreenId;
+    if (screenId != null) {
+      final dangling = widget.store.deleteScreen(screenId);
+      if (dangling.isNotEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cannot delete screen: ${dangling.join('; ')}',
+            ),
+          ),
+        );
+        return;
+      }
+      setState(() => _selectedScreenId = null);
+    }
   }
 }

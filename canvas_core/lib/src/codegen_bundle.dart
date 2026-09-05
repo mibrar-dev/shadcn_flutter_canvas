@@ -38,9 +38,12 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 29 canvas-ready kinds (19 seed + 10 W1: chip, alert,
+// Exact metadata for the 46 canvas-ready kinds (19 seed + 10 W1: chip, alert,
 // circular_progress_indicator, linear_progress_indicator, triple_dots,
-// dot_indicator, empty_state, code_snippet, number_ticker, text_area —
+// dot_indicator, empty_state, code_snippet, number_ticker, text_area + 17
+// Track J: basic, card_image, scaffold, collapsible, steps, timeline,
+// outlined_container, hidden, keyboard_shortcut, tracker, chat, selectable,
+// star_rating, clickable, scrollbar, pagination, alert_dialog —
 // snapshotted from the pinned kit's `components.json`: destination prefix
 // from `files[].destination` (`{installPath}/components/<category>/<id>/`),
 // alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
@@ -55,6 +58,13 @@ class _KindSpec {
 // with no `_KindSpec` here — it warns at export time (same verbatim policy).
 // NOTE: `text_area`'s `dependsOn` (`text_field`) warns the same way `input`'s
 // does (verbatim policy).
+// NOTE (Track J): `scaffold`'s `dependsOn` (`drawer`, `linear_progress_indicator`,
+// `text`) partially warns — `drawer`/`linear_progress_indicator` resolve, `text`
+// has no `_KindSpec` (verbatim policy). `steps`/`timeline` also name `text`.
+// `card_image`'s (`basic`, `button`, `outlined_container`), `chat`'s (same
+// three), `collapsible`'s (`button`), `keyboard_shortcut`'s (`card`),
+// `tracker`'s (`tooltip`), `pagination`'s (`button`, `triple_dots`), and
+// `alert_dialog`'s (`dialog`) deps all resolve.
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -143,6 +153,57 @@ const _kinds = <String, _KindSpec>{
   'text_area': _KindSpec('{installPath}/components/form/text_area/',
       ['theme'],
       {'gap': '^3.0.1'}, ['text_field']),
+  'basic': _KindSpec('{installPath}/components/layout/basic/',
+      ['style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'card_image': _KindSpec('{installPath}/components/layout/card_image/',
+      ['constants', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['basic', 'button', 'outlined_container']),
+  'scaffold': _KindSpec('{installPath}/components/layout/scaffold/',
+      ['color_extensions', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['drawer', 'linear_progress_indicator', 'text']),
+  'collapsible': _KindSpec('{installPath}/components/layout/collapsible/',
+      ['component_schema', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button']),
+  'steps': _KindSpec('{installPath}/components/layout/steps/',
+      ['theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['text']),
+  'timeline': _KindSpec('{installPath}/components/layout/timeline/',
+      ['theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['text']),
+  'outlined_container': _KindSpec('{installPath}/components/layout/outlined_container/',
+      ['animated_value_builder', 'border_utils', 'component_schema', 'constants', 'geometry_extensions', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'hidden': _KindSpec('{installPath}/components/layout/hidden/',
+      ['animated_value_builder', 'component_schema', 'constants', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'keyboard_shortcut': _KindSpec('{installPath}/components/display/keyboard_shortcut/',
+      ['color_extensions', 'component_schema', 'keyboard_shortcut_utils', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['card']),
+  'tracker': _KindSpec('{installPath}/components/display/tracker/',
+      ['component_schema', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['tooltip']),
+  'chat': _KindSpec('{installPath}/components/display/chat/',
+      ['axis', 'clickable', 'constants', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['basic', 'button', 'outlined_container']),
+  'selectable': _KindSpec('{installPath}/components/display/selectable/',
+      ['theme'],
+      {'gap': '^3.0.1'}, []),
+  'star_rating': _KindSpec('{installPath}/components/form/star_rating/',
+      ['animated_value_builder', 'component_schema', 'constants', 'form_control', 'form_value_supplier', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'clickable': _KindSpec('{installPath}/components/control/clickable/',
+      ['animated_value_builder', 'clickable', 'constants', 'focus_outline', 'platform_utils', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'scrollbar': _KindSpec('{installPath}/components/control/scrollbar/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'pagination': _KindSpec('{installPath}/components/navigation/pagination/',
+      ['icon_extensions', 'localizations', 'radix_icons', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['button', 'triple_dots']),
+  'alert_dialog': _KindSpec('{installPath}/components/overlay/alert_dialog/',
+      ['overlay', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog']),
 };
 
 const _installPath = '{installPath}/';

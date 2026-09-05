@@ -136,9 +136,13 @@ class _PartsPaletteState extends State<PartsPalette> {
                 message: 'Collapse',
                 child: Material(
                   color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(
+                    EditorMetrics.tileRadius,
+                  ),
                   child: InkWell(
-                    borderRadius: BorderRadius.circular(16),
+                    borderRadius: BorderRadius.circular(
+                      EditorMetrics.tileRadius,
+                    ),
                     hoverColor: colors.surfaceContainerHigh,
                     onTap: widget.onCollapse,
                     child: SizedBox(
@@ -203,11 +207,31 @@ class _PartsPaletteState extends State<PartsPalette> {
           Expanded(
             child: visible.isEmpty
                 ? Center(
-                    child: Text(
-                      'No parts match',
-                      style: EditorType.tileLabel.copyWith(
-                        color: colors.onSurfaceVariant,
-                      ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.search_off,
+                          size: 20,
+                          color: colors.disabled,
+                        ),
+                        const SizedBox(height: EditorMetrics.tileGap),
+                        Text(
+                          'No parts match',
+                          style: EditorType.sectionHeader.copyWith(
+                            color: colors.onSurface,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: EditorMetrics.tileGap),
+                        Text(
+                          'Try a different search term.',
+                          style: EditorType.tileLabel.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   )
                 : Scrollbar(
@@ -267,7 +291,7 @@ class _Section extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         InkWell(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(EditorMetrics.tileGap),
           hoverColor: colors.surfaceContainerHigh,
           onTap: onToggle,
           child: Padding(
@@ -288,6 +312,13 @@ class _Section extends StatelessWidget {
                     ),
                   ),
                 ),
+                Text(
+                  '${entries.length}',
+                  style: EditorType.tileLabel.copyWith(
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: 8),
                 Icon(
                   collapsed ? Icons.chevron_right : Icons.expand_more,
                   size: 18,
@@ -405,7 +436,7 @@ class _TileContent extends StatelessWidget {
               size: 20,
               color: colors.onSurfaceVariant,
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: EditorMetrics.toolbarButtonGap),
             Text(
               _tileLabel(entry.kind),
               style: EditorType.tileLabel.copyWith(
@@ -413,6 +444,7 @@ class _TileContent extends StatelessWidget {
               ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
             ),
           ],
         ),

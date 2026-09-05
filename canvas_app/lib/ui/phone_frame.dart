@@ -14,7 +14,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
+import 'package:canvas_app/ui/responsive.dart';
 import 'package:canvas_core/canvas_core.dart';
 
 /// Floor for the node clamp below: guarantees a finite box even for drops at
@@ -63,17 +65,26 @@ double? _snapAxis(double pointer, List<double> nodeAxes, double centerAxis) {
 /// axes plus every node's center + edge axes. Nodes are stored as top-left
 /// origins with intrinsic (unmeasured) sizes, so each node's origin doubles
 /// as its edge/center anchor. X and Y resolve independently.
-DragGuides guidesForPointer(Offset pointer, List<CanvasNode> nodes) {
+///
+/// [centerX]/[centerY] override the screen-center axes (defaults are the
+/// phone metrics); wider per-screen devices pass their own center so guides
+/// track the actual frame.
+DragGuides guidesForPointer(
+  Offset pointer,
+  List<CanvasNode> nodes, {
+  double? centerX,
+  double? centerY,
+}) {
   return DragGuides(
     x: _snapAxis(
       pointer.dx,
       [for (final node in nodes) node.x],
-      EditorMetrics.phoneInnerWidth / 2,
+      centerX ?? EditorMetrics.phoneInnerWidth / 2,
     ),
     y: _snapAxis(
       pointer.dy,
       [for (final node in nodes) node.y],
-      EditorMetrics.phoneInnerHeight / 2,
+      centerY ?? EditorMetrics.phoneInnerHeight / 2,
     ),
   );
 }
@@ -82,29 +93,45 @@ DragGuides guidesForPointer(Offset pointer, List<CanvasNode> nodes) {
 /// [guidesForPointer]. Used ONLY for pointer drops in
 /// [ScreenSurface]'s accept path; [DesignCanvas.onAccept] stays
 /// verbatim/unsnapped so programmatic callers keep exact coords.
-Offset snapDropPosition(Offset pointer, List<CanvasNode> nodes) {
-  final guides = guidesForPointer(pointer, nodes);
+Offset snapDropPosition(
+  Offset pointer,
+  List<CanvasNode> nodes, {
+  double? centerX,
+  double? centerY,
+}) {
+  final guides =
+      guidesForPointer(pointer, nodes, centerX: centerX, centerY: centerY);
   return Offset(guides.x ?? pointer.dx, guides.y ?? pointer.dy);
 }
 
 /// The bezel + screen body. Clips [child] to the inner screen radius.
+///
+/// [outerWidth]/[outerHeight] default to the phone metrics; per-screen
+/// devices pass a wider [outerWidth] (device stage width + bezel) while the
+/// height stays fixed.
 class PhoneFrame extends StatelessWidget {
   /// Fill behind [child], i.e. the screen's own background.
   final Color screenColor;
   final Widget child;
 
+  /// Outer box size (bezel included).
+  final double outerWidth;
+  final double outerHeight;
+
   const PhoneFrame({
     super.key,
     required this.screenColor,
     required this.child,
+    this.outerWidth = EditorMetrics.phoneOuterWidth,
+    this.outerHeight = EditorMetrics.phoneOuterHeight,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
     return Container(
-      width: EditorMetrics.phoneOuterWidth,
-      height: EditorMetrics.phoneOuterHeight,
+      width: outerWidth,
+      height: outerHeight,
       decoration: BoxDecoration(
         color: colors.bezel,
         borderRadius: BorderRadius.circular(EditorMetrics.phoneOuterRadius),
@@ -118,77 +145,106 @@ class PhoneFrame extends StatelessWidget {
   }
 }
 
-/// The row above a frame: a phone/desktop segmented pair plus the screen name.
+/// Finder for the selected-screen highlight ring (used by
+/// screen-interaction tests).
+ValueKey<String> screenSelectedKey(String screenId) =>
+    ValueKey<String>('screen-selected:$screenId');
+
+/// The row above a frame: per-screen device buttons plus the screen name.
+///
+/// The device buttons are real controls: tapping one calls [onDeviceChanged]
+/// with that preset's id, except phone (the default) which passes null so
+/// the doc stays sparse. Tapping the name calls [onSelect]; the name renders
+/// in the selected style while [selected] is true.
 class ScreenLabel extends StatelessWidget {
   final String name;
 
-  /// `false` = phone (default), `true` = desktop.
-  final bool desktop;
-  final ValueChanged<bool>? onFormatChanged;
+  /// Per-screen device id (a `PreviewDeviceSpec` id); null = phone default.
+  final String? device;
+
+  /// Called with the tapped device id (null for phone).
+  final ValueChanged<String?>? onDeviceChanged;
+
+  /// Whether this screen holds the shell selection.
+  final bool selected;
+
+  /// Called when the screen name is tapped.
+  final VoidCallback? onSelect;
 
   const ScreenLabel({
     super.key,
     required this.name,
-    this.desktop = false,
-    this.onFormatChanged,
+    this.device,
+    this.onDeviceChanged,
+    this.selected = false,
+    this.onSelect,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    final activeId = specForScreenDevice(device).id;
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _formatButton(
-          colors: colors,
-          icon: Icons.smartphone,
-          selected: !desktop,
-          radius: const BorderRadius.horizontal(
-            left: Radius.circular(14),
-            right: Radius.circular(4),
+        for (var i = 0; i < kPreviewDevices.length; i++) ...[
+          if (i > 0) const SizedBox(width: 2),
+          _deviceButton(
+            colors: colors,
+            device: kPreviewDevices[i],
+            selected: kPreviewDevices[i].id == activeId,
+            first: i == 0,
+            last: i == kPreviewDevices.length - 1,
+            onTap: () => onDeviceChanged?.call(
+              kPreviewDevices[i].id == kPreviewDevicePhone.id
+                  ? null
+                  : kPreviewDevices[i].id,
+            ),
           ),
-          onTap: () => onFormatChanged?.call(false),
-        ),
-        const SizedBox(width: 2),
-        _formatButton(
-          colors: colors,
-          icon: Icons.desktop_windows_outlined,
-          selected: desktop,
-          radius: const BorderRadius.horizontal(
-            left: Radius.circular(4),
-            right: Radius.circular(14),
-          ),
-          onTap: () => onFormatChanged?.call(true),
-        ),
+        ],
         const SizedBox(width: 10),
-        Text(
-          name,
-          style: EditorType.screenLabel.copyWith(color: colors.onSurface),
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onSelect,
+          child: Text(
+            name,
+            style: EditorType.screenLabel.copyWith(
+              color: selected ? colors.onSurface : colors.onSurfaceVariant,
+            ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _formatButton({
+  Widget _deviceButton({
     required EditorColors colors,
-    required IconData icon,
+    required PreviewDeviceSpec device,
     required bool selected,
-    required BorderRadius radius,
+    required bool first,
+    required bool last,
     required VoidCallback onTap,
   }) {
-    return Material(
-      color: selected ? colors.railActive : Colors.transparent,
-      borderRadius: radius,
-      child: InkWell(
+    final radius = BorderRadius.horizontal(
+      left: Radius.circular(first ? 14 : 4),
+      right: Radius.circular(last ? 14 : 4),
+    );
+    return Tooltip(
+      message: device.label,
+      child: Material(
+        color: selected ? colors.railActive : Colors.transparent,
         borderRadius: radius,
-        onTap: onTap,
-        child: SizedBox(
-          width: 28,
-          height: EditorMetrics.screenLabelHeight,
-          child: Icon(
-            icon,
-            size: 16,
-            color: selected ? colors.onRailActive : colors.onSurfaceVariant,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: SizedBox(
+            width: 28,
+            height: EditorMetrics.screenLabelHeight,
+            child: Icon(
+              device.icon,
+              size: 16,
+              color: selected ? colors.onRailActive : colors.onSurfaceVariant,
+            ),
           ),
         ),
       ),
@@ -290,29 +346,31 @@ class _FlowHit {
 /// Renders one screen's nodes into a [PhoneFrame], with selection
 /// affordances, in flow layout.
 ///
-/// The screen content is `Padding(kFlowScreenPadding)` around a top-left
-/// `Column` of the screen's root nodes (`parentId == null`, doc order,
-/// `kFlowScreenGap` separators). A row container (`isRow`) renders as a
-/// `Row` of its children (doc order, node `gap` separators) with
-/// `mainAxis` → MainAxisAlignment (null → start) and `crossAxis` →
-/// CrossAxisAlignment (null → center); each child wraps via [wrapRowChild]
-/// (`expanded` → Expanded, `flex` → Flexible, null/none → default Flexible).
-/// Root-column leaves ignore `expand`/`flex`. Every other node renders
-/// today's `ConstrainedBox` leaf (the clamp stays, and inside rows the
-/// incoming flex width additionally bounds `maxWidth`, so every catalog
-/// widget gets the finite box it needs and nothing crashes on unbounded
-/// flex). Empty rows render a dashed drop placeholder (min height 64, always
-/// hit-testable); the empty-screen hint is unchanged.
+/// The frame renders at the screen's per-screen device width: the inner
+/// stage width is the resolved `PreviewDeviceSpec` width (see
+/// [specForScreenDevice]; null device = phone) inside the standard bezel,
+/// while the height stays the fixed phone metric. The stage width IS the
+/// responsive breakpoint (the same [tierForWidth] rule as the preview
+/// stage): nodes hidden on the resolved tier ([isNodeHiddenOnWidth]) are
+/// skipped live — a hidden row container hides its whole subtree — so
+/// tablet/desktop-width screens demo responsive `hiddenOn` without entering
+/// preview.
 ///
-/// `x`/`y` are stored drop metadata and ignored by this renderer (see
-/// [DesignCanvas.onAccept]). Bezel/labels/zoom/selection ring/drop-wash and
-/// the magnetic guide infra are unchanged; the guide infra is extended with
-/// a container wash on the hovered row plus the index line above.
+/// Tapping empty screen area calls [onSelectScreen] (node taps are claimed
+/// by the inner leaf/row detectors, so they select the node instead); while
+/// [selected] the frame carries a highlight ring in
+/// [EditorColors.toolbarActive].
 class ScreenSurface extends StatefulWidget {
   final CanvasScreen screen;
   final List<CanvasNode> nodes;
   final String? selectedNodeId;
   final ValueChanged<String>? onSelectNode;
+
+  /// Whether this screen holds the shell selection (highlight ring).
+  final bool selected;
+
+  /// Called when empty screen area is tapped.
+  final VoidCallback? onSelectScreen;
 
   /// Fired when a palette tile is dropped, with the drop point in screen
   /// coordinates (already relative to the phone's inner area) plus the
@@ -348,6 +406,8 @@ class ScreenSurface extends StatefulWidget {
     required this.nodes,
     this.selectedNodeId,
     this.onSelectNode,
+    this.selected = false,
+    this.onSelectScreen,
     this.onDropKind,
     this.zoom = 1.0,
     this.dropPointer,
@@ -363,6 +423,33 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   final Map<String, GlobalKey> _flowKeys = {};
 
   GlobalKey _flowKey(String id) => _flowKeys.putIfAbsent(id, () => GlobalKey());
+
+  /// Inner stage width: the resolved per-screen device width.
+  double get _innerWidth => specForScreenDevice(widget.screen.device).width;
+
+  /// Nodes visible at the screen's own tier (see the [ScreenSurface] docs):
+  /// hidden nodes — and a hidden row's whole subtree — are skipped live.
+  List<CanvasNode> get _visibleNodes {
+    final byId = {for (final n in widget.nodes) n.id: n};
+    // A node is hidden when it — or any ancestor row up its parentId chain —
+    // is hidden at this screen's width (cycle-safe via [seen]; mirrors the
+    // preview player's cascade).
+    bool effectivelyHidden(CanvasNode node) {
+      CanvasNode? cursor = node;
+      final seen = <String>{};
+      while (cursor != null && seen.add(cursor.id)) {
+        if (isNodeHiddenOnWidth(_innerWidth, cursor.hiddenOn)) return true;
+        final parentId = cursor.parentId;
+        cursor = parentId == null ? null : byId[parentId];
+      }
+      return false;
+    }
+
+    return [
+      for (final node in widget.nodes)
+        if (!effectivelyHidden(node)) node,
+    ];
+  }
 
   /// Screen-local rect of a laid-out node, or null before first layout.
   Rect? _nodeRect(String id, RenderBox screenBox) {
@@ -387,7 +474,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     // nested rows (should they ever nest) resolve inward.
     CanvasNode? hitRow;
     Rect? hitRect;
-    for (final node in widget.nodes) {
+    for (final node in _visibleNodes) {
       if (node.parentId != null || !node.isRow) continue;
       final rect = _nodeRect(node.id, screenBox);
       if (rect == null || !rect.contains(pointer)) continue;
@@ -399,7 +486,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     }
     if (hitRow != null && hitRect != null) {
       final kids = [
-        for (final node in widget.nodes)
+        for (final node in _visibleNodes)
           if (node.parentId == hitRow.id) node,
       ];
       final centers = <double>[];
@@ -506,8 +593,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     _flowKeys.removeWhere(
       (id, _) => !widget.nodes.any((node) => node.id == id),
     );
-    return PhoneFrame(
+    final frame = PhoneFrame(
       screenColor: colors.surface,
+      outerWidth: _innerWidth + EditorMetrics.phoneBezel * 2,
       child: DragTarget<String>(
         onAcceptWithDetails: (details) {
           final box = context.findRenderObject() as RenderBox?;
@@ -532,7 +620,12 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           // Magnetic snap applies to pointer drops only — `onAccept` itself
           // stays verbatim/unsnapped for programmatic callers, so the snapped
           // point is computed here and forwarded through `onDropKind`.
-          final snapped = snapDropPosition(position, widget.nodes);
+          // Guides track the actual stage width, not the phone default.
+          final snapped = snapDropPosition(
+            position,
+            _visibleNodes,
+            centerX: _innerWidth / 2,
+          );
           // Shared insert path with the hover visuals below: the target and
           // index resolve from measured geometry and `onAccept` lands the
           // node there in one commit.
@@ -562,7 +655,11 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                     local.dx - EditorMetrics.phoneBezel,
                     local.dy - EditorMetrics.phoneBezel,
                   );
-                  guides = guidesForPointer(pointer, widget.nodes);
+                  guides = guidesForPointer(
+                    pointer,
+                    _visibleNodes,
+                    centerX: _innerWidth / 2,
+                  );
                   hover = _flowHit(pointer, box);
                 }
               }
@@ -571,9 +668,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               // A hovered row carries its own wash; otherwise the whole
               // screen washes while a drag hovers it.
               final hoveringRow = hoverHit?.parentId != null;
-              return Stack(
-                children: [
-                  _buildFlow(colors),
+              // Screen-tap selection lives OUTSIDE the node detectors: taps
+              // on nodes are claimed by the inner leaf/row `onTap`s (which
+              // win the arena as the deeper recognizer), so this fires only
+              // for empty screen area.
+              return GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: widget.onSelectScreen,
+                child: Stack(
+                  children: [
+                    _buildFlow(colors),
                   if (candidate.isNotEmpty && !hoveringRow)
                     Positioned.fill(
                       child: ColoredBox(
@@ -627,20 +731,44 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                         color: colors.toolbarActive.withValues(alpha: 0.5),
                       ),
                     ),
-                ],
+                  ],
+                ),
               );
             },
           );
         },
       ),
     );
+    if (!widget.selected) return frame;
+    // Overlay ring: `Positioned.fill` adds no size, so selecting a screen
+    // never shifts the fixed content box (a border on the wrapper would add
+    // 4px and overflow the zoom `FittedBox`).
+    return Stack(
+      children: [
+        frame,
+        Positioned.fill(
+          child: IgnorePointer(
+            child: Container(
+              key: screenSelectedKey(widget.screen.id),
+              decoration: BoxDecoration(
+                border: Border.all(color: colors.toolbarActive, width: 2),
+                borderRadius: BorderRadius.circular(
+                  EditorMetrics.phoneOuterRadius + 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   /// Screen content: padded top-left column of root nodes (doc order).
   /// Root leaves ignore `expand`/`flex` (W3): they render unwrapped.
+  /// Tier-hidden nodes are skipped (see [_visibleNodes]).
   Widget _buildFlow(EditorColors colors) {
     final roots = [
-      for (final node in widget.nodes)
+      for (final node in _visibleNodes)
         if (node.parentId == null) node,
     ];
     return Padding(
@@ -674,7 +802,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// IntrinsicHeight supplies it from the tallest child.
   Widget _buildRow(CanvasNode node, EditorColors colors) {
     final kids = [
-      for (final child in widget.nodes)
+      for (final child in _visibleNodes)
         if (child.parentId == node.id) child,
     ];
     // Clamp defensive: a negative stored gap must never size a separator.
@@ -755,7 +883,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             constraints: BoxConstraints(
               maxWidth: math.max(
                 _kMinNodeExtent,
-                EditorMetrics.phoneInnerWidth - node.x,
+                _innerWidth - node.x,
               ),
               maxHeight: math.max(
                 _kMinNodeExtent,

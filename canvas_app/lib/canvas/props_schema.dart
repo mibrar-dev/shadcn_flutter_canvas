@@ -4,12 +4,23 @@
 /// [control] to render, its inspector [group], enum [options] or numeric
 /// `min`/`max`/`step` bounds, and the [defaultValue] used by override
 /// resolution. Specs are seeded from the pre-W2 `kInspectorSchemas` data plus
-/// the `defaults` in `component_catalog.dart` (same 19 catalog kinds, plus the
+/// the `defaults` in `component_catalog.dart` (same 36 catalog kinds, plus the
 /// `row` container kind) — no new component kinds are invented here.
 ///
 /// OVERRIDE MODEL (Figma-style): resolution is
 /// `schema default <- kind defaults (catalog) <- node.props (sparse diff)`.
 /// See [resolveProp] / [isPropOverridden].
+///
+/// SPEC-ONLY PROPS (Track I): several functional/layout constructor params
+/// (e.g. `avatar.size`, `select.disabled`) have a [PropSpec] here but no
+/// `component_catalog.dart` default — the catalog builders ignore them until
+/// a kit-side wiring batch lands. [resolveProp] falls back to
+/// [PropSpec.defaultValue] for these, so the inspector still shows a stable
+/// default and edits persist through `patchItem`/`clearItemProps` (and into
+/// codegen export, which reads `node.props` generically). Spec defaults for
+/// these mirror what the builder currently renders (e.g. drawer's hardcoded
+/// `OverlayPosition.end`), never the kit constructor default, so the
+/// inspector never promises a preview the canvas does not show.
 ///
 /// NOTE: the field is called [PropSpec.defaultValue], not `default` —
 /// `default` is a reserved word in Dart and cannot be a field name.
@@ -88,10 +99,12 @@ const kCrossAxisOptions = ['start', 'center', 'end', 'stretch'];
 /// `patchNode(nodeId, expand: ...)`). `null`/`none` both mean the default.
 const kExpandOptions = ['none', 'flex', 'expanded'];
 
-/// Per-kind schemas. Defaults mirror `component_catalog.dart` `defaults`
-/// (reconciled 2026-09-04/05); enum option lists mirror the pre-W2
+/// Per-kind schemas. Catalog-covered defaults mirror `component_catalog.dart`
+/// `defaults` (reconciled 2026-09-04/05); enum option lists mirror the pre-W2
 /// `kInspectorSchemas` data, including the known block-vs-constructor notes
 /// (button `size` lists `icon` though `ButtonSize` has no icon member).
+/// Track I functional/layout additions are spec-only (documented per spec):
+/// the schema is a superset of the catalog defaults, never a new kind.
 const kPropSchemas = <String, List<PropSpec>>{
   'button': [
     PropSpec(
@@ -163,6 +176,16 @@ const kPropSchemas = <String, List<PropSpec>>{
       group: 'content',
       defaultValue: '',
     ),
+    // Spec-only (Track I): `TextField(initialValue:)` — the field's current
+    // value. The catalog builder renders an uncontrolled field, so this
+    // persists + exports without changing the preview yet.
+    PropSpec(
+      name: 'initialValue',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: '',
+    ),
     PropSpec(
       name: 'disabled',
       type: 'bool',
@@ -172,6 +195,15 @@ const kPropSchemas = <String, List<PropSpec>>{
     ),
     PropSpec(
       name: 'obscure',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
+    // Spec-only (Track I): `TextInput.readOnly` — functional state (focus +
+    // select, no edits). Builder renders an editable field until wired.
+    PropSpec(
+      name: 'readOnly',
       type: 'bool',
       control: 'switch',
       group: 'state',
@@ -219,6 +251,19 @@ const kPropSchemas = <String, List<PropSpec>>{
       group: 'content',
       defaultValue: 'AB',
     ),
+    // Spec-only (Track I): `Avatar(size:)` layout param. Default mirrors the
+    // kit theme default (`AvatarThemeDefaults.size = 40.0`); the catalog
+    // builder renders theme sizing until wired.
+    PropSpec(
+      name: 'size',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 16,
+      max: 96,
+      step: 4,
+      defaultValue: 40.0,
+    ),
   ],
   'checkbox': [
     PropSpec(
@@ -235,6 +280,15 @@ const kPropSchemas = <String, List<PropSpec>>{
       group: 'state',
       defaultValue: false,
     ),
+    // Spec-only (Track I): `Checkbox(tristate:)` (constructor default
+    // `false`) — enables indeterminate-state cycling. Builder ignores it.
+    PropSpec(
+      name: 'tristate',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
   ],
   'divider': [
     PropSpec(
@@ -243,6 +297,19 @@ const kPropSchemas = <String, List<PropSpec>>{
       control: 'text',
       group: 'content',
       defaultValue: '',
+    ),
+    // Spec-only (Track I): `Divider(thickness:)` layout param. Default
+    // mirrors the kit's resolved default (`1.0`); builder renders the theme
+    // thickness until wired.
+    PropSpec(
+      name: 'thickness',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 1,
+      max: 8,
+      step: 1,
+      defaultValue: 1.0,
     ),
   ],
   'progress': [
@@ -283,6 +350,16 @@ const kPropSchemas = <String, List<PropSpec>>{
       max: 1,
       step: 1,
       defaultValue: 0,
+    ),
+    // Spec-only (Track I): `Tabs(expand:)` layout flag (constructor default
+    // `false`) — stretches tab headers across the available width. The
+    // catalog builder renders the default (`false`) until wired.
+    PropSpec(
+      name: 'expand',
+      type: 'bool',
+      control: 'switch',
+      group: 'layout',
+      defaultValue: false,
     ),
   ],
   'accordion': [
@@ -337,6 +414,16 @@ const kPropSchemas = <String, List<PropSpec>>{
       group: 'state',
       defaultValue: '',
     ),
+    // Spec-only (Track I): `Select(enabled:)` open/disabled state, mirroring
+    // the input kind's `disabled` convention. Builder renders enabled until
+    // wired.
+    PropSpec(
+      name: 'disabled',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
   ],
   'radio_group': [
     PropSpec(
@@ -359,6 +446,15 @@ const kPropSchemas = <String, List<PropSpec>>{
       control: 'text',
       group: 'state',
       defaultValue: 'Option 1',
+    ),
+    // Spec-only (Track I): `RadioGroup(enabled:)` open/disabled state,
+    // same convention as select above. Builder renders enabled until wired.
+    PropSpec(
+      name: 'disabled',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
     ),
   ],
   'skeleton': [
@@ -391,6 +487,17 @@ const kPropSchemas = <String, List<PropSpec>>{
       control: 'text',
       group: 'content',
       defaultValue: 'Page',
+    ),
+    // Spec-only (Track I): `Breadcrumb(separator:)` — the kit's two
+    // built-in separators (`arrowSeparator` / `slashSeparator`). Default
+    // mirrors the builder (arrow). Renders segmented (<= 3 options).
+    PropSpec(
+      name: 'separator',
+      type: 'enum',
+      control: 'select',
+      group: 'style',
+      options: ['arrow', 'slash'],
+      defaultValue: 'arrow',
     ),
   ],
   'dialog': [
@@ -447,6 +554,16 @@ const kPropSchemas = <String, List<PropSpec>>{
       group: 'content',
       defaultValue: 'Saved successfully',
     ),
+    // Spec-only (Track I): `ToastEntry(autoDismiss:)` open state. Default
+    // mirrors the builder (`false`, so the canvas node never self-dismisses);
+    // the kit constructor defaults to `true`.
+    PropSpec(
+      name: 'autoDismiss',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
   ],
   'drawer': [
     PropSpec(
@@ -462,6 +579,344 @@ const kPropSchemas = <String, List<PropSpec>>{
       control: 'text',
       group: 'content',
       defaultValue: 'Drawer content',
+    ),
+    // Spec-only (Track I): `DrawerWrapper(position:)` layout edge. Options
+    // mirror the kit `OverlayPosition` enum; default mirrors the builder's
+    // hardcoded `OverlayPosition.end`.
+    PropSpec(
+      name: 'position',
+      type: 'enum',
+      control: 'select',
+      group: 'layout',
+      options: ['left', 'right', 'top', 'bottom', 'start', 'end'],
+      defaultValue: 'end',
+    ),
+  ],
+  // Track J additions (2026-09-05): specs for the 17 newly-implemented
+  // catalog kinds. Defaults mirror `component_catalog.dart` (invented,
+  // documented per builder there); only bool/string/num/enum prop types
+  // already established by the seed kinds are used.
+  'basic': [
+    PropSpec(
+      name: 'title',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Title',
+    ),
+    PropSpec(
+      name: 'subtitle',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Subtitle',
+    ),
+    PropSpec(
+      name: 'content',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Content',
+    ),
+    PropSpec(
+      name: 'showLeading',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: true,
+    ),
+    PropSpec(
+      name: 'showTrailing',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: true,
+    ),
+  ],
+  'card_image': [
+    PropSpec(
+      name: 'title',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Card title',
+    ),
+    PropSpec(
+      name: 'subtitle',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Card subtitle',
+    ),
+  ],
+  'scaffold': [
+    PropSpec(
+      name: 'title',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'My App',
+    ),
+    PropSpec(
+      name: 'body',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Welcome',
+    ),
+  ],
+  'collapsible': [
+    PropSpec(
+      name: 'trigger',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Show more',
+    ),
+    PropSpec(
+      name: 'content',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Hidden details',
+    ),
+    PropSpec(
+      name: 'expanded',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
+  ],
+  'steps': [
+    PropSpec(
+      name: 'step1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Step 1',
+    ),
+    PropSpec(
+      name: 'detail1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'First step details',
+    ),
+    PropSpec(
+      name: 'step2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Step 2',
+    ),
+    PropSpec(
+      name: 'detail2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Second step details',
+    ),
+  ],
+  'timeline': [
+    PropSpec(
+      name: 'time1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: '9:00 AM',
+    ),
+    PropSpec(
+      name: 'title1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Kickoff',
+    ),
+    PropSpec(
+      name: 'detail1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Project kickoff meeting',
+    ),
+    PropSpec(
+      name: 'time2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: '2:00 PM',
+    ),
+    PropSpec(
+      name: 'title2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Review',
+    ),
+    PropSpec(
+      name: 'detail2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Design review session',
+    ),
+  ],
+  'outlined_container': [
+    PropSpec(
+      name: 'label',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Outlined',
+    ),
+  ],
+  'hidden': [
+    PropSpec(
+      name: 'label',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Hidden content',
+    ),
+    PropSpec(
+      name: 'hidden',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: false,
+    ),
+  ],
+  'keyboard_shortcut': [
+    PropSpec(
+      name: 'keys',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Ctrl+K',
+    ),
+  ],
+  'tracker': [
+    PropSpec(
+      name: 'segments',
+      type: 'number',
+      control: 'stepper',
+      group: 'state',
+      min: 1,
+      max: 5,
+      step: 1,
+      defaultValue: 3,
+    ),
+    PropSpec(
+      name: 'level',
+      type: 'enum',
+      control: 'select',
+      group: 'style',
+      options: ['fine', 'warning', 'critical', 'unknown'],
+      defaultValue: 'fine',
+    ),
+  ],
+  'chat': [
+    PropSpec(
+      name: 'message',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Hello!',
+    ),
+  ],
+  'selectable': [
+    PropSpec(
+      name: 'text',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Select me',
+    ),
+  ],
+  'star_rating': [
+    PropSpec(
+      name: 'value',
+      type: 'number',
+      control: 'slider',
+      group: 'state',
+      min: 0,
+      max: 10,
+      step: 0.5,
+      defaultValue: 3.0,
+    ),
+    PropSpec(
+      name: 'max',
+      type: 'number',
+      control: 'slider',
+      group: 'state',
+      min: 1,
+      max: 10,
+      step: 1,
+      defaultValue: 5.0,
+    ),
+  ],
+  'clickable': [
+    PropSpec(
+      name: 'label',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Tap me',
+    ),
+  ],
+  'scrollbar': [
+    PropSpec(
+      name: 'label',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Scrollable content',
+    ),
+  ],
+  'pagination': [
+    PropSpec(
+      name: 'page',
+      type: 'number',
+      control: 'stepper',
+      group: 'state',
+      min: 1,
+      max: 20,
+      step: 1,
+      defaultValue: 1,
+    ),
+    PropSpec(
+      name: 'totalPages',
+      type: 'number',
+      control: 'stepper',
+      group: 'state',
+      min: 1,
+      max: 20,
+      step: 1,
+      defaultValue: 5,
+    ),
+  ],
+  'alert_dialog': [
+    PropSpec(
+      name: 'title',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Are you sure?',
+    ),
+    PropSpec(
+      name: 'message',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'This action cannot be undone.',
+    ),
+    PropSpec(
+      name: 'showActions',
+      type: 'bool',
+      control: 'switch',
+      group: 'state',
+      defaultValue: true,
     ),
   ],
   // Container kinds are not catalog entries (a row has no registry widget)

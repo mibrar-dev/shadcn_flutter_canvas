@@ -10,15 +10,76 @@ library;
 
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:canvas_core/canvas_core.dart';
+
+/// Zoom bounds shared by the shell's [ZoomControls] and the wheel/pinch
+/// path below (the controls disable at exactly these ends).
+const double kCanvasMinZoom = 0.25;
+const double kCanvasMaxZoom = 4.0;
+
+/// Exponential gain for Ctrl/Cmd+wheel zoom (trackpad pinch on desktop
+/// arrives as Ctrl+wheel): one 100px wheel notch scales by ~e^0.2.
+const double kWheelZoomGain = 0.002;
+
+/// Clamps [zoom] into the supported viewport range.
+double clampZoom(double zoom) => zoom.clamp(kCanvasMinZoom, kCanvasMaxZoom)
+    .toDouble();
+
+/// Viewport pan for a wheel event: plain wheel pans vertically, Shift+wheel
+/// pans horizontally (both native components feed the horizontal axis so
+/// platform differences in Shift+wheel reporting don't matter).
+Offset applyWheelPan(Offset pan, Offset scrollDelta, {required bool shift}) {
+  if (shift) {
+    return Offset(pan.dx - scrollDelta.dx - scrollDelta.dy, pan.dy);
+  }
+  return Offset(pan.dx, pan.dy - scrollDelta.dy);
+}
+
+/// Viewport pan for a middle-button drag: the content follows the pointer.
+Offset applyMiddlePan(Offset pan, Offset delta) => pan + delta;
+
+/// Multiplicative zoom factor for a Ctrl/Cmd+wheel delta: scrolling up
+/// (negative dy) zooms in, scrolling down zooms out.
+double wheelZoomFactor(double scrollDeltaY) =>
+    math.exp(-scrollDeltaY * kWheelZoomGain);
+
+/// Cursor-anchored zoom: scales [zoom] by [factor] (clamped) and shifts [pan]
+/// so the content point under [cursor] stays fixed.
+///
+/// [viewport] is the viewport size and [contentSize] the unscaled content
+/// size; the content origin follows the build's `Center` layout
+/// (`(viewport - scaled) / 2 + pan`). Pure so it unit-tests without pointer
+/// simulation.
+({Offset pan, double zoom}) zoomAtCursor({
+  required double zoom,
+  required Offset pan,
+  required Offset cursor,
+  required Size viewport,
+  required Size contentSize,
+  required double factor,
+}) {
+  final next = clampZoom(zoom * factor);
+  Offset origin(double z) => Offset(
+        (viewport.width - contentSize.width * z) / 2,
+        (viewport.height - contentSize.height * z) / 2,
+      );
+  final contentPoint = (cursor - origin(zoom) - pan) / zoom;
+  return (pan: cursor - origin(next) - contentPoint * next, zoom: next);
+}
+
+/// Outer frame width of [screen]: device stage width plus the bezel.
+double screenOuterWidth(CanvasScreen screen) =>
+    specForScreenDevice(screen.device).width + EditorMetrics.phoneBezel * 2;
 
 /// Forwards pure-Dart store notifications to Flutter listeners.
 class _StoreRelay extends foundation.ChangeNotifier {
@@ -58,6 +119,18 @@ class DesignCanvas extends StatefulWidget {
   /// Forwarded whenever the selection changes (shell wires it to the inspector).
   final ValueChanged<String?>? onSelectNode;
 
+  /// Shell-owned screen selection (mutually exclusive with the node
+  /// selection — the shell clears one when the other is set).
+  final String? selectedScreenId;
+
+  /// Forwarded when empty screen area (or a screen label) is tapped.
+  final ValueChanged<String?>? onSelectScreen;
+
+  /// Zoom requests from the wheel/pinch path. The shell's `_setZoom` stays
+  /// the source of truth (same clamps as [ZoomControls]); the canvas only
+  /// adjusts its pan around the requested zoom.
+  final ValueChanged<double>? onZoomChanged;
+
   const DesignCanvas({
     super.key,
     required this.store,
@@ -66,6 +139,9 @@ class DesignCanvas extends StatefulWidget {
     this.panMode = false,
     this.selectedNodeId,
     this.onSelectNode,
+    this.selectedScreenId,
+    this.onSelectScreen,
+    this.onZoomChanged,
   });
 
   /// Store-level drop handler: adds exactly one node carrying [kind] to the
@@ -242,6 +318,69 @@ class _DesignCanvasState extends State<DesignCanvas> {
     _pointerGlobal.value = e.position;
   }
 
+  /// Unscaled content size for the cursor-anchored zoom math (must match the
+  /// `SizedBox` pair in [build]).
+  Size _contentSize(ScreenDoc doc) {
+    const screenGap = 48.0;
+    var contentWidth = 0.0;
+    for (final screen in doc.screens) {
+      contentWidth += screenOuterWidth(screen);
+    }
+    if (doc.screens.length > 1) {
+      contentWidth += screenGap * (doc.screens.length - 1);
+    }
+    const contentHeight =
+        EditorMetrics.screenLabelHeight + 10 + EditorMetrics.phoneOuterHeight;
+    return Size(contentWidth, contentHeight);
+  }
+
+  /// Applies a cursor-anchored zoom [factor]: the pan shifts so the content
+  /// point under the cursor stays fixed, then the shell (source of truth)
+  /// applies the clamped zoom.
+  void _zoomAtCursor(Offset globalPosition, double factor) {
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final result = zoomAtCursor(
+      zoom: widget.zoom,
+      pan: _pan,
+      cursor: box.globalToLocal(globalPosition),
+      viewport: box.size,
+      contentSize: _contentSize(widget.store.doc),
+      factor: factor,
+    );
+    setState(() => _pan = result.pan);
+    widget.onZoomChanged?.call(result.zoom);
+  }
+
+  /// Mouse wheel / trackpad gestures: plain wheel pans vertically,
+  /// Shift+wheel pans horizontally, Ctrl/Cmd+wheel (trackpad pinch on
+  /// desktop) zooms anchored at the cursor, and a native pinch
+  /// ([PointerScaleEvent]) zooms by its scale at the cursor.
+  void _onPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      final keys = HardwareKeyboard.instance;
+      if (keys.isControlPressed || keys.isMetaPressed) {
+        _zoomAtCursor(event.position, wheelZoomFactor(event.scrollDelta.dy));
+      } else {
+        setState(
+          () => _pan = applyWheelPan(
+            _pan,
+            event.scrollDelta,
+            shift: keys.isShiftPressed,
+          ),
+        );
+      }
+    } else if (event is PointerScaleEvent) {
+      _zoomAtCursor(event.position, event.scale);
+    }
+  }
+
+  /// Middle-button drag pans the viewport (any mode — it never selects).
+  void _onPointerMove(PointerMoveEvent event) {
+    if (event.buttons & kMiddleMouseButton != 0) {
+      setState(() => _pan = applyMiddlePan(_pan, event.delta));
+    }
+  }
   @override
   void initState() {
     super.initState();
@@ -288,7 +427,17 @@ class _DesignCanvasState extends State<DesignCanvas> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  ScreenLabel(name: doc.screens[i].name),
+                  ScreenLabel(
+                    name: doc.screens[i].name,
+                    device: doc.screens[i].device,
+                    selected: doc.screens[i].id == widget.selectedScreenId,
+                    onSelect: () =>
+                        widget.onSelectScreen?.call(doc.screens[i].id),
+                    onDeviceChanged: (device) => widget.store.setScreenDevice(
+                      doc.screens[i].id,
+                      device,
+                    ),
+                  ),
                   const SizedBox(height: 10),
                   ScreenSurface(
                     screen: doc.screens[i],
@@ -297,6 +446,9 @@ class _DesignCanvasState extends State<DesignCanvas> {
                         if (n.screenId == doc.screens[i].id) n,
                     ],
                     selectedNodeId: widget.selectedNodeId,
+                    selected: doc.screens[i].id == widget.selectedScreenId,
+                    onSelectScreen: () =>
+                        widget.onSelectScreen?.call(doc.screens[i].id),
                     zoom: widget.zoom,
                     panMode: widget.panMode,
                     onSelectNode: (id) => widget.onSelectNode?.call(id),
@@ -322,32 +474,41 @@ class _DesignCanvasState extends State<DesignCanvas> {
         // with resize history). FittedBox derives paint AND hit-test from
         // the same layout transform, so they can never diverge. The Center
         // now sizes the *scaled* box, which also removes the overflow.
-        final contentWidth =
-            doc.screens.length * EditorMetrics.phoneOuterWidth +
-            math.max(0, doc.screens.length - 1) * screenGap;
+        //
+        // Screens size per device (see [screenOuterWidth]); the unscaled size
+        // must stay in sync with [_contentSize] (cursor-anchored zoom math).
+        var contentWidth = 0.0;
+        for (final screen in doc.screens) {
+          contentWidth += screenOuterWidth(screen);
+        }
+        contentWidth += math.max(0, doc.screens.length - 1) * screenGap;
         const contentHeight =
             EditorMetrics.screenLabelHeight + 10 + EditorMetrics.phoneOuterHeight;
-        return GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onPanUpdate:
-              widget.panMode ? (d) => setState(() => _pan += d.delta) : null,
-          child: MouseRegion(
-            cursor: widget.panMode
-                ? SystemMouseCursors.grab
-                : SystemMouseCursors.basic,
-            child: Transform.translate(
-              offset: _pan,
-              child: Center(
-                child: SizedBox(
-                  width: contentWidth * widget.zoom,
-                  height: contentHeight * widget.zoom,
-                  child: FittedBox(
-                    fit: BoxFit.fill,
-                    alignment: Alignment.topLeft,
-                    child: SizedBox(
-                      width: contentWidth,
-                      height: contentHeight,
-                      child: surfaces,
+        return Listener(
+          onPointerSignal: _onPointerSignal,
+          onPointerMove: _onPointerMove,
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onPanUpdate:
+                widget.panMode ? (d) => setState(() => _pan += d.delta) : null,
+            child: MouseRegion(
+              cursor: widget.panMode
+                  ? SystemMouseCursors.grab
+                  : SystemMouseCursors.basic,
+              child: Transform.translate(
+                offset: _pan,
+                child: Center(
+                  child: SizedBox(
+                    width: contentWidth * widget.zoom,
+                    height: contentHeight * widget.zoom,
+                    child: FittedBox(
+                      fit: BoxFit.fill,
+                      alignment: Alignment.topLeft,
+                      child: SizedBox(
+                        width: contentWidth,
+                        height: contentHeight,
+                        child: surfaces,
+                      ),
                     ),
                   ),
                 ),

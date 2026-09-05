@@ -100,6 +100,6 @@ void main() {
     );
     await _pumpInspector(tester, store, nodeId: nodeId, itemId: 'm1');
 
-    expect(find.text('No editable props for kind mystery'), findsOneWidget);
+    expect(find.text('No editable properties'), findsOneWidget);
   });
 }

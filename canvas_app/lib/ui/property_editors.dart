@@ -16,6 +16,12 @@ import 'package:flutter/material.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 
+/// Intra-editor vertical rhythm (label → editor, editor → slider): one step
+/// of the inspector 8px rhythm (see `inspector_panel.dart`). Tiny inline gaps
+/// (badge → reset, stepper buttons → field) reuse
+/// [EditorMetrics.toolbarButtonGap] instead.
+const double _kEditorGap = 8.0;
+
 /// Theme `ColorScheme` keys a `color` control may bind to as a token, plus
 /// free-form literal hex via the sibling text field.
 const kColorTokenKeys = [
@@ -58,7 +64,7 @@ class PropShell extends StatelessWidget {
             Expanded(child: Text(name, style: EditorType.tileLabel)),
             if (overridden) ...[
               shadcn.SecondaryBadge(child: Text('modified')),
-              const SizedBox(width: 4),
+              const SizedBox(width: EditorMetrics.toolbarButtonGap),
               shadcn.OutlineButton(
                 size: shadcn.ButtonSize.small,
                 onPressed: onReset,
@@ -67,7 +73,7 @@ class PropShell extends StatelessWidget {
             ],
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: _kEditorGap),
         child,
       ],
     );
@@ -191,7 +197,7 @@ class _PropNumberEditorState extends State<PropNumberEditor> {
                   : null,
               child: const Text('−'),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: EditorMetrics.toolbarButtonGap),
             Expanded(
               // No ValueKey here: [PropTextEditor] absorbs store echo via
               // its last-sent check, so a stable identity preserves the
@@ -211,7 +217,7 @@ class _PropNumberEditorState extends State<PropNumberEditor> {
                 },
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: EditorMetrics.toolbarButtonGap),
             shadcn.OutlineButton(
               size: shadcn.ButtonSize.small,
               onPressed: widget.max == null || widget.value < widget.max!
@@ -222,7 +228,7 @@ class _PropNumberEditorState extends State<PropNumberEditor> {
           ],
         ),
         if (ranged) ...[
-          const SizedBox(height: 4),
+          const SizedBox(height: _kEditorGap),
           shadcn.Slider(
             value: _clamp(widget.value),
             min: widget.min!,
@@ -313,7 +319,8 @@ class PropSegmentedEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Wrap(
-      spacing: 4,
+      spacing: EditorMetrics.toolbarButtonGap,
+      runSpacing: EditorMetrics.toolbarButtonGap,
       children: [
         for (final option in options)
           if (option == value)
@@ -356,7 +363,7 @@ class PropColorEditor extends StatelessWidget {
             if (v != null) onChanged(v);
           },
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: _kEditorGap),
         PropTextEditor(
           initial: hexInitial,
           placeholderLabel: '#rrggbb',
@@ -392,7 +399,7 @@ class TodoChip extends StatelessWidget {
     return Row(
       children: [
         shadcn.SecondaryBadge(child: const Text('TODO')),
-        const SizedBox(width: 4),
+        const SizedBox(width: EditorMetrics.toolbarButtonGap),
         Expanded(child: Text(note, style: EditorType.tileLabel)),
       ],
     );

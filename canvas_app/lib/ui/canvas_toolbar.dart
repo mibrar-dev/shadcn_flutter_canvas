@@ -32,8 +32,13 @@ class CanvasToolbar extends StatelessWidget {
   /// Redo. Null renders the disabled state.
   final VoidCallback? onRedo;
 
-  /// Clear the canvas.
-  final VoidCallback onClear;
+  /// Delete the current selection (node or screen). Always enabled; a tap
+  /// with nothing selected is a no-op (see [hasSelection] for the tooltip).
+  final VoidCallback onDelete;
+
+  /// Whether a node or screen is selected. Drives the delete tooltip:
+  /// 'Delete selected' vs 'Select a part or screen to delete'.
+  final bool hasSelection;
 
   /// Open a design.
   final VoidCallback onOpen;
@@ -46,7 +51,8 @@ class CanvasToolbar extends StatelessWidget {
     required this.onPreview,
     required this.onUndo,
     required this.onRedo,
-    required this.onClear,
+    required this.onDelete,
+    required this.hasSelection,
     required this.onOpen,
   });
 
@@ -91,8 +97,9 @@ class CanvasToolbar extends StatelessWidget {
         const SizedBox(width: EditorMetrics.toolbarGroupGap),
         EditorIconButton(
           icon: Icons.delete_sweep,
-          onPressed: onClear,
-          tooltip: 'Clear',
+          onPressed: onDelete,
+          tooltip:
+              hasSelection ? 'Delete selected' : 'Select a part or screen to delete',
         ),
         const SizedBox(width: EditorMetrics.toolbarButtonGap),
         EditorIconButton(

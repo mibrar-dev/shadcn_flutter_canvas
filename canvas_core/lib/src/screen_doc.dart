@@ -108,12 +108,19 @@ class ScreenDoc {
 }
 
 /// A phone screen on the canvas.
+///
+/// [device] is the per-screen preview device id (`phone` / `tablet` /
+/// `desktop-fluid` / `desktop-wide`, mirroring the `PreviewDeviceSpec` ids in
+/// `canvas_app/lib/ui/device_picker.dart`); null means the phone default.
+/// A missing JSON key parses to null so old docs stay phone-width, and
+/// [toJson] omits the key when null (backward-compatible round-trip).
 class CanvasScreen {
   final String id;
   final String name;
   final double x;
   final double y;
   final String bg;
+  final String? device;
 
   const CanvasScreen({
     required this.id,
@@ -121,6 +128,7 @@ class CanvasScreen {
     required this.x,
     required this.y,
     required this.bg,
+    this.device,
   });
 
   factory CanvasScreen.fromJson(Map<String, dynamic> json) => CanvasScreen(
@@ -129,10 +137,17 @@ class CanvasScreen {
         x: (json['x'] as num).toDouble(),
         y: (json['y'] as num).toDouble(),
         bg: json['bg'] as String,
+        device: json['device'] as String?,
       );
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'name': name, 'x': x, 'y': y, 'bg': bg};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'x': x,
+        'y': y,
+        'bg': bg,
+        if (device != null) 'device': device,
+      };
 }
 
 /// A flow-layout container of items on a screen.

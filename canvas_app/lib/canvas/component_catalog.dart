@@ -55,6 +55,7 @@
 library;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 // Direct component-library import: the barrel exports `TabItem`/`TabChild`
@@ -639,6 +640,409 @@ Widget _buildDrawer(Map<String, dynamic> props) {
   );
 }
 
+/// Empty canvas-level strings map to null so optional slots collapse instead
+/// of rendering empty gaps (mirrors the input builder's empty-label
+/// convention).
+Widget? _textOrNull(String value) => value.isEmpty ? null : Text(value);
+
+Widget _buildBasic(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`layout/basic/preview.dart`: person leading,
+  // name title, email subtitle, chevron trailing). The real `Basic` builds
+  // bare (all slots optional, theme fallbacks for every metric); its
+  // internal `Expanded` row only ever sees bounded width (row containers
+  // wrap children in `Flexible` — see phone_frame.dart).
+  final title = (props['title'] ?? 'Title') as String;
+  final subtitle = (props['subtitle'] ?? 'Subtitle') as String;
+  final content = (props['content'] ?? 'Content') as String;
+  final showLeading = (props['showLeading'] ?? true) as bool;
+  final showTrailing = (props['showTrailing'] ?? true) as bool;
+  return shadcn.Basic(
+    leading: showLeading ? const Icon(Icons.person) : null,
+    title: _textOrNull(title),
+    subtitle: _textOrNull(subtitle),
+    content: _textOrNull(content),
+    trailing: showTrailing ? const Icon(Icons.chevron_right) : null,
+  );
+}
+
+/// Theme-token art for the card-image `image` slot: a tonal container with a
+/// centered glyph. The kit's own preview uses `Image.network` (a 404 trap on
+/// canvas — the triage screenshot's broken-image box), so the catalog never
+/// uses network/asset images here.
+class _CardImageArt extends StatelessWidget {
+  const _CardImageArt();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: 120,
+      color: scheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(Icons.image, size: 32, color: scheme.onSurfaceVariant),
+      ),
+    );
+  }
+}
+
+Widget _buildCardImage(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a title plus a
+  // subtitle (the required `image` slot is the theme-token art above). The
+  // real `CardImage` builds bare; its vertical `Flex` holds a `Flexible`
+  // image, which needs bounded height — root canvas columns are unbounded,
+  // so the catalog pins a fixed height exactly like the drawer builder pins
+  // a fixed width.
+  final title = (props['title'] ?? 'Card title') as String;
+  final subtitle = (props['subtitle'] ?? 'Card subtitle') as String;
+  return SizedBox(
+    height: 240,
+    child: shadcn.CardImage(
+      image: const _CardImageArt(),
+      title: _textOrNull(title),
+      subtitle: _textOrNull(subtitle),
+    ),
+  );
+}
+
+Widget _buildScaffold(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: an app title
+  // plus a body line. Dropping a scaffold yields the default app shell —
+  // the real kit `Scaffold` (its `Overlay` + `DrawerOverlay` build bare)
+  // with a default `AppBar` titled from props and the body text as the
+  // content slot. Colors stay null so the components theme supplies the
+  // default background (`ScaffoldTheme.backgroundColor` then
+  // `colorScheme.background`). The fixed height mirrors the drawer
+  // builder's fixed width: the kit flex needs bounded height, which root
+  // canvas columns do not provide.
+  final title = (props['title'] ?? 'My App') as String;
+  final body = (props['body'] ?? 'Welcome') as String;
+  return SizedBox(
+    height: 320,
+    child: shadcn.Scaffold(
+      headers: [shadcn.AppBar(title: Text(title))],
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text(body),
+      ),
+    ),
+  );
+}
+
+Widget _buildCollapsible(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented, mirroring the
+  // accordion builder (trigger/content/expanded). The real `Collapsible`
+  // owns its expansion state; trigger + content mirror the component's own
+  // preview (`layout/collapsible/preview.dart`).
+  final trigger = (props['trigger'] ?? 'Show more') as String;
+  final content = (props['content'] ?? 'Hidden details') as String;
+  final expanded = (props['expanded'] ?? false) as bool;
+  return shadcn.Collapsible(
+    isExpanded: expanded,
+    children: [
+      shadcn.CollapsibleTrigger(child: Text(trigger)),
+      shadcn.CollapsibleContent(child: Text(content)),
+    ],
+  );
+}
+
+Widget _buildSteps(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two step
+  // titles plus their detail bodies. The real `Steps` takes `StepItem`
+  // children (`title` + `content` widgets, both required); numbering and
+  // connectors render from the children themselves.
+  final step1 = (props['step1'] ?? 'Step 1') as String;
+  final detail1 = (props['detail1'] ?? 'First step details') as String;
+  final step2 = (props['step2'] ?? 'Step 2') as String;
+  final detail2 = (props['detail2'] ?? 'Second step details') as String;
+  return shadcn.Steps(
+    children: [
+      shadcn.StepItem(title: Text(step1), content: [Text(detail1)]),
+      shadcn.StepItem(title: Text(step2), content: [Text(detail2)]),
+    ],
+  );
+}
+
+Widget _buildTimeline(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two
+  // time/title/detail entries. The real `Timeline` takes `TimelineData`
+  // (`time` + `title` required, `content` optional); colors stay null so the
+  // theme supplies indicator/connector defaults.
+  final time1 = (props['time1'] ?? '9:00 AM') as String;
+  final title1 = (props['title1'] ?? 'Kickoff') as String;
+  final detail1 = (props['detail1'] ?? 'Project kickoff meeting') as String;
+  final time2 = (props['time2'] ?? '2:00 PM') as String;
+  final title2 = (props['title2'] ?? 'Review') as String;
+  final detail2 = (props['detail2'] ?? 'Design review session') as String;
+  return shadcn.Timeline(
+    data: [
+      shadcn.TimelineData(
+        time: Text(time1),
+        title: Text(title1),
+        content: _textOrNull(detail1),
+      ),
+      shadcn.TimelineData(
+        time: Text(time2),
+        title: Text(title2),
+        content: _textOrNull(detail2),
+      ),
+    ],
+  );
+}
+
+Widget _buildOutlinedContainer(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `OutlinedContainer` requires only `child`; the canvas-level `label` prop
+  // renders as that child (same content-prop pattern as the card builder).
+  final label = (props['label'] ?? 'Outlined') as String;
+  return shadcn.OutlinedContainer(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Text(label),
+    ),
+  );
+}
+
+Widget _buildHidden(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `Hidden` needs `hidden` + `child` (durations/curves all defaulted); the
+  // canvas-level `label` prop renders as that child so the visible state is
+  // obvious on canvas.
+  final label = (props['label'] ?? 'Hidden content') as String;
+  final hidden = (props['hidden'] ?? false) as bool;
+  return shadcn.Hidden(hidden: hidden, child: Text(label));
+}
+
+/// Parses a canvas-level shortcut string (`'Ctrl+K'`, `'Shift+Alt+S'`) into
+/// logical keys for [shadcn.KeyboardDisplay]. Unknown tokens are skipped; a
+/// fully-unknown string falls back to `keyK` instead of crashing (single
+/// letters/digits map via their ASCII key ids, which equal the logical ids).
+List<LogicalKeyboardKey> _parseShortcutKeys(String raw) {
+  final mapped = <LogicalKeyboardKey>[];
+  for (final token in raw.split(RegExp(r'[+\s]+'))) {
+    final key = _shortcutToken(token);
+    if (key != null) mapped.add(key);
+  }
+  return mapped.isEmpty ? [LogicalKeyboardKey.keyK] : mapped;
+}
+
+LogicalKeyboardKey? _shortcutToken(String token) {
+  final t = token.trim().toLowerCase();
+  if (t.isEmpty) return null;
+  switch (t) {
+    case 'ctrl':
+    case 'control':
+      return LogicalKeyboardKey.controlLeft;
+    case 'shift':
+      return LogicalKeyboardKey.shiftLeft;
+    case 'alt':
+    case 'option':
+      return LogicalKeyboardKey.altLeft;
+    case 'meta':
+    case 'cmd':
+    case 'command':
+    case 'win':
+      return LogicalKeyboardKey.metaLeft;
+    case 'enter':
+    case 'return':
+      return LogicalKeyboardKey.enter;
+    case 'space':
+      return LogicalKeyboardKey.space;
+    case 'tab':
+      return LogicalKeyboardKey.tab;
+    case 'esc':
+    case 'escape':
+      return LogicalKeyboardKey.escape;
+    case 'backspace':
+      return LogicalKeyboardKey.backspace;
+    case 'delete':
+    case 'del':
+      return LogicalKeyboardKey.delete;
+  }
+  if (t.length == 1) {
+    final c = t.codeUnitAt(0);
+    if ((c >= 97 && c <= 122) || (c >= 48 && c <= 57)) {
+      return LogicalKeyboardKey(c);
+    }
+  }
+  return null;
+}
+
+Widget _buildKeyboardShortcut(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `KeyboardDisplay` needs `List<LogicalKeyboardKey>`; the canvas-level
+  // `keys` string prop parses via [_parseShortcutKeys] (same stringly-typed
+  // convention as the rest of the catalog). Key glyphs resolve through a
+  // default `KeyboardShortcutDisplayMapper`, which the key widgets require
+  // as a `Data` ancestor (it also renders the Ctrl/Shift/Alt/Cmd labels).
+  final keys = (props['keys'] ?? 'Ctrl+K') as String;
+  return shadcn.KeyboardShortcutDisplayMapper(
+    child: shadcn.KeyboardDisplay(keys: _parseShortcutKeys(keys)),
+  );
+}
+
+Widget _buildTracker(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a segment
+  // count plus one level applied to every segment. The real `Tracker` takes
+  // `TrackerData` (`tooltip` + `level`, both required); tooltips are plain
+  // segment labels and the level maps to the kit's `TrackerLevel` set.
+  // (Qualified: material's `Tooltip` is also imported here, but `Tracker`
+  // is kit-unique.)
+  final segments = ((props['segments'] as num?)?.toInt() ?? 3).clamp(1, 5);
+  final level = (props['level'] ?? 'fine') as String;
+  final resolved = switch (level) {
+    'warning' => shadcn.TrackerLevel.warning,
+    'critical' => shadcn.TrackerLevel.critical,
+    'unknown' => shadcn.TrackerLevel.unknown,
+    _ => shadcn.TrackerLevel.fine,
+  };
+  return shadcn.Tracker(
+    data: [
+      for (var i = 0; i < segments; i++)
+        shadcn.TrackerData(
+          tooltip: Text('Segment ${i + 1}'),
+          level: resolved,
+        ),
+    ],
+  );
+}
+
+Widget _buildChat(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `ChatBubble` requires only `child` (type/color/alignment all fall back
+  // to the chat theme); the canvas-level `message` prop renders as that
+  // child (same content-prop pattern as the card builder).
+  final message = (props['message'] ?? 'Hello!') as String;
+  return shadcn.ChatBubble(child: Text(message));
+}
+
+Widget _buildSelectable(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real kit
+  // `SelectableText` takes a positional string (qualified: material's
+  // `SelectableText` is also imported here); cursor/selection styling falls
+  // back to the theme.
+  final text = (props['text'] ?? 'Select me') as String;
+  return shadcn.SelectableText(text);
+}
+
+/// Local rating state for the catalog star rating (builders are stateless).
+/// `StarRating` is controlled (`value` + `onChanged`), so the cell owns a
+/// double exactly like `_SwitchCell` owns a bool.
+class _StarRatingCell extends StatefulWidget {
+  final double initialValue;
+  final double max;
+
+  const _StarRatingCell({required this.initialValue, required this.max});
+
+  @override
+  State<_StarRatingCell> createState() => _StarRatingCellState();
+}
+
+class _StarRatingCellState extends State<_StarRatingCell> {
+  late double _value = widget.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.StarRating(
+      value: _value,
+      max: widget.max,
+      onChanged: (v) =>
+          setState(() => _value = v.clamp(0.0, widget.max).toDouble()),
+    );
+  }
+}
+
+Widget _buildStarRating(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a value plus
+  // the star count. Both parse via `num` (`jsonDecode` yields `int` for
+  // whole numbers) and clamp so hand-written docs never crash.
+  final max = (((props['max'] as num?)?.toDouble() ?? 5).clamp(1, 10)).toDouble();
+  final value =
+      (((props['value'] as num?)?.toDouble() ?? 3).clamp(0, max)).toDouble();
+  return _StarRatingCell(initialValue: value, max: max);
+}
+
+Widget _buildClickable(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `Clickable` is a state-aware gesture surface requiring only `child`
+  // (all hover/focus/press handling defaults to the theme); the
+  // canvas-level `label` prop renders as that child. `onPressed` stays a
+  // no-op so the canvas node never navigates.
+  final label = (props['label'] ?? 'Tap me') as String;
+  return shadcn.Clickable(onPressed: () {}, child: Text(label));
+}
+
+Widget _buildScrollbar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real kit
+  // `Scrollbar` (qualified: material's `Scrollbar` is also imported here)
+  // requires only `child`; the canvas-level `label` prop renders inside a
+  // fixed-height box so the wrapper has a visible footprint on canvas.
+  final label = (props['label'] ?? 'Scrollable content') as String;
+  return shadcn.Scrollbar(
+    child: SizedBox(height: 64, child: Text(label)),
+  );
+}
+
+/// Local page state for the catalog pagination (builders are stateless).
+/// Mirrors `_TabsCell`: the current page plus the total page count.
+class _PaginationCell extends StatefulWidget {
+  final int initialPage;
+  final int totalPages;
+
+  const _PaginationCell({
+    required this.initialPage,
+    required this.totalPages,
+  });
+
+  @override
+  State<_PaginationCell> createState() => _PaginationCellState();
+}
+
+class _PaginationCellState extends State<_PaginationCell> {
+  late int _page = widget.initialPage;
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.Pagination(
+      page: _page,
+      totalPages: widget.totalPages,
+      onPageChanged: (p) =>
+          setState(() => _page = p.clamp(1, widget.totalPages)),
+    );
+  }
+}
+
+Widget _buildPagination(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: the current
+  // page plus the total page count (both parsed via `num`, clamped into
+  // range). Button labels come from `ShadcnLocalizations.of`, which falls
+  // back to English without a delegate, so the node builds bare.
+  final total = ((props['totalPages'] as num?)?.toInt() ?? 5).clamp(1, 20);
+  final page = ((props['page'] as num?)?.toInt() ?? 1).clamp(1, total);
+  return _PaginationCell(initialPage: page, totalPages: total);
+}
+
+Widget _buildAlertDialog(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/alert_dialog/preview.dart`: a title,
+  // a message, and a Close action). The real `AlertDialog` (qualified:
+  // material's `AlertDialog` is also imported here) is all-optional and
+  // builds bare on the same `ModalBackdrop`/`ModalContainer` primitives as
+  // the dialog catalog builder.
+  final title = (props['title'] ?? 'Are you sure?') as String;
+  final message =
+      (props['message'] ?? 'This action cannot be undone.') as String;
+  final showActions = (props['showActions'] ?? true) as bool;
+  return shadcn.AlertDialog(
+    title: Text(title),
+    content: Text(message),
+    actions: [
+      if (showActions)
+        shadcn.OutlineButton(onPressed: () {}, child: const Text('Close')),
+    ],
+  );
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -788,6 +1192,138 @@ final List<CatalogEntry> kCatalog = [
     label: 'Sliding drawer and sheet overlays with drag support.',
     defaults: const {'title': 'Drawer', 'content': 'Drawer content'},
     build: _buildDrawer,
+  ),
+  // Track J additions (2026-09-05): real builders for the triage kinds
+  // (`basic`, `card_image`, `scaffold`) plus the palette-visible batch
+  // below. Labels mirror `components.json` descriptions (registry bridge
+  // test); defaults are invented and documented per builder above.
+  CatalogEntry(
+    kind: 'basic',
+    label: 'Flexible row layout for leading/title/content/trailing sections.',
+    defaults: const {
+      'title': 'Title',
+      'subtitle': 'Subtitle',
+      'content': 'Content',
+      'showLeading': true,
+      'showTrailing': true,
+    },
+    build: _buildBasic,
+  ),
+  CatalogEntry(
+    kind: 'card_image',
+    label: 'Interactive card that pairs an image with title/subtitle content.',
+    defaults: const {'title': 'Card title', 'subtitle': 'Card subtitle'},
+    build: _buildCardImage,
+  ),
+  CatalogEntry(
+    kind: 'scaffold',
+    label: 'Layout scaffold with headers, footers, and loading indicators.',
+    defaults: const {'title': 'My App', 'body': 'Welcome'},
+    build: _buildScaffold,
+  ),
+  CatalogEntry(
+    kind: 'collapsible',
+    label: 'Independent sections that toggle their own visibility',
+    defaults: const {
+      'trigger': 'Show more',
+      'content': 'Hidden details',
+      'expanded': false,
+    },
+    build: _buildCollapsible,
+  ),
+  CatalogEntry(
+    kind: 'steps',
+    label: 'Vertical step list with numbered indicators and connectors.',
+    defaults: const {
+      'step1': 'Step 1',
+      'detail1': 'First step details',
+      'step2': 'Step 2',
+      'detail2': 'Second step details',
+    },
+    build: _buildSteps,
+  ),
+  CatalogEntry(
+    kind: 'timeline',
+    label: 'Vertical timeline for chronological entries.',
+    defaults: const {
+      'time1': '9:00 AM',
+      'title1': 'Kickoff',
+      'detail1': 'Project kickoff meeting',
+      'time2': '2:00 PM',
+      'title2': 'Review',
+      'detail2': 'Design review session',
+    },
+    build: _buildTimeline,
+  ),
+  CatalogEntry(
+    kind: 'outlined_container',
+    label: 'Animated outlined container with theme-aware borders and blur.',
+    defaults: const {'label': 'Outlined'},
+    build: _buildOutlinedContainer,
+  ),
+  CatalogEntry(
+    kind: 'hidden',
+    label: 'Animated visibility helper with axis-aware size control.',
+    defaults: const {'label': 'Hidden content', 'hidden': false},
+    build: _buildHidden,
+  ),
+  CatalogEntry(
+    kind: 'keyboard_shortcut',
+    label: 'Displays keyboard shortcuts as styled keycaps.',
+    defaults: const {'keys': 'Ctrl+K'},
+    build: _buildKeyboardShortcut,
+  ),
+  CatalogEntry(
+    kind: 'tracker',
+    label: 'Horizontal tracker segments with tooltips.',
+    defaults: const {'segments': 3, 'level': 'fine'},
+    build: _buildTracker,
+  ),
+  CatalogEntry(
+    kind: 'chat',
+    label: 'Chat bubbles, groups, and tail helpers for conversational layouts.',
+    defaults: const {'message': 'Hello!'},
+    build: _buildChat,
+  ),
+  CatalogEntry(
+    kind: 'selectable',
+    label: 'Selectable text with themed cursor and selection behavior.',
+    defaults: const {'text': 'Select me'},
+    build: _buildSelectable,
+  ),
+  CatalogEntry(
+    kind: 'star_rating',
+    label: 'Interactive star rating input with theming support.',
+    defaults: const {'value': 3.0, 'max': 5.0},
+    build: _buildStarRating,
+  ),
+  CatalogEntry(
+    kind: 'clickable',
+    label: 'State-aware gesture surface with hover, focus, and press handling.',
+    defaults: const {'label': 'Tap me'},
+    build: _buildClickable,
+  ),
+  CatalogEntry(
+    kind: 'scrollbar',
+    label: 'Themeable scrollbar wrapper built on RawScrollbar.',
+    defaults: const {'label': 'Scrollable content'},
+    build: _buildScrollbar,
+  ),
+  CatalogEntry(
+    kind: 'pagination',
+    label: 'Page navigation controls with skip, previous/next, and ellipsis handling.',
+    defaults: const {'page': 1, 'totalPages': 5},
+    build: _buildPagination,
+  ),
+  CatalogEntry(
+    kind: 'alert_dialog',
+    label: 'Modal alert dialog with customizable header, content, and actions.',
+    defaults: const {
+      'title': 'Are you sure?',
+      'message': 'This action cannot be undone.',
+      'showActions': true,
+    },
+    build: _buildAlertDialog,
   ),
 ];
 
