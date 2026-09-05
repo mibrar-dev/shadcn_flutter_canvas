@@ -163,6 +163,122 @@ void main() {
       kSingleFileGolden,
     );
   });
+
+  test('category-name kinds never inline category bodies, no duplicates', () {
+    // Real-shaped destinations: the button body lives under the control
+    // category. A palette `control` node must NOT re-inline it (the old
+    // substring match did, duplicating every class); `form` must match only
+    // the form-component body, not every form-category body.
+    const sources = {
+      '{installPath}/components/control/button/button.dart':
+          'class PrimaryButton extends StatelessWidget {}',
+      '{installPath}/components/form/form/form.dart':
+          'class FormBody extends StatelessWidget {}',
+      '{installPath}/components/form/input/input.dart':
+          'class InputBody extends StatelessWidget {}',
+    };
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'button'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'control'},
+          ],
+        },
+        {
+          'id': 'n3',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i3', 'kind': 'form'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Categories', 'brief': ''},
+    });
+    final out = buildSingleFile(doc, sources);
+
+    // Each body inlined exactly once (no cross-kind duplication).
+    expect(
+      '// from: {installPath}/components/control/button/button.dart'
+          .allMatches(out)
+          .length,
+      1,
+    );
+    expect(
+      '// from: {installPath}/components/form/form/form.dart'
+          .allMatches(out)
+          .length,
+      1,
+    );
+    // `form` did not pull the input-category sibling; `control` (a category,
+    // not a component) inlined nothing and warns instead.
+    expect(out, isNot(contains('class InputBody')));
+    expect(out, contains('TODO(canvas): no source for kind "control"'));
+    expect(out, contains('class PrimaryButton'));
+    expect(out, contains('class FormBody'));
+  });
+
+  test('pubspec comment covers deps of all embedded kinds', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'avatar'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'checkbox'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Deps', 'brief': ''},
+    });
+    final out = buildSingleFile(doc, const {});
+    expect(out, contains('gap'));
+    expect(out, contains('data_widget'));
+    expect(out, contains('animation_kit'));
+  });
 }
 
 /// Byte-identical golden for [buildSingleFile] on [buildTwoScreenDoc]

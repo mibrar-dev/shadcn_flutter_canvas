@@ -65,11 +65,11 @@ String buildSingleFile(
       ..writeln('}');
   }
 
+  final emitted = <String>{};
   for (final kind in kinds) {
-    final needle = _kKindPaths[kind] ?? '/$kind/';
     final dests = [
       for (final dest in sourcesByDestination.keys)
-        if (dest.contains(needle)) dest,
+        if (_idOfDest(dest) == kind && !emitted.contains(dest)) dest,
     ]..sort();
     if (dests.isEmpty) {
       out.writeln();
@@ -77,6 +77,7 @@ String buildSingleFile(
       continue;
     }
     for (final dest in dests) {
+      emitted.add(dest);
       out
         ..writeln()
         ..writeln('// from: $dest')
@@ -533,22 +534,55 @@ List<String> _usedKinds(ScreenDoc doc) {
   return kinds;
 }
 
-/// Explicit kind → destination-substring table for the catalog kinds.
-const Map<String, String> _kKindPaths = {
-  'button': '/button/',
-  'card': '/card/',
-  'input': '/input/',
-  'badge': '/badge/',
-  'switch': '/switch/',
-};
+/// Component id for a registry destination, or null when the path has no
+/// component-id shape.
+///
+/// Real destinations look like `{installPath}/components/<category>/<id>/…`
+/// (the id is the segment after the category); test stubs look like
+/// `registry/components/<id>/<file>` (no category level). Category names
+/// (`control`, `form`, `overlay`, …) are NOT ids: a palette kind like
+/// `control` must not inline every control-category body. The previous
+/// substring `contains('/$kind/')` match did exactly that (a `control` node
+/// re-inlined all 63 button files, duplicating every class), and `form` /
+/// `overlay` likewise duplicated the whole form/overlay categories.
+String? _idOfDest(String dest) {
+  final parts = dest.split('/');
+  final ci = parts.indexOf('components');
+  if (ci < 0) return null;
+  final rest = parts.sublist(ci + 1);
+  if (rest.isEmpty) return null;
+  // Real destinations carry a category level (3+ tail segments):
+  // components/<category>/<id>/… → the id is second.
+  if (rest.length >= 3) return rest[1];
+  // Short tails (test stubs): components/<id>/<file> → the id is first.
+  return rest[0];
+}
 
-/// Small kind → pubspec deps table (button/card/input need gap+data_widget).
+/// Kind → pubspec deps table, mirroring the bundle exporter's per-kind
+/// `pubspec.dependencies` for the 20 kinds present in `kEmbeddedSources`
+/// (gap-first ordering matches the pre-existing button/card/input rows, so
+/// established goldens keep byte-identical pubspec comments).
 const Map<String, List<String>> _kKindDeps = {
   'button': ['gap', 'data_widget'],
   'card': ['gap', 'data_widget'],
   'input': ['gap', 'data_widget'],
-  'badge': <String>[],
-  'switch': <String>[],
+  'badge': ['gap'],
+  'switch': ['gap', 'data_widget'],
+  'avatar': ['gap'],
+  'checkbox': ['gap', 'data_widget', 'animation_kit'],
+  'divider': ['gap', 'data_widget'],
+  'progress': ['gap'],
+  'tabs': ['gap', 'data_widget'],
+  'accordion': ['gap', 'data_widget'],
+  'select': ['gap', 'data_widget'],
+  'radio_group': ['gap', 'data_widget'],
+  'skeleton': ['gap', 'skeletonizer'],
+  'breadcrumb': ['gap', 'data_widget'],
+  'dialog': ['gap', 'data_widget'],
+  'tooltip': ['gap', 'data_widget'],
+  'toast': ['gap'],
+  'drawer': ['gap', 'data_widget'],
+  'form': ['gap', 'data_widget', 'email_validator'],
 };
 
 /// Merged deps for [kinds], deduped, first-seen order.

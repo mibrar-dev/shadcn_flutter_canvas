@@ -581,15 +581,15 @@ List<String> _bundleItemExpr(
   Map<String, String> routes,
   Set<String> ids,
 ) {
-  final label = _labelOf(item);
+  final label = _bundleStr(_labelOf(item));
   final action = item.action;
-  if (action == null) return ["Text('$label'),"];
+  if (action == null) return ["Text($label),"];
   final route = ids.contains(action.to) ? routes[action.to] : null;
-  if (route == null) return ["Text('$label'),"];
+  if (route == null) return ["Text($label),"];
   return [
     'GestureDetector(',
     "  onTap: () => Navigator.of(context).pushNamed('$route'), // transition: ${action.transition}",
-    "  child: Text('$label'),",
+    "  child: Text($label),",
     '),',
   ];
 }
@@ -734,6 +734,20 @@ String _detailOf(CanvasItem item) {
       .toList()
     ..sort();
   return keys.map((k) => '$k ${item.props[k]}').join(', ');
+}
+
+/// Dart single-quoted string literal for [value]; mirrors `_str` in
+/// `codegen_single.dart`. Labels interpolate into `Text(…)` widget
+/// expressions (not comments), so a quote/`$`/newline in a label must not
+/// break compilation of the emitted screen.
+String _bundleStr(Object? value) {
+  final escaped = '$value'
+      .replaceAll(r'\', r'\\')
+      .replaceAll("'", r"\'")
+      .replaceAll('\n', r'\n')
+      .replaceAll('\r', r'\r')
+      .replaceAll('\$', r'\$');
+  return "'$escaped'";
 }
 
 String _routeOf(String name) {

@@ -107,6 +107,165 @@ Future<void> _pumpSurface(
   );
 }
 
+/// Minimal 3-screen chain doc: Showcase → Display → Controls → Showcase.
+/// Item labels stay distinct from screen names so `find.text` on a header
+/// name is unambiguous (the player bar shows `current?.name`).
+ScreenDoc _chainDoc() => ScreenDoc.fromJson({
+  'screens': [
+    {'id': 's1', 'name': 'Showcase', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+    {'id': 's2', 'name': 'Display', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
+    {'id': 's3', 'name': 'Controls', 'x': 960.0, 'y': 0.0, 'bg': 'surface'},
+  ],
+  'nodes': [
+    {
+      'id': 'n1',
+      'screenId': 's1',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {
+          'id': 'i1',
+          'kind': 'button',
+          'label': 'To Display',
+          'action': {'to': 's2', 'transition': 'slide'},
+        },
+      ],
+    },
+    {
+      'id': 'n2',
+      'screenId': 's2',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {
+          'id': 'i2',
+          'kind': 'button',
+          'label': 'To Controls',
+          'action': {'to': 's3', 'transition': 'slide'},
+        },
+      ],
+    },
+    {
+      'id': 'n3',
+      'screenId': 's3',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {
+          'id': 'i3',
+          'kind': 'button',
+          'label': 'To Showcase',
+          'action': {'to': 's1', 'transition': 'slide'},
+        },
+      ],
+    },
+  ],
+  'theme': {
+    'paletteKey': 'clean-slate',
+    'dark': false,
+    'shape': 'rounded',
+    'motion': 'standard',
+  },
+  'meta': {'title': 'Chain', 'brief': ''},
+});
+
+/// Single screen whose only action points at a missing screen id.
+ScreenDoc _unknownTargetDoc() => ScreenDoc.fromJson({
+  'screens': [
+    {'id': 's1', 'name': 'Safe', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+  ],
+  'nodes': [
+    {
+      'id': 'n1',
+      'screenId': 's1',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {
+          'id': 'i1',
+          'kind': 'button',
+          'label': 'Ghost Link',
+          'action': {'to': 'gone', 'transition': 'slide'},
+        },
+      ],
+    },
+  ],
+  'theme': {
+    'paletteKey': 'clean-slate',
+    'dark': false,
+    'shape': 'rounded',
+    'motion': 'standard',
+  },
+  'meta': {'title': 'Unknown target', 'brief': ''},
+});
+
+/// Home screen with an always-visible item plus a mobile-hidden node whose
+/// item navigates to Away; Away carries a plain marker item.
+ScreenDoc _tierNavDoc() => ScreenDoc.fromJson({
+  'screens': [
+    {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+    {'id': 's2', 'name': 'Away', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
+  ],
+  'nodes': [
+    {
+      'id': 'n1',
+      'screenId': 's1',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {'id': 'i0', 'kind': 'button', 'label': 'Always Here'},
+      ],
+    },
+    {
+      'id': 'n2',
+      'screenId': 's1',
+      'x': 16.0,
+      'y': 200.0,
+      'hiddenOn': ['mobile'],
+      'items': [
+        {
+          'id': 'i1',
+          'kind': 'button',
+          'label': 'Secret Next',
+          'action': {'to': 's2', 'transition': 'slide'},
+        },
+      ],
+    },
+    {
+      'id': 'n3',
+      'screenId': 's2',
+      'x': 16.0,
+      'y': 96.0,
+      'items': [
+        {'id': 'i2', 'kind': 'button', 'label': 'Arrived'},
+      ],
+    },
+  ],
+  'theme': {
+    'paletteKey': 'clean-slate',
+    'dark': false,
+    'shape': 'rounded',
+    'motion': 'standard',
+  },
+  'meta': {'title': 'Tier nav', 'brief': ''},
+});
+
+Future<void> _pumpPreview(WidgetTester tester, ScreenDoc doc) async {
+  await tester.pumpWidget(
+    MaterialApp(home: Scaffold(body: PreviewPlayer(doc: doc))),
+  );
+}
+
+/// Wide viewport so desktop stages (1100) are never clamped by the window.
+void _wideViewport(WidgetTester tester) {
+  tester.view.physicalSize = const Size(1500, 1000);
+  tester.view.devicePixelRatio = 1.0;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+}
+
 void main() {
   // resolveCanvasThemeData mutates the global InstalledThemePreset.current;
   // preserve it across tests.
@@ -255,6 +414,106 @@ void main() {
       await tester.tap(find.text('‹ Back'));
       await tester.pump();
       expect(find.text('Pay'), findsOneWidget);
+    });
+
+    testWidgets('chain navigates Showcase→Display→Controls→Showcase', (
+      tester,
+    ) async {
+      await _pumpPreview(tester, _chainDoc());
+      expect(find.text('Showcase'), findsOneWidget);
+      expect(find.text('To Display'), findsOneWidget);
+
+      await tester.tap(find.text('To Display'));
+      await tester.pump();
+      expect(find.text('Display'), findsOneWidget);
+      expect(find.text('To Controls'), findsOneWidget);
+      expect(find.text('To Display'), findsNothing);
+
+      await tester.tap(find.text('To Controls'));
+      await tester.pump();
+      expect(find.text('Controls'), findsOneWidget);
+      expect(find.text('To Showcase'), findsOneWidget);
+      expect(find.text('To Controls'), findsNothing);
+
+      await tester.tap(find.text('To Showcase'));
+      await tester.pump();
+      expect(find.text('Showcase'), findsOneWidget);
+      expect(find.text('To Display'), findsOneWidget);
+    });
+
+    testWidgets('back mid-chain returns through the stack', (tester) async {
+      var exited = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: PreviewPlayer(doc: _chainDoc(), onExit: () => exited = true),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('To Display'));
+      await tester.pump();
+      await tester.tap(find.text('To Controls'));
+      await tester.pump();
+      expect(find.text('Controls'), findsOneWidget);
+
+      // Back mid-chain returns to Display, then to Showcase.
+      await tester.tap(find.text('‹ Back'));
+      await tester.pump();
+      expect(find.text('Display'), findsOneWidget);
+      expect(find.text('To Controls'), findsOneWidget);
+
+      await tester.tap(find.text('‹ Back'));
+      await tester.pump();
+      expect(find.text('Showcase'), findsOneWidget);
+      expect(find.text('To Display'), findsOneWidget);
+      expect(exited, isFalse);
+
+      // Back at the root exits to the editor.
+      await tester.tap(find.text('‹ Back'));
+      await tester.pump();
+      expect(exited, isTrue);
+    });
+
+    testWidgets('unknown target renders and taps safely without navigating', (
+      tester,
+    ) async {
+      await _pumpPreview(tester, _unknownTargetDoc());
+      expect(find.text('Safe'), findsOneWidget);
+      expect(find.text('Ghost Link'), findsOneWidget);
+
+      // The player ignores taps whose target screen is missing: no crash,
+      // no navigation, still on the same screen.
+      await tester.tap(find.text('Ghost Link'));
+      await tester.pump();
+      expect(find.text('Safe'), findsOneWidget);
+      expect(find.text('Ghost Link'), findsOneWidget);
+    });
+
+    testWidgets('hidden-tier action is untappable until its tier is shown', (
+      tester,
+    ) async {
+      _wideViewport(tester);
+      await _pumpPreview(tester, _tierNavDoc());
+
+      // Phone stage is the mobile tier: the mobile-hidden node (and its
+      // navigation action) is not rendered, hence not tappable.
+      expect(find.text('mobile · 390'), findsOneWidget);
+      expect(find.text('Always Here'), findsOneWidget);
+      expect(find.text('Secret Next'), findsNothing);
+
+      // Desktop-fluid preset re-tiers to desktop: the node renders and its
+      // action navigates to Away.
+      await tester.tap(find.byIcon(Icons.desktop_windows_outlined));
+      await tester.pump();
+      expect(find.text('desktop · 1100'), findsOneWidget);
+      expect(find.text('Secret Next'), findsOneWidget);
+
+      await tester.tap(find.text('Secret Next'));
+      await tester.pump();
+      expect(find.text('Away'), findsOneWidget);
+      expect(find.text('Arrived'), findsOneWidget);
+      expect(find.text('Secret Next'), findsNothing);
     });
   });
 

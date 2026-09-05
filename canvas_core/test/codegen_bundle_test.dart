@@ -292,6 +292,37 @@ void main() {
       kBundleScreenGolden,
     );
   });
+
+  test('labels with quotes and dollars are escaped in widget expressions', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i1', 'kind': 'button', 'label': "O'Brien \$5"},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Escapes', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    // Escaped single-quote and dollar: still one valid string literal.
+    expect(screen, contains("O\\'Brien \\\$5"));
+    expect(screen, isNot(contains("Text('O'Brien")));
+  });
 }
 
 /// Byte-identical golden for the bundle screen scaffold on a plain doc (no
