@@ -139,21 +139,25 @@ String _screensSection(ScreenDoc doc) {
 /// Leaf items keep the exact legacy `- kind "label" (...) at (x, y)` format.
 /// Row containers add one header line noting their gap, with their own items
 /// and row children indented one level underneath (recurses for nesting).
+/// Nodes carrying responsive fields (`hiddenOn`/`breakpointValues`/`slots`)
+/// append [_responsiveNote]; nodes without them emit no suffix, so legacy
+/// docs keep byte-identical prompts.
 List<String> _nodeRows(ScreenDoc doc, CanvasNode node, int level) {
   final pad = '  ' * level;
+  final note = _responsiveNote(node);
   if (!node.isRow) {
     // Root leaves keep the legacy positioned format; row children flow, so
     // their stored x/y would be noise.
     final positioned = node.parentId == null;
     return [
       for (final i in node.items)
-        '$pad${_itemRow(node, i, positioned: positioned)}',
+        '$pad${_itemRow(node, i, positioned: positioned)}$note',
     ];
   }
   final header = StringBuffer('$pad- row (gap ${_num(node.gap)}');
   if (node.mainAxis != null) header.write(', main ${node.mainAxis}');
   if (node.crossAxis != null) header.write(', cross ${node.crossAxis}');
-  header.write(')');
+  header.write(')$note');
   final lines = <String>[header.toString()];
   for (final item in node.items) {
     lines.add('  $pad${_itemRow(node, item, positioned: false)}');
@@ -166,6 +170,25 @@ List<String> _nodeRows(ScreenDoc doc, CanvasNode node, int level) {
     }
   }
   return lines;
+}
+
+String _responsiveNote(CanvasNode node) {
+  final parts = <String>[];
+  if (node.hiddenOn.isNotEmpty) {
+    parts.add('hidden on ${(node.hiddenOn.toList()..sort()).join(', ')}');
+  }
+  for (final tier in node.breakpointValues.keys.toList()..sort()) {
+    final overrides = node.breakpointValues[tier]!;
+    final keys = overrides.keys.toList()..sort();
+    parts.add(
+      '$tier overrides ${keys.map((k) => '$k=${overrides[k]}').join(', ')}',
+    );
+  }
+  if (node.slots.isNotEmpty) {
+    final keys = node.slots.keys.toList()..sort();
+    parts.add('slots ${keys.map((k) => '$k=${node.slots[k]}').join(', ')}');
+  }
+  return parts.isEmpty ? '' : ' [${parts.join('; ')}]';
 }
 
 String _behaviorSection(ScreenDoc doc) {

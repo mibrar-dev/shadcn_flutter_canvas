@@ -140,9 +140,232 @@ String _crossAxisName(String? value) {
   }
 }
 
+/// Whether [node] needs a responsive wrapper: a known `hiddenOn` tier or a
+/// known-tier `breakpointValues` entry. Unknown tier strings are inert
+/// (rejected at parse time by `CanvasNode.fromJson`), so they never wrap —
+/// docs without responsive fields keep byte-identical output.
+bool _isResponsive(CanvasNode node) =>
+    _hiddenTiers(node).isNotEmpty || _overrideTiers(node).isNotEmpty;
+
+/// Known `hiddenOn` tiers, sorted (deterministic conditions/comments).
+List<String> _hiddenTiers(CanvasNode node) =>
+    (node.hiddenOn.where(kResponsiveTiers.contains).toList()..sort());
+
+/// Known `breakpointValues` tiers, sorted (deterministic branch order).
+List<String> _overrideTiers(CanvasNode node) =>
+    (node.breakpointValues.keys.where(kResponsiveTiers.contains).toList()
+      ..sort());
+
+/// Copy of [node] with [overrides] merged over every item's props.
+CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
+    CanvasNode(
+      id: node.id,
+      screenId: node.screenId,
+      x: node.x,
+      y: node.y,
+      items: [
+        for (final item in node.items)
+          item.copyWith(props: {...item.props, ...overrides}),
+      ],
+      parentId: node.parentId,
+      isRow: node.isRow,
+      gap: node.gap,
+      mainAxis: node.mainAxis,
+      crossAxis: node.crossAxis,
+      expand: node.expand,
+      flex: node.flex,
+      hiddenOn: node.hiddenOn,
+      breakpointValues: node.breakpointValues,
+      slots: node.slots,
+    );
+
+/// Renders [node]'s content as a single widget expression (unindented, no
+/// trailing comma) for responsive `LayoutBuilder` branch returns: a row
+/// renders its `Row` (or `IntrinsicHeight`) construction via the
+/// non-responsive core (nested responsive children keep their own builders
+/// through the dispatcher); a single-item leaf renders that item; a
+/// multi-item leaf renders a `Column`; an empty leaf renders
+/// `SizedBox.shrink()`. Tap comments are NOT included — [_writeBranch] emits
+/// those above the return.
+String _nodeContentExpr(ScreenDoc doc, CanvasNode node) {
+  if (!node.isRow) {
+    if (node.items.length == 1) {
+      return _stripTrailingComma(_itemExpression(node.items.single));
+    }
+    if (node.items.isEmpty) return 'SizedBox.shrink()';
+    final buf = StringBuffer()
+      ..writeln('Column(')
+      ..writeln('mainAxisSize: MainAxisSize.min,')
+      ..writeln('crossAxisAlignment: CrossAxisAlignment.start,')
+      ..writeln('children: [');
+    _writeItemBlock(buf, node.items, '  ');
+    buf
+      ..writeln('],')
+      ..write(')');
+    return buf.toString();
+  }
+  final buf = StringBuffer();
+  _writeFlowChildCore(buf, doc, node, '');
+  return _stripTrailingComma(buf.toString());
+}
+
+/// Drops one trailing comma (plus surrounding whitespace) from emitted
+/// statement text so it can follow `return`.
+String _stripTrailingComma(String text) {
+  var out = text.trimRight();
+  if (out.endsWith(',')) out = out.substring(0, out.length - 1);
+  return out;
+}
+
+/// Writes `return <expr>;` for [expr] (an unindented [_nodeContentExpr])
+/// under [indent]; [firstPrefix] starts the first line (`'return '` or a
+/// tier guard like `"if (tier == 'tablet') return "`).
+void _writeReturn(
+  StringBuffer out,
+  String expr,
+  String indent,
+  String firstPrefix,
+) {
+  final lines = [
+    for (final line in expr.split('\n')) if (line.isNotEmpty) line,
+  ];
+  for (var i = 0; i < lines.length; i++) {
+    final tail = i == lines.length - 1 ? ';' : '';
+    if (i == 0) {
+      out.writeln('$indent$firstPrefix${lines[i]}$tail');
+    } else {
+      out.writeln('$indent${lines[i]}$tail');
+    }
+  }
+}
+
+/// Writes one tier branch (or the default branch when [guard] is null) for
+/// [node]'s content, preserving the `// taps -> ...` comment for
+/// single-item leaves.
+void _writeBranch(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  String indent,
+  String? guard,
+) {
+  if (!node.isRow &&
+      node.items.length == 1 &&
+      node.items.single.action != null) {
+    out.writeln('$indent// taps -> ${node.items.single.action!.to}');
+  }
+  _writeReturn(
+    out,
+    _nodeContentExpr(doc, node),
+    indent,
+    guard == null ? 'return ' : 'if ($guard) return ',
+  );
+}
+
+/// Writes a responsive node: a `LayoutBuilder` resolving the tier from the
+/// layout width (mirroring `tierForWidth` in canvas_app — <600 mobile, <1024
+/// tablet, else desktop), hiding the node on its `hiddenOn` tiers and
+/// selecting per-tier item props from `breakpointValues` (statically merged
+/// per branch, so every branch reuses the plain item emitters).
+///
+/// `theme.chrome` is editor-only and never emitted (there is no chrome input
+/// here — codegen reads screens/nodes only). `slots` has no widget semantics
+/// in single-file output and is ignored.
+///
+/// A node hidden on every tier emits a bare `SizedBox.shrink()` — no builder,
+/// nothing to resolve at runtime.
+void _writeResponsiveFlowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  String indent,
+) {
+  final hidden = _hiddenTiers(node);
+  final tiers = _overrideTiers(node);
+  if (hidden.length == kResponsiveTiers.length) {
+    out
+      ..writeln('$indent// hidden on: ${hidden.join(', ')} (all tiers)')
+      ..writeln('${indent}const SizedBox.shrink(),');
+    return;
+  }
+  final summary = [
+    if (hidden.isNotEmpty) 'hidden on ${hidden.join(', ')}',
+    if (tiers.isNotEmpty) 'overrides on ${tiers.join(', ')}',
+  ].join('; ');
+  out
+    ..writeln('$indent// responsive ($summary)')
+    ..writeln('${indent}LayoutBuilder(')
+    ..writeln('$indent  builder: (context, constraints) {')
+    ..writeln(
+      "$indent    final tier = constraints.maxWidth >= 1024 "
+      "? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';",
+    );
+  if (hidden.isNotEmpty) {
+    final cond = hidden.map((t) => "tier == '$t'").join(' || ');
+    out.writeln('$indent    if ($cond) return const SizedBox.shrink();');
+  }
+  for (final tier in tiers) {
+    _writeBranch(
+      out,
+      doc,
+      _withProps(node, node.breakpointValues[tier]!),
+      '$indent    ',
+      "tier == '$tier'",
+    );
+  }
+  _writeBranch(out, doc, node, '$indent    ', null);
+  out
+    ..writeln('$indent  },')
+    ..writeln('$indent),');
+}
+
+/// Responsive row child: the W3 flex wrapper stays OUTSIDE the tier
+/// conditional (the layout role is tier-independent), so only the content
+/// re-resolves per tier.
+void _writeResponsiveRowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode child,
+  String indent,
+) {
+  final expand = child.expand;
+  if (expand != 'expanded' && expand != 'flex') {
+    _writeResponsiveFlowChild(out, doc, child, indent);
+    return;
+  }
+  final flex = child.flex ?? 1;
+  final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+  out
+    ..writeln('$indent$wrapper(')
+    ..writeln('$indent  flex: $flex,')
+    ..writeln('$indent  child:');
+  _writeResponsiveFlowChild(out, doc, child, '$indent    ');
+  out.writeln('$indent),');
+}
+
 /// Writes one root flow child: a leaf's items inline, or a [Row] for a row
 /// container whose children are the row's own items plus each child node's
 /// items (recurses for nested rows), separated by `SizedBox(width: gap)`.
+///
+/// Responsive nodes (`hiddenOn`/`breakpointValues`) route to
+/// [_writeResponsiveFlowChild]; everything else uses the non-responsive core
+/// below, unchanged.
+
+void _writeFlowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  String indent,
+) {
+  if (_isResponsive(node)) {
+    _writeResponsiveFlowChild(out, doc, node, indent);
+    return;
+  }
+  _writeFlowChildCore(out, doc, node, indent);
+}
+
+/// Writes one root flow child — non-responsive core (see [_writeFlowChild]
+/// for the responsive dispatcher).
 ///
 /// W3: the row emits its `mainAxisAlignment`/`crossAxisAlignment` from the
 /// mapped `mainAxis`/`crossAxis` (null → the pre-W3 start/center defaults, so
@@ -155,7 +378,7 @@ String _crossAxisName(String? value) {
 /// `crossAxis == stretch` wraps the Row in `IntrinsicHeight`: a stretch Row
 /// inside the screen Column (unbounded height) asserts without it, in both
 /// the renderer and the generated app.
-void _writeFlowChild(
+void _writeFlowChildCore(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode node,
@@ -209,7 +432,25 @@ void _writeFlowChild(
 /// the wrapper; leaves wrap each item expression (single-item nodes — the
 /// common drop path — yield one wrapper; multi-item nodes wrap each item
 /// with the same flex to stay deterministic without regrouping).
+///
+/// Responsive children route to [_writeResponsiveRowChild]; everything else
+/// uses the non-responsive core below, unchanged.
 void _writeRowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode child,
+  String indent,
+) {
+  if (_isResponsive(child)) {
+    _writeResponsiveRowChild(out, doc, child, indent);
+    return;
+  }
+  _writeRowChildCore(out, doc, child, indent);
+}
+
+/// Writes one row child — non-responsive core (see [_writeRowChild] for the
+/// responsive dispatcher).
+void _writeRowChildCore(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode child,

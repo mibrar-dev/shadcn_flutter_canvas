@@ -219,7 +219,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     final tier = tierForWidth(stageWidth);
                     final content = _demoOpen
                         ? buildAdaptiveNavDemo()
-                        : _stageContent(current, colors);
+                        : _stageContent(current, colors, stageWidth);
                     return Stack(
                       children: [
                         Align(
@@ -295,7 +295,31 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   }
 
   /// The doc content subtree — identical for every device (one-tree rule).
-  Widget _stageContent(CanvasScreen? current, EditorColors colors) {
+  ///
+  /// Responsive filtering: [stageWidth] resolves the tier via [tierForWidth]
+  /// and nodes hidden on that tier ([isNodeHiddenOnWidth]) are skipped. A
+  /// hidden ROW container hides its whole subtree (descendants are skipped
+  /// even when individually visible); every other node filters independently.
+  /// The active tier's [CanvasNode.breakpointValues] merge over each item's
+  /// props at build time (`{...item.props, ...overrides}`).
+  ///
+  /// Slot semantics (assumed — the doc model stores [CanvasNode.slots] as a
+  /// slot-name → item-id map with no renderer contract yet, so this is
+  /// deliberately conservative): when a slot KEY names an item id present in
+  /// this node, only the named items render (doc order preserved); every
+  /// other entry (tier names like `{'tablet': 'i2'}`, future container slot
+  /// names) is ignored, so unknown slot shapes can never blank a node. An
+  /// empty [slots] map renders all items.
+  ///
+  /// No per-tier selection state lives here — the subtree stays stateless
+  /// across tier switches (the same invariant as [AdaptiveNavDemo]'s
+  /// state-outside-the-branch rule), so changing devices never resets widget
+  /// state below.
+  Widget _stageContent(
+    CanvasScreen? current,
+    EditorColors colors,
+    double stageWidth,
+  ) {
     if (current == null) {
       return Center(
         child: Text(
@@ -304,17 +328,52 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         ),
       );
     }
+    final tierName = tierForWidth(stageWidth).name;
+    final byId = {for (final n in widget.doc.nodes) n.id: n};
+    // A node is hidden when it — or any ancestor row up its parentId chain —
+    // is hidden on the active tier (cycle-safe via [seen]).
+    bool effectivelyHidden(CanvasNode node) {
+      CanvasNode? cursor = node;
+      final seen = <String>{};
+      while (cursor != null && seen.add(cursor.id)) {
+        if (isNodeHiddenOnWidth(stageWidth, cursor.hiddenOn)) return true;
+        final parentId = cursor.parentId;
+        cursor = parentId == null ? null : byId[parentId];
+      }
+      return false;
+    }
+
+    List<CanvasItem> visibleItems(CanvasNode node) {
+      var items = node.items;
+      final overrides = node.breakpointValues[tierName];
+      if (overrides != null && overrides.isNotEmpty) {
+        items = [
+          for (final item in items)
+            item.copyWith(props: {...item.props, ...overrides}),
+        ];
+      }
+      if (node.slots.isEmpty) return items;
+      final named = <String>{
+        for (final key in node.slots.keys)
+          if (items.any((item) => item.id == key)) key,
+      };
+      if (named.isEmpty) return items;
+      return [for (final item in items) if (named.contains(item.id)) item];
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         for (final node in widget.doc.nodes)
-          if (node.screenId == current.id)
+          if (node.screenId == current.id && !effectivelyHidden(node))
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
-                children: [for (final item in node.items) _previewItem(item)],
+                children: [
+                  for (final item in visibleItems(node)) _previewItem(item),
+                ],
               ),
             ),
       ],
