@@ -3,8 +3,10 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/main.dart';
+import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/device_picker.dart';
+import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:canvas_core/canvas_core.dart';
@@ -311,7 +313,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(store.doc.screens.first.device, isNull);
 
-      await tester.tap(find.byTooltip('Tablet 768×1024').first);
+      // Per-screen device tips are kit tooltips now: tap the tablet glyph
+      // directly (first screen's device row comes first).
+      await tester.tap(find.byIcon(Icons.tablet_mac).first);
       await tester.pumpAndSettle();
       expect(store.doc.screens.first.device, 'tablet');
       expect(
@@ -354,11 +358,14 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      expect(
-        find.byTooltip('Select a part or screen to delete'),
-        findsOneWidget,
+      // Toolbar tips are kit tooltips now: find the trash glyph in the
+      // toolbar instead (palette tiles never reuse it).
+      final trash = find.descendant(
+        of: find.byType(CanvasToolbar),
+        matching: find.byIcon(Icons.delete_sweep),
       );
-      await tester.tap(find.byTooltip('Select a part or screen to delete'));
+      expect(trash, findsOneWidget);
+      await tester.tap(trash);
       await tester.pumpAndSettle();
       expect(store.doc.nodes, hasLength(1));
       expect(store.doc.screens, hasLength(2));
@@ -387,8 +394,14 @@ void main() {
 
       // Select the node through the layers panel (the row label is the
       // kind-based 'Button · <id>'; the prompt brief also mentions buttons,
-      // so match the row label exactly).
-      await tester.tap(find.byTooltip('Layers'));
+      // so match the row label exactly). The rail tip is a kit tooltip now,
+      // so tap the rail's layers glyph (scoped: a tile reuses the glyph).
+      await tester.tap(
+        find.descendant(
+          of: find.byType(EditorIconRail),
+          matching: find.byIcon(Icons.layers),
+        ),
+      );
       await tester.pumpAndSettle();
       final layerRow = find.byWidgetPredicate(
         (w) => w is Text && (w.data ?? '').startsWith('Button · '),
@@ -396,9 +409,13 @@ void main() {
       expect(layerRow, findsOneWidget);
       await tester.tap(layerRow);
       await tester.pumpAndSettle();
-      expect(find.byTooltip('Delete selected'), findsOneWidget);
+      final trashSelected = find.descendant(
+        of: find.byType(CanvasToolbar),
+        matching: find.byIcon(Icons.delete_sweep),
+      );
+      expect(trashSelected, findsOneWidget);
 
-      await tester.tap(find.byTooltip('Delete selected'));
+      await tester.tap(trashSelected);
       await tester.pumpAndSettle();
       expect(store.doc.nodes, isEmpty);
     });
@@ -411,7 +428,12 @@ void main() {
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Delete selected'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CanvasToolbar),
+          matching: find.byIcon(Icons.delete_sweep),
+        ),
+      );
       await tester.pumpAndSettle();
       expect(store.doc.screens.map((s) => s.id), ['s1']);
     });
@@ -437,7 +459,12 @@ void main() {
 
       await tester.tap(find.text('Done'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Delete selected'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(CanvasToolbar),
+          matching: find.byIcon(Icons.delete_sweep),
+        ),
+      );
       await tester.pump();
       expect(store.doc.screens, hasLength(2));
       expect(find.textContaining('Cannot delete screen'), findsOneWidget);
@@ -461,7 +488,8 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Delete screen').first);
+      // Screen-header delete glyphs: first header in doc order is s1.
+      await tester.tap(find.byIcon(Icons.delete_outline).first);
       await tester.pump();
       // First header in doc order is s1 ('Pay'); s9 ('Done') remains.
       expect(store.doc.screens.map((s) => s.id), ['s9']);
@@ -494,7 +522,8 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.byTooltip('Delete screen').last);
+      // Screen-header delete glyphs: last header in doc order is s9.
+      await tester.tap(find.byIcon(Icons.delete_outline).last);
       await tester.pump();
       expect(store.doc.screens, hasLength(2));
       expect(find.textContaining('Cannot delete'), findsOneWidget);

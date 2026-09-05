@@ -1,5 +1,6 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
+import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -12,7 +13,14 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: EditorShell(store: CanvasStore())));
     await tester.pump();
     expect(find.text('Screen 1'), findsOneWidget);
-    await tester.tap(find.byTooltip('Add screen'));
+    // The toolbar tip is a kit tooltip now (invisible to `find.byTooltip`),
+    // so tap the toolbar's add-screen glyph directly.
+    await tester.tap(
+      find.descendant(
+        of: find.byType(CanvasToolbar),
+        matching: find.byIcon(Icons.add_to_photos),
+      ),
+    );
     await tester.pump();
     expect(find.text('Screen 2'), findsOneWidget);
   });

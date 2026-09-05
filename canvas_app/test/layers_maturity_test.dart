@@ -1,5 +1,6 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/persistence.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter/material.dart';
@@ -149,13 +150,18 @@ void main() {
     await tester.pumpWidget(_harness(store: store));
     expect(find.text('Screen 1'), findsOneWidget);
 
-    await tester.tap(find.byTooltip('Rename screen'));
+    // The rename/delete tips are kit tooltips now (invisible to
+    // `find.byTooltip`): the header rename glyph is unique in this harness.
+    await tester.tap(find.byIcon(Icons.edit));
     await tester.pumpAndSettle();
 
     // Dialog TextField arrives prefilled with the screen name.
-    final field = find.byType(TextField);
+    final field = find.byType(shadcn.TextField);
     expect(field, findsOneWidget);
-    expect(tester.widget<TextField>(field).controller!.text, 'Screen 1');
+    expect(
+      tester.widget<shadcn.TextField>(field).controller!.text,
+      'Screen 1',
+    );
 
     await tester.enterText(field, 'Gallery');
     await tester.tap(find.text('Save'));
@@ -166,9 +172,9 @@ void main() {
     expect(store.doc.screens.single.name, 'Gallery');
 
     // Empty Save is a no-op close: dialog dismisses, name untouched.
-    await tester.tap(find.byTooltip('Rename screen'));
+    await tester.tap(find.byIcon(Icons.edit));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), '   ');
+    await tester.enterText(find.byType(shadcn.TextField), '   ');
     await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(find.text('Gallery'), findsOneWidget);
@@ -183,16 +189,20 @@ void main() {
     await tester.pumpWidget(_harness(store: store));
     await tester.pump();
 
+    // Move actions are kit icon buttons now: locate each via the kit button
+    // wrapping its glyph.
     Finder moveUp(int at) => find
-        .byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == 'Move up',
+        .ancestor(
+          of: find.byIcon(Icons.arrow_upward).at(at),
+          matching: find.byType(shadcn.IconButton),
         )
-        .at(at);
+        .at(0);
     Finder moveDown(int at) => find
-        .byWidgetPredicate(
-          (w) => w is IconButton && w.tooltip == 'Move down',
+        .ancestor(
+          of: find.byIcon(Icons.arrow_downward).at(at),
+          matching: find.byType(shadcn.IconButton),
         )
-        .at(at);
+        .at(0);
     expect(moveUp(0), findsOneWidget);
     expect(moveDown(0), findsOneWidget);
     expect(moveUp(1), findsOneWidget);
@@ -200,10 +210,10 @@ void main() {
 
     // Rows are frontmost-first: row 0 is `second` (up disabled), row 1 is
     // `first` (down disabled). Buttons stay visible, just disabled.
-    expect(tester.widget<IconButton>(moveUp(0)).onPressed, isNull);
-    expect(tester.widget<IconButton>(moveDown(0)).onPressed, isNotNull);
-    expect(tester.widget<IconButton>(moveUp(1)).onPressed, isNotNull);
-    expect(tester.widget<IconButton>(moveDown(1)).onPressed, isNull);
+    expect(tester.widget<shadcn.IconButton>(moveUp(0)).onPressed, isNull);
+    expect(tester.widget<shadcn.IconButton>(moveDown(0)).onPressed, isNotNull);
+    expect(tester.widget<shadcn.IconButton>(moveUp(1)).onPressed, isNotNull);
+    expect(tester.widget<shadcn.IconButton>(moveDown(1)).onPressed, isNull);
 
     // Send the frontmost row backward: doc order flips.
     await tester.tap(moveDown(0));
@@ -214,8 +224,8 @@ void main() {
     );
 
     // Edges swap: the moved row is now backmost (down disabled).
-    expect(tester.widget<IconButton>(moveDown(1)).onPressed, isNull);
-    expect(tester.widget<IconButton>(moveUp(1)).onPressed, isNotNull);
+    expect(tester.widget<shadcn.IconButton>(moveDown(1)).onPressed, isNull);
+    expect(tester.widget<shadcn.IconButton>(moveUp(1)).onPressed, isNotNull);
   });
 
   testWidgets('existing select/duplicate/delete unaffected', (tester) async {
@@ -230,18 +240,19 @@ void main() {
     await tester.tap(find.textContaining(id));
     expect(selected, id);
 
-    await tester.tap(find.byTooltip('Duplicate'));
+    await tester.tap(find.byIcon(Icons.copy));
     await tester.pump();
     expect(store.doc.nodes, hasLength(2));
 
     await tester.tap(find.textContaining(id).first);
     await tester.pump();
-    await tester.tap(find.byTooltip('Delete').first);
+    // Header delete comes first in tree order; the row delete is last.
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pump();
     expect(store.doc.nodes, hasLength(1));
 
     // Reorder chrome coexists with the original actions.
-    expect(find.byTooltip('Move up'), findsOneWidget);
-    expect(find.byTooltip('Move down'), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_upward), findsOneWidget);
+    expect(find.byIcon(Icons.arrow_downward), findsOneWidget);
   });
 }

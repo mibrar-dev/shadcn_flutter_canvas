@@ -117,12 +117,12 @@ void main() {
       const MaterialApp(home: Scaffold(body: PartsPalette())),
     );
 
-    await tester.enterText(find.byType(TextField), 'but');
+    await tester.enterText(find.byType(shadcn.TextField), 'but');
     await tester.pump();
     expect(find.text('Button'), findsOneWidget);
     expect(find.text('Card'), findsNothing);
 
-    await tester.enterText(find.byType(TextField), 'zzz-no-such-part');
+    await tester.enterText(find.byType(shadcn.TextField), 'zzz-no-such-part');
     await tester.pump();
     expect(find.text('No parts match'), findsOneWidget);
   });

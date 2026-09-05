@@ -1,5 +1,6 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
+import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
@@ -31,9 +32,15 @@ void main() {
     expect(find.byType(RightAside), findsOneWidget);
     expect(find.byType(InspectorPanel), findsNothing);
     expect(find.byType(PreviewPlayer), findsNothing);
-    // Toolbar entries are icon buttons with tooltips, not text buttons.
-    expect(find.byTooltip('Preview'), findsOneWidget);
-    expect(find.byTooltip('Open'), findsOneWidget);
+    // Toolbar entries are icon buttons with kit tooltips, not text buttons.
+    // (Kit tips don't register with `find.byTooltip`; scope the glyphs to
+    // the toolbar because palette tiles reuse some icon glyphs.)
+    Finder toolbarIcon(IconData icon) => find.descendant(
+          of: find.byType(CanvasToolbar),
+          matching: find.byIcon(icon),
+        );
+    expect(toolbarIcon(Icons.play_arrow), findsOneWidget);
+    expect(toolbarIcon(Icons.folder_open), findsOneWidget);
     expect(find.text('Preview'), findsNothing);
   });
 
@@ -44,8 +51,18 @@ void main() {
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
-    // Aside opens on Prompt; switch to the Inspector tab first.
-    await tester.tap(find.byTooltip('Inspector'));
+    // Aside opens on Prompt; switch to the Inspector tab first (scoped to
+    // the aside: a palette tile reuses the tune glyph, and the Prompt
+    // panel's own Settings button reuses it too — the tab header renders
+    // above the body, so the first match is the Inspector tab).
+    await tester.tap(
+      find
+          .descendant(
+            of: find.byType(RightAside),
+            matching: find.byIcon(Icons.tune),
+          )
+          .first,
+    );
     await tester.pump();
     expect(find.byType(InspectorPanel), findsOneWidget);
     expect(find.text('Select an item to edit its props'), findsOneWidget);
@@ -58,7 +75,12 @@ void main() {
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
-    await tester.tap(find.byTooltip('Preview'));
+    await tester.tap(
+      find.descendant(
+        of: find.byType(CanvasToolbar),
+        matching: find.byIcon(Icons.play_arrow),
+      ),
+    );
     await tester.pump();
     expect(find.byType(PreviewPlayer), findsOneWidget);
     expect(find.byType(DesignCanvas), findsNothing);

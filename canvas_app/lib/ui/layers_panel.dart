@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_core/canvas_core.dart';
 
@@ -118,29 +119,15 @@ class _LayersBodyState extends State<_LayersBody> {
                           .copyWith(color: colors.onSurfaceVariant),
                     ),
                   ),
-                  IconButton(
+                  _LayerAction(
                     tooltip: 'Rename screen',
+                    icon: Icons.edit,
                     onPressed: () => _renameScreen(context, screen),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: _kActionButtonSize,
-                      height: _kActionButtonSize,
-                    ),
-                    iconSize: _kActionIconSize,
-                    color: colors.onSurfaceVariant,
-                    icon: const Icon(Icons.edit),
                   ),
-                  IconButton(
+                  _LayerAction(
                     tooltip: 'Delete screen',
+                    icon: Icons.delete_outline,
                     onPressed: () => _deleteScreen(context, screen),
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: _kActionButtonSize,
-                      height: _kActionButtonSize,
-                    ),
-                    iconSize: _kActionIconSize,
-                    color: colors.onSurfaceVariant,
-                    icon: const Icon(Icons.delete_outline),
                   ),
                 ],
               ),
@@ -242,7 +229,7 @@ class _LayersBodyState extends State<_LayersBody> {
   /// Opens the screen-rename dialog (prefilled; empty Save is a no-op close).
   void _renameScreen(BuildContext context, CanvasScreen screen) {
     final controller = TextEditingController(text: screen.name);
-    showDialog<void>(
+    shadcn.showDialog<void>(
       context: context,
       builder: (dialogContext) {
         final colors = EditorTheme.of(dialogContext);
@@ -253,43 +240,25 @@ class _LayersBodyState extends State<_LayersBody> {
           widget.store.renameScreen(screen.id, name);
         }
 
-        return AlertDialog(
-          backgroundColor: colors.surfaceContainer,
+        return shadcn.AlertDialog(
           title: Text(
             'Rename screen',
             style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
           ),
-          content: TextField(
+          content: shadcn.TextField(
             controller: controller,
             autofocus: true,
             style: EditorType.field.copyWith(color: colors.onSurface),
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: colors.surfaceContainerHigh,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  EditorMetrics.segmentInnerRadius,
-                ),
-                borderSide: BorderSide.none,
-              ),
-            ),
             onSubmitted: (_) => save(),
           ),
           actions: [
-            TextButton(
+            shadcn.TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(
-                'Cancel',
-                style: EditorType.tileLabel
-                    .copyWith(color: colors.onSurfaceVariant),
-              ),
+              child: const Text('Cancel'),
             ),
-            TextButton(
+            shadcn.TextButton(
               onPressed: save,
-              child: Text(
-                'Save',
-                style: EditorType.tileLabel.copyWith(color: colors.onSurface),
-              ),
+              child: const Text('Save'),
             ),
           ],
         );
@@ -329,7 +298,50 @@ String _kindLabel(CanvasNode node) {
   return kind[0].toUpperCase() + kind.substring(1);
 }
 
-class _LayerRow extends StatelessWidget {
+/// One 28x28 layer action (rename/delete/move/duplicate) with a kit tip.
+///
+/// The metric box and glyph size mirror the old material `IconButton`
+/// (tight 28x28, 16px glyph); the tap surface is the kit ghost icon button.
+/// A null [onPressed] renders the glyph in [EditorColors.disabled] and
+/// disables taps, matching the old `disabledColor` behavior at the z-order
+/// edges ([onMoveUp] null on the frontmost row, [onMoveDown] on the backmost).
+class _LayerAction extends StatelessWidget {
+  const _LayerAction({
+    required this.tooltip,
+    required this.icon,
+    required this.onPressed,
+  });
+
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    final enabled = onPressed != null;
+    return shadcn.Tooltip(
+      tooltip: (context) =>
+          shadcn.TooltipContainer(child: Text(tooltip)),
+      child: SizedBox(
+        width: _kActionButtonSize,
+        height: _kActionButtonSize,
+        child: shadcn.IconButton.ghost(
+          icon: Icon(
+            icon,
+            size: _kActionIconSize,
+            color: enabled ? colors.onSurfaceVariant : colors.disabled,
+          ),
+          onPressed: onPressed,
+          size: shadcn.ButtonSize.small,
+          density: shadcn.ButtonDensity.compact,
+        ),
+      ),
+    );
+  }
+}
+
+class _LayerRow extends StatefulWidget {
   const _LayerRow({
     required this.node,
     required this.selected,
@@ -352,19 +364,31 @@ class _LayerRow extends StatelessWidget {
   final VoidCallback? onMoveDown;
 
   @override
+  State<_LayerRow> createState() => _LayerRowState();
+}
+
+class _LayerRowState extends State<_LayerRow> {
+  bool _hovered = false;
+
+  @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
     final radius = BorderRadius.circular(EditorMetrics.segmentInnerRadius);
-    return Material(
-      color: selected
-          ? colors.toolbarActive.withValues(alpha: 0.25)
-          : Colors.transparent,
-      borderRadius: radius,
-      child: InkWell(
-        borderRadius: radius,
-        hoverColor: colors.surfaceContainerHigh,
-        onTap: onTap,
-        child: Padding(
+    final background = widget.selected
+        ? colors.toolbarActive.withValues(alpha: 0.25)
+        : (_hovered ? colors.surfaceContainerHigh : Colors.transparent);
+    return MouseRegion(
+      onEnter: (_) => setState(() => _hovered = true),
+      onExit: (_) => setState(() => _hovered = false),
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: widget.onTap,
+        child: Container(
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: radius,
+          ),
           padding: const EdgeInsets.symmetric(
             horizontal: EditorMetrics.panelInset,
           ),
@@ -372,64 +396,35 @@ class _LayerRow extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  '${_kindLabel(node)} · ${node.id}',
+                  '${_kindLabel(widget.node)} · ${widget.node.id}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: EditorType.tileLabel.copyWith(
-                    color:
-                        selected ? colors.onSurface : colors.onSurfaceVariant,
+                    color: widget.selected
+                        ? colors.onSurface
+                        : colors.onSurfaceVariant,
                   ),
                 ),
               ),
-              IconButton(
+              _LayerAction(
                 tooltip: 'Move up',
-                onPressed: onMoveUp,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: _kActionButtonSize,
-                  height: _kActionButtonSize,
-                ),
-                iconSize: _kActionIconSize,
-                color: colors.onSurfaceVariant,
-                disabledColor: colors.disabled,
-                icon: const Icon(Icons.arrow_upward),
+                icon: Icons.arrow_upward,
+                onPressed: widget.onMoveUp,
               ),
-              IconButton(
+              _LayerAction(
                 tooltip: 'Move down',
-                onPressed: onMoveDown,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: _kActionButtonSize,
-                  height: _kActionButtonSize,
-                ),
-                iconSize: _kActionIconSize,
-                color: colors.onSurfaceVariant,
-                disabledColor: colors.disabled,
-                icon: const Icon(Icons.arrow_downward),
+                icon: Icons.arrow_downward,
+                onPressed: widget.onMoveDown,
               ),
-              IconButton(
+              _LayerAction(
                 tooltip: 'Duplicate',
-                onPressed: onDuplicate,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: _kActionButtonSize,
-                  height: _kActionButtonSize,
-                ),
-                iconSize: _kActionIconSize,
-                color: colors.onSurfaceVariant,
-                icon: const Icon(Icons.copy),
+                icon: Icons.copy,
+                onPressed: widget.onDuplicate,
               ),
-              IconButton(
+              _LayerAction(
                 tooltip: 'Delete',
-                onPressed: onDelete,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: _kActionButtonSize,
-                  height: _kActionButtonSize,
-                ),
-                iconSize: _kActionIconSize,
-                color: colors.onSurfaceVariant,
-                icon: const Icon(Icons.delete_outline),
+                icon: Icons.delete_outline,
+                onPressed: widget.onDelete,
               ),
             ],
           ),

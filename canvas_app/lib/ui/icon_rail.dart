@@ -6,6 +6,7 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Fixed rail item ids in display order (top groups, then bottom item).
@@ -150,8 +151,9 @@ class EditorIconRail extends StatelessWidget {
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: Tooltip(
-              message: 'GitHub',
+            child: shadcn.Tooltip(
+              tooltip: (context) =>
+                  shadcn.TooltipContainer(child: const Text('GitHub')),
               child: SizedBox(
                 width: EditorMetrics.railButtonSize,
                 height: EditorMetrics.railButtonSize,
@@ -170,7 +172,12 @@ class EditorIconRail extends StatelessWidget {
   }
 }
 
-/// Single 44x44 fully-rounded rail button with hover feedback.
+/// Single 44x44 fully-rounded rail button with kit hover feedback.
+///
+/// The 44x44 metric box, fully-round radius, and active
+/// ([EditorColors.railActive]/[EditorColors.onRailActive]) fills stay on the
+/// outer [Container] so the measured spec is unchanged; the tap surface and
+/// hover wash are the kit ghost icon button and the tip is the kit tooltip.
 class _RailButton extends StatelessWidget {
   final IconData icon;
   final String tooltip;
@@ -193,22 +200,20 @@ class _RailButton extends StatelessWidget {
     final radius = BorderRadius.circular(
       EditorMetrics.railButtonSize / 2,
     );
-    return Tooltip(
-      message: tooltip,
-      child: Material(
-        color: background,
-        borderRadius: radius,
-        child: InkWell(
+    return shadcn.Tooltip(
+      tooltip: (context) =>
+          shadcn.TooltipContainer(child: Text(tooltip)),
+      child: Container(
+        width: EditorMetrics.railButtonSize,
+        height: EditorMetrics.railButtonSize,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: background,
           borderRadius: radius,
-          hoverColor: active
-              ? colors.railActive
-              : colors.surfaceContainerHigh,
-          onTap: onTap,
-          child: SizedBox(
-            width: EditorMetrics.railButtonSize,
-            height: EditorMetrics.railButtonSize,
-            child: Icon(icon, size: 22, color: foreground),
-          ),
+        ),
+        child: shadcn.IconButton.ghost(
+          icon: Icon(icon, size: 22, color: foreground),
+          onPressed: onTap,
         ),
       ),
     );

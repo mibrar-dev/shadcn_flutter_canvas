@@ -40,9 +40,25 @@ void main() {
         'scrollbar',
         'pagination',
         'alert_dialog',
+        // Track M additions (2026-09-05).
+        'menu',
+        'popover',
+        'popup',
+        'menubar',
+        'dropdown_menu',
+        'context_menu',
+        'hover_card',
+        'command',
+        'swiper',
+        'refresh_trigger',
+        'tab_container',
+        'tab_list',
+        'tab_pane',
+        'stepper',
+        'slider',
       ]),
     );
-    expect(kCatalog, hasLength(36));
+    expect(kCatalog, hasLength(51));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -420,8 +436,12 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'input': [
     {'name': 'placeholder', 'type': 'string', 'default': 'Type here'},
     {'name': 'label', 'type': 'string', 'default': ''},
+    // Track M: `initialValue`/`readOnly` promoted from spec-only into wired
+    // builder props (mirrors the catalog defaults).
+    {'name': 'initialValue', 'type': 'string', 'default': ''},
     {'name': 'disabled', 'type': 'bool', 'default': false},
     {'name': 'obscure', 'type': 'bool', 'default': false},
+    {'name': 'readOnly', 'type': 'bool', 'default': false},
   ],
   'badge': [
     {'name': 'label', 'type': 'string', 'default': 'Badge'},
@@ -443,13 +463,19 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   // drift assertions above will flag any divergence for review.
   'avatar': [
     {'name': 'initials', 'type': 'string', 'default': 'AB'},
+    // Track M: `size` promoted from spec-only into a wired builder prop.
+    {'name': 'size', 'type': 'double', 'default': 40.0},
   ],
   'checkbox': [
     {'name': 'value', 'type': 'bool', 'default': false},
     {'name': 'disabled', 'type': 'bool', 'default': false},
+    // Track M: `tristate` promoted from spec-only into a wired builder prop.
+    {'name': 'tristate', 'type': 'bool', 'default': false},
   ],
   'divider': [
     {'name': 'label', 'type': 'string', 'default': ''},
+    // Track M: `thickness` promoted from spec-only into a wired builder prop.
+    {'name': 'thickness', 'type': 'double', 'default': 1.0},
   ],
   'progress': [
     {'name': 'progress', 'type': 'double', 'default': 0.5},
@@ -458,6 +484,8 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'tab1', 'type': 'string', 'default': 'Tab 1'},
     {'name': 'tab2', 'type': 'string', 'default': 'Tab 2'},
     {'name': 'index', 'type': 'int', 'default': 0},
+    // Track M: `expand` promoted from spec-only into a wired builder prop.
+    {'name': 'expand', 'type': 'bool', 'default': false},
   ],
   // No canvas blocks exist for these five kinds either (same pinned-kit
   // scan — no `canvas` key on any of the 134 components), so these copies
@@ -472,11 +500,15 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'option1', 'type': 'string', 'default': 'Option 1'},
     {'name': 'option2', 'type': 'string', 'default': 'Option 2'},
     {'name': 'value', 'type': 'string', 'default': ''},
+    // Track M: `disabled` promoted from spec-only into a wired builder prop.
+    {'name': 'disabled', 'type': 'bool', 'default': false},
   ],
   'radio_group': [
     {'name': 'option1', 'type': 'string', 'default': 'Option 1'},
     {'name': 'option2', 'type': 'string', 'default': 'Option 2'},
     {'name': 'value', 'type': 'string', 'default': 'Option 1'},
+    // Track M: `disabled` promoted from spec-only into a wired builder prop.
+    {'name': 'disabled', 'type': 'bool', 'default': false},
   ],
   'skeleton': [
     {'name': 'label', 'type': 'string', 'default': 'Loading'},
@@ -485,6 +517,13 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'breadcrumb': [
     {'name': 'home', 'type': 'string', 'default': 'Home'},
     {'name': 'current', 'type': 'string', 'default': 'Page'},
+    // Track M: `separator` promoted from spec-only into a wired builder prop.
+    {
+      'name': 'separator',
+      'type': 'enum',
+      'enum': ['arrow', 'slash'],
+      'default': 'arrow',
+    },
   ],
   // No canvas blocks exist for these four kinds either (same pinned-kit
   // scan — no `canvas` key on any of the 134 components), so these copies
@@ -505,10 +544,19 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'toast': [
     {'name': 'title', 'type': 'string', 'default': 'Saved'},
     {'name': 'message', 'type': 'string', 'default': 'Saved successfully'},
+    // Track M: `autoDismiss` promoted from spec-only into a wired prop.
+    {'name': 'autoDismiss', 'type': 'bool', 'default': false},
   ],
   'drawer': [
     {'name': 'title', 'type': 'string', 'default': 'Drawer'},
     {'name': 'content', 'type': 'string', 'default': 'Drawer content'},
+    // Track M: `position` promoted from spec-only into a wired builder prop.
+    {
+      'name': 'position',
+      'type': 'enum',
+      'enum': ['left', 'right', 'top', 'bottom', 'start', 'end'],
+      'default': 'end',
+    },
   ],
   // No canvas blocks exist for these seventeen kinds either (same pinned-kit
   // scan — no `canvas` key on any of the 134 components), so these copies
@@ -595,5 +643,94 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
       'default': 'This action cannot be undone.',
     },
     {'name': 'showActions', 'type': 'bool', 'default': true},
+  ],
+  // No canvas blocks exist for these fifteen kinds either (same pinned-kit
+  // scan — no `canvas` key on any of the 134 components), so these copies
+  // likewise mirror the invented catalog defaults until real blocks land.
+  // (Track M additions, 2026-09-05.)
+  'menu': [
+    {'name': 'heading', 'type': 'string', 'default': 'File'},
+    {'name': 'item1', 'type': 'string', 'default': 'New'},
+    {'name': 'item2', 'type': 'string', 'default': 'Open'},
+  ],
+  'popover': [
+    {'name': 'trigger', 'type': 'string', 'default': 'Open Popover'},
+    {'name': 'title', 'type': 'string', 'default': 'Popover title'},
+    {
+      'name': 'body',
+      'type': 'string',
+      'default': 'Use popovers for contextual helper content.',
+    },
+  ],
+  'popup': [
+    {'name': 'item1', 'type': 'string', 'default': 'Profile'},
+    {'name': 'item2', 'type': 'string', 'default': 'Settings'},
+    {'name': 'item3', 'type': 'string', 'default': 'Sign out'},
+  ],
+  'menubar': [
+    {'name': 'menu1', 'type': 'string', 'default': 'File'},
+    {'name': 'menu2', 'type': 'string', 'default': 'Edit'},
+  ],
+  'dropdown_menu': [
+    {'name': 'heading', 'type': 'string', 'default': 'My Account'},
+    {'name': 'item1', 'type': 'string', 'default': 'Profile'},
+    {'name': 'item2', 'type': 'string', 'default': 'Settings'},
+  ],
+  'context_menu': [
+    {'name': 'hint', 'type': 'string', 'default': 'Right-click me'},
+    {'name': 'item1', 'type': 'string', 'default': 'Back'},
+    {'name': 'item2', 'type': 'string', 'default': 'Reload'},
+  ],
+  'hover_card': [
+    {'name': 'handle', 'type': 'string', 'default': 'Hover card'},
+    {'name': 'title', 'type': 'string', 'default': 'Hover title'},
+    {'name': 'body', 'type': 'string', 'default': 'Rich preview content.'},
+  ],
+  'command': [
+    {'name': 'hint', 'type': 'string', 'default': 'Search commands...'},
+    {'name': 'item1', 'type': 'string', 'default': 'Calendar'},
+    {'name': 'item2', 'type': 'string', 'default': 'Settings'},
+  ],
+  'swiper': [
+    {'name': 'hint', 'type': 'string', 'default': 'Swipe up from the bottom'},
+    {'name': 'content', 'type': 'string', 'default': 'Swipe content'},
+  ],
+  'refresh_trigger': [
+    {'name': 'item1', 'type': 'string', 'default': 'Row 1'},
+    {'name': 'item2', 'type': 'string', 'default': 'Row 2'},
+    {'name': 'item3', 'type': 'string', 'default': 'Row 3'},
+  ],
+  'tab_container': [
+    {'name': 'tab1', 'type': 'string', 'default': 'Overview'},
+    {'name': 'tab2', 'type': 'string', 'default': 'Details'},
+    {'name': 'tab3', 'type': 'string', 'default': 'Reviews'},
+    {'name': 'index', 'type': 'int', 'default': 0},
+  ],
+  'tab_list': [
+    {'name': 'tab1', 'type': 'string', 'default': 'Tab 1'},
+    {'name': 'tab2', 'type': 'string', 'default': 'Tab 2'},
+    {'name': 'index', 'type': 'int', 'default': 0},
+  ],
+  'tab_pane': [
+    {'name': 'tab1', 'type': 'string', 'default': 'Overview'},
+    {'name': 'tab2', 'type': 'string', 'default': 'Analytics'},
+    {'name': 'tab3', 'type': 'string', 'default': 'Settings'},
+    {'name': 'focused', 'type': 'int', 'default': 0},
+  ],
+  'stepper': [
+    {'name': 'step1', 'type': 'string', 'default': 'Details'},
+    {'name': 'detail1', 'type': 'string', 'default': 'Provide your details.'},
+    {'name': 'step2', 'type': 'string', 'default': 'Payment'},
+    {
+      'name': 'detail2',
+      'type': 'string',
+      'default': 'Choose a payment method.',
+    },
+    {'name': 'step3', 'type': 'string', 'default': 'Confirm'},
+    {'name': 'detail3', 'type': 'string', 'default': 'Review and submit.'},
+    {'name': 'step', 'type': 'int', 'default': 0},
+  ],
+  'slider': [
+    {'name': 'value', 'type': 'double', 'default': 0.6},
   ],
 };

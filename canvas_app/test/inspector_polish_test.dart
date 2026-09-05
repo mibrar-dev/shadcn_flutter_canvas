@@ -4,6 +4,7 @@ library;
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/props_schema.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_core/canvas_core.dart';
@@ -132,7 +133,10 @@ void main() {
         const MaterialApp(home: Scaffold(body: PartsPalette())),
       );
 
-      await tester.enterText(find.byType(TextField), 'zzz-no-such-part');
+      await tester.enterText(
+        find.byType(shadcn.TextField),
+        'zzz-no-such-part',
+      );
       await tester.pump();
       expect(find.text('No parts match'), findsOneWidget);
       expect(

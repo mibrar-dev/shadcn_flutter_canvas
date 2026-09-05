@@ -10,6 +10,7 @@
 library;
 
 import 'package:canvas_app/canvas/canvas_store.dart' hide ChangeNotifier;
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/prompt_panel.dart';
@@ -222,8 +223,9 @@ class _TabSegment extends StatelessWidget {
         selected ? colors.toolbarActive : colors.surfaceContainerHigh;
     final foreground =
         selected ? colors.onToolbarActive : colors.onSurfaceVariant;
-    return Tooltip(
-      message: tooltip,
+    return shadcn.Tooltip(
+      tooltip: (context) =>
+          shadcn.TooltipContainer(child: Text(tooltip)),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,

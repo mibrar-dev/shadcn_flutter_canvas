@@ -9,6 +9,7 @@ import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/canvas/component_registry.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Legacy section map from the 19-kind era (section → kinds). The palette
@@ -132,28 +133,22 @@ class _PartsPaletteState extends State<PartsPalette> {
                   color: colors.onSurface,
                 ),
               ),
-              Tooltip(
-                message: 'Collapse',
-                child: Material(
-                  color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(
-                    EditorMetrics.tileRadius,
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(
-                      EditorMetrics.tileRadius,
+              shadcn.Tooltip(
+                tooltip: (context) => shadcn.TooltipContainer(
+                  child: const Text('Collapse'),
+                ),
+                child: SizedBox(
+                  width: 32,
+                  height: 32,
+                  child: shadcn.IconButton.ghost(
+                    icon: Icon(
+                      Icons.chevron_left,
+                      size: 20,
+                      color: colors.onSurfaceVariant,
                     ),
-                    hoverColor: colors.surfaceContainerHigh,
-                    onTap: widget.onCollapse,
-                    child: SizedBox(
-                      width: 32,
-                      height: 32,
-                      child: Icon(
-                        Icons.chevron_left,
-                        size: 20,
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
+                    onPressed: widget.onCollapse,
+                    size: shadcn.ButtonSize.small,
+                    density: shadcn.ButtonDensity.compact,
                   ),
                 ),
               ),
@@ -163,44 +158,26 @@ class _PartsPaletteState extends State<PartsPalette> {
           SizedBox(
             width: EditorMetrics.searchWidth,
             height: EditorMetrics.searchHeight,
-            child: TextField(
+            child: shadcn.TextField(
               controller: _searchController,
               onChanged: (v) => setState(() => _query = v),
               style: EditorType.field.copyWith(color: colors.onSurface),
               cursorColor: colors.onSurfaceVariant,
-              decoration: InputDecoration(
-                hintText: 'Search',
-                hintStyle: EditorType.field.copyWith(
+              placeholder: Text(
+                'Search',
+                style: EditorType.field.copyWith(
                   color: colors.onSurfaceVariant,
                 ),
-                prefixIcon: Icon(
-                  Icons.search,
-                  size: 20,
-                  color: colors.onSurfaceVariant,
-                ),
-                filled: true,
-                fillColor: colors.surfaceContainerHigh,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    EditorMetrics.searchRadius,
-                  ),
-                  borderSide: BorderSide.none,
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    EditorMetrics.searchRadius,
-                  ),
-                  borderSide: BorderSide.none,
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(
-                    EditorMetrics.searchRadius,
-                  ),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                isDense: true,
               ),
+              features: [
+                shadcn.InputLeadingFeature(
+                  Icon(
+                    Icons.search,
+                    size: 20,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 12),
@@ -290,9 +267,8 @@ class _Section extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        InkWell(
-          borderRadius: BorderRadius.circular(EditorMetrics.tileGap),
-          hoverColor: colors.surfaceContainerHigh,
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: onToggle,
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 8),
@@ -419,8 +395,9 @@ class _TileContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    return Tooltip(
-      message: entry.label,
+    return shadcn.Tooltip(
+      tooltip: (context) =>
+          shadcn.TooltipContainer(child: Text(entry.label)),
       child: Container(
         width: EditorMetrics.tileWidth,
         height: EditorMetrics.tileHeight,

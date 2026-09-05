@@ -3,7 +3,7 @@
 // Reads `components.json` (id + description + category per component) and
 // emits one [RegistryEntry] per kit component id plus the `row` pseudo-kind.
 // Entry builders are NOT generated from previews (previews render full
-// `Scaffold`s — see component_catalog.dart): the 19 catalog kinds bridge to
+// `Scaffold`s — see component_catalog.dart): the 51 catalog kinds bridge to
 // `buildCatalogWithDefaults`, 10 hand-verified EASY kinds get bare-widget
 // builders (sources embedded below, each verified by grepping the kit
 // `_impl/` sources for a ctor taking only string/num/bool/enum/child
@@ -56,7 +56,7 @@ const _hiddenUtilities = <String>{
   'wrapper',
 };
 
-/// The 19 catalog kinds: registry builders delegate to
+/// The 51 catalog kinds: registry builders delegate to
 /// `catalog.buildCatalogWithDefaults` (no duplication).
 const _bridgeKinds = <String>{
   'button',
@@ -78,6 +78,42 @@ const _bridgeKinds = <String>{
   'tooltip',
   'toast',
   'drawer',
+  // Track J additions (2026-09-05): hand-built catalog builders bridged in
+  // component_registry.dart; listed here so a regen byte-preserves them.
+  'basic',
+  'card_image',
+  'scaffold',
+  'collapsible',
+  'steps',
+  'timeline',
+  'outlined_container',
+  'hidden',
+  'keyboard_shortcut',
+  'tracker',
+  'chat',
+  'selectable',
+  'star_rating',
+  'clickable',
+  'scrollbar',
+  'pagination',
+  'alert_dialog',
+  // Track M additions (2026-09-05): hand-built catalog builders bridged in
+  // component_registry.dart; listed here so a regen byte-preserves them.
+  'menu',
+  'popover',
+  'popup',
+  'menubar',
+  'dropdown_menu',
+  'context_menu',
+  'hover_card',
+  'command',
+  'swiper',
+  'refresh_trigger',
+  'tab_container',
+  'tab_list',
+  'tab_pane',
+  'stepper',
+  'slider',
 };
 
 /// Hand-verified EASY kinds with real bare-widget builders below
@@ -94,6 +130,14 @@ const _readyKinds = <String, String>{
   'number_ticker': 'buildNumberTickerEntry',
   'text_area': 'buildTextAreaEntry',
 };
+
+/// Test-visible aliases of the private allowlists above for the regen-drift
+/// guard (`test/gen_registry_drift_test.dart`). Private names are
+/// library-scoped, so the guard cannot import [_bridgeKinds]/[_readyKinds]
+/// directly; these const aliases expose the same sets without affecting
+/// emission.
+const bridgeKindsForTest = _bridgeKinds;
+const readyKindsForTest = _readyKinds;
 
 /// Nearest Icons.* constant per kit component id (fallback: Icons.widgets).
 const _icons = <String, String>{
@@ -466,7 +510,7 @@ void main(List<String> args) {
     ..writeln('//')
     ..writeln('// One entry per kit component id plus the `row` pseudo-kind.')
     ..writeln('// `canvasReady` is true only where a real bare-widget builder')
-    ..writeln('// exists: the 19 catalog kinds bridge to')
+    ..writeln('// exists: the 51 catalog kinds bridge to')
     ..writeln('// `catalog.buildCatalogWithDefaults` (no duplication), the 10')
     ..writeln('// hand-verified EASY kinds below build real widgets, and the')
     ..writeln('// `row` pseudo-kind renders its structural Row (rows carry no')

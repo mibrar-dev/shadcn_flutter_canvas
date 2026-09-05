@@ -68,13 +68,16 @@ void main() {
     await tester.tap(find.textContaining(id));
     expect(selected, id);
 
-    await tester.tap(find.byTooltip('Duplicate'));
+    // Kit tooltips don't register with `find.byTooltip`: the row actions
+    // are found by their glyphs instead (the copy glyph is unique here).
+    await tester.tap(find.byIcon(Icons.copy));
     await tester.pump();
     expect(store.doc.nodes, hasLength(2));
 
     await tester.tap(find.textContaining(id).first);
     await tester.pump();
-    await tester.tap(find.byTooltip('Delete').first);
+    // Header delete comes first in tree order; the row delete is last.
+    await tester.tap(find.byIcon(Icons.delete_outline).last);
     await tester.pump();
     expect(store.doc.nodes, hasLength(1));
   });

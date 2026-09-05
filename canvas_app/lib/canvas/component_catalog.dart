@@ -188,14 +188,21 @@ Widget _buildCard(Map<String, dynamic> props) {
 
 Widget _buildInput(Map<String, dynamic> props) {
   // `TextField` has no `label` param — render it as a caption above.
+  // Track M: `initialValue` (empty canvas string = uncontrolled, null) and
+  // `readOnly` wire straight into the `TextInputStatefulWidget` super params
+  // (`text_field_widget.dart`: `super.initialValue`, `super.readOnly`).
   final label = (props['label'] ?? '') as String;
   final placeholder = (props['placeholder'] ?? 'Type here') as String;
   final disabled = (props['disabled'] ?? false) as bool;
   final obscure = (props['obscure'] ?? false) as bool;
+  final initialValue = (props['initialValue'] ?? '') as String;
+  final readOnly = (props['readOnly'] ?? false) as bool;
   final field = shadcn.TextField(
     placeholder: Text(placeholder),
     enabled: !disabled,
     obscureText: obscure,
+    initialValue: initialValue.isEmpty ? null : initialValue,
+    readOnly: readOnly,
   );
   if (label.isEmpty) return field;
   return Column(
@@ -258,10 +265,13 @@ Widget _buildSwitch(Map<String, dynamic> props) {
 
 Widget _buildAvatar(Map<String, dynamic> props) {
   // No canvas block in `components.json` — default invented. `Avatar`
-  // requires `initials`; color/size/badge/theme all fall back to theme
-  // defaults, so a bare initials-only construction is canvas-true.
+  // requires `initials`; color/badge/theme fall back to theme defaults.
+  // Track M: `size` wires into the nullable `Avatar(size:)` layout param
+  // (parsed via `num`; the 40.0 fallback equals the kit theme default
+  // `AvatarThemeDefaults.size`, so default rendering is unchanged).
   final initials = (props['initials'] ?? 'AB') as String;
-  return shadcn.Avatar(initials: initials);
+  final size = ((props['size'] as num?)?.toDouble() ?? 40.0).clamp(16.0, 96.0);
+  return shadcn.Avatar(initials: initials, size: size);
 }
 
 /// Local state for the catalog checkbox (builders are stateless).
@@ -270,8 +280,13 @@ Widget _buildAvatar(Map<String, dynamic> props) {
 class _CheckboxCell extends StatefulWidget {
   final bool initialValue;
   final bool disabled;
+  final bool tristate;
 
-  const _CheckboxCell({required this.initialValue, required this.disabled});
+  const _CheckboxCell({
+    required this.initialValue,
+    required this.disabled,
+    required this.tristate,
+  });
 
   @override
   State<_CheckboxCell> createState() => _CheckboxCellState();
@@ -286,6 +301,9 @@ class _CheckboxCellState extends State<_CheckboxCell> {
   Widget build(BuildContext context) {
     return shadcn.Checkbox(
       state: _state,
+      // Track M: `tristate` wires into `Checkbox(tristate:)` (ctor default
+      // false), enabling indeterminate-state cycling on tap.
+      tristate: widget.tristate,
       // Null `onChanged` renders the disabled state (auto-detected).
       onChanged: widget.disabled ? null : (s) => setState(() => _state = s),
     );
@@ -297,15 +315,30 @@ Widget _buildCheckbox(Map<String, dynamic> props) {
   // switch kind's bool-pair convention (`value` + `disabled`).
   final value = (props['value'] ?? false) as bool;
   final disabled = (props['disabled'] ?? false) as bool;
-  return _CheckboxCell(initialValue: value, disabled: disabled);
+  final tristate = (props['tristate'] ?? false) as bool;
+  return _CheckboxCell(
+    initialValue: value,
+    disabled: disabled,
+    tristate: tristate,
+  );
 }
 
 Widget _buildDivider(Map<String, dynamic> props) {
   // No canvas block in `components.json` — default invented. `Divider` takes
   // an optional `child`, so the canvas-level `label` prop renders as that
   // child (mirrors the input builder's label-caption pattern).
+  // Track M: `thickness` wires into the nullable `Divider(thickness:)` layout
+  // param (parsed via `num`; the 1.0 fallback equals the kit's resolved
+  // default, so default rendering is unchanged).
   final label = (props['label'] ?? '') as String;
-  return shadcn.Divider(child: label.isEmpty ? null : Text(label));
+  final thickness = ((props['thickness'] as num?)?.toDouble() ?? 1.0).clamp(
+    1.0,
+    8.0,
+  );
+  return shadcn.Divider(
+    thickness: thickness,
+    child: label.isEmpty ? null : Text(label),
+  );
 }
 
 Widget _buildProgress(Map<String, dynamic> props) {
@@ -327,11 +360,13 @@ class _TabsCell extends StatefulWidget {
   final int initialIndex;
   final String firstLabel;
   final String secondLabel;
+  final bool expand;
 
   const _TabsCell({
     required this.initialIndex,
     required this.firstLabel,
     required this.secondLabel,
+    required this.expand,
   });
 
   @override
@@ -345,6 +380,9 @@ class _TabsCellState extends State<_TabsCell> {
   Widget build(BuildContext context) {
     return tabs.Tabs(
       index: _index,
+      // Track M: `expand` wires into `Tabs(expand:)` (ctor default false),
+      // stretching headers across the available width.
+      expand: widget.expand,
       onChanged: (i) => setState(() => _index = i.clamp(0, 1)),
       children: [
         // `TabItem` is the concrete `TabChild` (per the kit's preview).
@@ -361,10 +399,12 @@ Widget _buildTabs(Map<String, dynamic> props) {
   final index = (props['index'] as num?)?.toInt() ?? 0;
   final first = (props['tab1'] ?? 'Tab 1') as String;
   final second = (props['tab2'] ?? 'Tab 2') as String;
+  final expand = (props['expand'] ?? false) as bool;
   return _TabsCell(
     initialIndex: index,
     firstLabel: first,
     secondLabel: second,
+    expand: expand,
   );
 }
 
@@ -394,12 +434,14 @@ class _SelectCell extends StatefulWidget {
   final String firstOption;
   final String secondOption;
   final String initialValue;
+  final bool disabled;
 
   const _SelectCell({
     required this.placeholder,
     required this.firstOption,
     required this.secondOption,
     required this.initialValue,
+    required this.disabled,
   });
 
   @override
@@ -418,7 +460,12 @@ class _SelectCellState extends State<_SelectCell> {
       value: value,
       placeholder: Text(widget.placeholder),
       itemBuilder: (context, item) => Text(item),
-      onChanged: (v) => setState(() => _value = v),
+      // Track M: `disabled` wires into `Select(enabled:)` (nullable; null
+      // means "enabled when onChanged is non-null"). `enabled: !disabled`
+      // renders identically to the old null when enabled, and the nulled
+      // callback matches the switch/checkbox disabled idiom.
+      enabled: !widget.disabled,
+      onChanged: widget.disabled ? null : (v) => setState(() => _value = v),
       popup: shadcn.SelectPopup(
         items: shadcn.SelectItemList(
           children: [
@@ -439,11 +486,13 @@ Widget _buildSelect(Map<String, dynamic> props) {
   final first = (props['option1'] ?? 'Option 1') as String;
   final second = (props['option2'] ?? 'Option 2') as String;
   final value = (props['value'] ?? '') as String;
+  final disabled = (props['disabled'] ?? false) as bool;
   return _SelectCell(
     placeholder: placeholder,
     firstOption: first,
     secondOption: second,
     initialValue: value,
+    disabled: disabled,
   );
 }
 
@@ -453,11 +502,13 @@ class _RadioGroupCell extends StatefulWidget {
   final String firstOption;
   final String secondOption;
   final String initialValue;
+  final bool disabled;
 
   const _RadioGroupCell({
     required this.firstOption,
     required this.secondOption,
     required this.initialValue,
+    required this.disabled,
   });
 
   @override
@@ -472,7 +523,11 @@ class _RadioGroupCellState extends State<_RadioGroupCell> {
   Widget build(BuildContext context) {
     return shadcn.RadioGroup<String>(
       value: _value,
-      onChanged: (v) => setState(() => _value = v),
+      // Track M: `disabled` wires into `RadioGroup(enabled:)` (nullable;
+      // null means "enabled when onChanged is non-null") — same idiom as the
+      // select cell above.
+      enabled: !widget.disabled,
+      onChanged: widget.disabled ? null : (v) => setState(() => _value = v),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -498,10 +553,12 @@ Widget _buildRadioGroup(Map<String, dynamic> props) {
   final first = (props['option1'] ?? 'Option 1') as String;
   final second = (props['option2'] ?? 'Option 2') as String;
   final value = (props['value'] ?? 'Option 1') as String;
+  final disabled = (props['disabled'] ?? false) as bool;
   return _RadioGroupCell(
     firstOption: first,
     secondOption: second,
     initialValue: value,
+    disabled: disabled,
   );
 }
 
@@ -520,9 +577,20 @@ Widget _buildBreadcrumb(Map<String, dynamic> props) {
   // No canvas block in `components.json` — defaults invented: a parent crumb
   // and the current page (plain `Text` children; the kit's preview uses
   // `LinkButton`s, but bare text keeps the canvas node dependency-free).
+  // Track M: `separator` maps the canvas-level 'arrow'/'slash' enum onto the
+  // kit's two built-in separators (`Breadcrumb.arrowSeparator` /
+  // `slashSeparator`); unknown values fall back to arrow, matching the kit's
+  // own default (`separator ?? theme ?? arrowSeparator`).
   final home = (props['home'] ?? 'Home') as String;
   final current = (props['current'] ?? 'Page') as String;
-  return shadcn.Breadcrumb(children: [Text(home), Text(current)]);
+  final separator = switch (props['separator']) {
+    'slash' => shadcn.Breadcrumb.slashSeparator,
+    _ => shadcn.Breadcrumb.arrowSeparator,
+  };
+  return shadcn.Breadcrumb(
+    separator: separator,
+    children: [Text(home), Text(current)],
+  );
 }
 
 Widget _buildDialog(Map<String, dynamic> props) {
@@ -584,17 +652,19 @@ Widget _buildToast(Map<String, dynamic> props) {
   // No canvas block in `components.json` — defaults invented: an icon + title
   // + message notification row (the kit's preview shows a bare `Text` via
   // `ToastController.show`; the entry takes any child). The real
-  // `ToastEntry` builds bare; `autoDismiss: false` disables the dismiss
-  // timer so the canvas node never self-dismisses, and the empty default
-  // `dismissDirections` disables swipe handling.
+  // `ToastEntry` builds bare. Track M: `autoDismiss` wires into
+  // `ToastEntry(autoDismiss:)` — the false default disables the dismiss
+  // timer so the canvas node never self-dismisses (the kit ctor defaults to
+  // true); the empty default `dismissDirections` disables swipe handling.
   final title = (props['title'] ?? 'Saved') as String;
   final message = (props['message'] ?? 'Saved successfully') as String;
+  final autoDismiss = (props['autoDismiss'] ?? false) as bool;
   return shadcn.ToastEntry(
     duration: const Duration(seconds: 3),
     animationDuration: const Duration(milliseconds: 200),
     animationCurve: Curves.easeOut,
     onDismissed: () {},
-    autoDismiss: false,
+    autoDismiss: autoDismiss,
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -617,10 +687,20 @@ Widget _buildDrawer(Map<String, dynamic> props) {
   // `draggable: false` it renders a plain themed container, so the catalog
   // wraps a fixed-width column as the side-panel mock. `size` is required
   // but only feeds drag math — the visible width comes from the `SizedBox`.
+  // Track M: `position` maps the canvas-level edge enum onto `OverlayPosition`
+  // (unknown values fall back to `end`, matching the old hardcoded value).
   final title = (props['title'] ?? 'Drawer') as String;
   final content = (props['content'] ?? 'Drawer content') as String;
+  final position = switch (props['position']) {
+    'left' => shadcn.OverlayPosition.left,
+    'right' => shadcn.OverlayPosition.right,
+    'top' => shadcn.OverlayPosition.top,
+    'bottom' => shadcn.OverlayPosition.bottom,
+    'start' => shadcn.OverlayPosition.start,
+    _ => shadcn.OverlayPosition.end,
+  };
   return shadcn.DrawerWrapper(
-    position: shadcn.OverlayPosition.end,
+    position: position,
     size: const Size(240, 480),
     stackIndex: 0,
     draggable: false,
@@ -1043,6 +1123,550 @@ Widget _buildAlertDialog(Map<String, dynamic> props) {
   );
 }
 
+/// Track M overlay-driven inline forms (2026-09-05): no live overlay context
+/// exists on canvas, so each renders its INLINE form statically — the trigger
+/// plus the inline content a user would see — documented per builder. Never a
+/// `preview.dart` embed (those render full `Scaffold`s); never network/asset
+/// images; theme-token styling only.
+Widget _buildMenu(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/menu/preview.dart`: label + buttons in
+  // a popup). The kit barrel hides `menu.dart`'s own `MenuPopup`, so the
+  // inline form uses the exported `popup.dart` `MenuPopup` (same styled
+  // container idiom). `MenuLabel`/`MenuButton` assert a `MenuGroupData`
+  // ancestor ("must be a child of MenuGroup"), so the items render inside a
+  // real `MenuGroup` whose builder lays them in the popup (exactly how
+  // `DropdownMenu` composes them internally); `autofocus: false` keeps canvas
+  // focus stable. `MenuButton`s carry no `onPressed`, rendering as
+  // non-interactive rows exactly like the preview's.
+  final heading = (props['heading'] ?? 'File') as String;
+  final item1 = (props['item1'] ?? 'New') as String;
+  final item2 = (props['item2'] ?? 'Open') as String;
+  return shadcn.MenuGroup(
+    direction: Axis.vertical,
+    autofocus: false,
+    builder: (context, children) => shadcn.MenuPopup(children: children),
+    children: [
+      shadcn.MenuLabel(child: Text(heading)),
+      shadcn.MenuButton(child: Text(item1)),
+      shadcn.MenuButton(child: Text(item2)),
+    ],
+  );
+}
+
+Widget _buildPopover(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/popover/preview.dart`: trigger button
+  // + title/body builder content). The kit ships no bare `Popover` widget
+  // (only the `showPopover` context API plus `PopoverOverlayWidget`, which
+  // requires an `anchorContext`), so the catalog renders the trigger plus the
+  // builder content statically — the content in a real `ModalContainer`,
+  // mirroring the dialog catalog builder's inline-content precedent.
+  final trigger = (props['trigger'] ?? 'Open Popover') as String;
+  final title = (props['title'] ?? 'Popover title') as String;
+  final body =
+      (props['body'] ?? 'Use popovers for contextual helper content.')
+          as String;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      shadcn.PrimaryButton(onPressed: () {}, child: Text(trigger)),
+      const SizedBox(height: 8),
+      shadcn.ModalContainer(
+        filled: true,
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title),
+            const SizedBox(height: 8),
+            Text(body),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+Widget _buildPopup(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/popup/preview.dart`: padded rows around
+  // a divider). The real `MenuPopup` builds bare (all context reads are
+  // null-safe `maybeOf`/sheet checks, same as the menu builder above).
+  final item1 = (props['item1'] ?? 'Profile') as String;
+  final item2 = (props['item2'] ?? 'Settings') as String;
+  final item3 = (props['item3'] ?? 'Sign out') as String;
+  return shadcn.MenuPopup(
+    children: [
+      Padding(padding: const EdgeInsets.all(8), child: Text(item1)),
+      Padding(padding: const EdgeInsets.all(8), child: Text(item2)),
+      const Divider(height: 1),
+      Padding(padding: const EdgeInsets.all(8), child: Text(item3)),
+    ],
+  );
+}
+
+Widget _buildMenubar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/menubar/preview.dart`: File/Edit menus
+  // with submenus). The real `Menubar` builds bare (it provides its own
+  // `MenuGroup` scope internally); submenus open in the overlay at runtime,
+  // so canvas shows the desktop bar itself.
+  final menu1 = (props['menu1'] ?? 'File') as String;
+  final menu2 = (props['menu2'] ?? 'Edit') as String;
+  return shadcn.Menubar(
+    border: true,
+    children: [
+      shadcn.MenuButton(
+        subMenu: const [
+          shadcn.MenuButton(child: Text('New')),
+          shadcn.MenuButton(child: Text('Open')),
+        ],
+        child: Text(menu1),
+      ),
+      shadcn.MenuButton(
+        subMenu: const [
+          shadcn.MenuButton(child: Text('Cut')),
+          shadcn.MenuButton(child: Text('Copy')),
+        ],
+        child: Text(menu2),
+      ),
+    ],
+  );
+}
+
+Widget _buildDropdownMenu(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/dropdown_menu/preview.dart`: account
+  // label + action buttons). The real `DropdownMenu` builds bare (it builds
+  // its own `MenuGroup` scope; `closeOverlay` only runs in the dismiss
+  // callback). Rendered inline — the live `showDropdown` anchor is
+  // overlay-only.
+  final heading = (props['heading'] ?? 'My Account') as String;
+  final item1 = (props['item1'] ?? 'Profile') as String;
+  final item2 = (props['item2'] ?? 'Settings') as String;
+  return shadcn.DropdownMenu(
+    children: [
+      shadcn.MenuLabel(child: Text(heading)),
+      const shadcn.MenuDivider(),
+      shadcn.MenuButton(child: Text(item1)),
+      shadcn.MenuButton(child: Text(item2)),
+    ],
+  );
+}
+
+Widget _buildContextMenu(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a trigger hint
+  // plus two menu items. The real `ContextMenu` builds bare (gesture
+  // detection only); the items live in the right-click overlay, so canvas
+  // shows the trigger child — the same honest-static convention as the
+  // tooltip catalog builder.
+  final hint = (props['hint'] ?? 'Right-click me') as String;
+  final item1 = (props['item1'] ?? 'Back') as String;
+  final item2 = (props['item2'] ?? 'Reload') as String;
+  return shadcn.ContextMenu(
+    items: [
+      shadcn.MenuButton(child: Text(item1)),
+      shadcn.MenuButton(child: Text(item2)),
+    ],
+    child: shadcn.OutlineButton(onPressed: () {}, child: Text(hint)),
+  );
+}
+
+Widget _buildHoverCard(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a handle plus
+  // a title/body preview. The real `HoverCard` builds bare (overlay only on
+  // hover/long-press); the preview content lives in `hoverBuilder`, so canvas
+  // shows the handle — the same honest-static convention as the tooltip
+  // catalog builder. The card content reuses the card builder's
+  // `Card(padding:, child:)` idiom (never shown on canvas, but kept
+  // theme-true for export fidelity).
+  final handle = (props['handle'] ?? 'Hover card') as String;
+  final title = (props['title'] ?? 'Hover title') as String;
+  final body = (props['body'] ?? 'Rich preview content.') as String;
+  return shadcn.HoverCard(
+    hoverBuilder: (context) => SizedBox(
+      width: 240,
+      child: shadcn.Card(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title),
+            const SizedBox(height: 4),
+            Text(body),
+          ],
+        ),
+      ),
+    ),
+    child: shadcn.OutlineButton(onPressed: () {}, child: Text(handle)),
+  );
+}
+
+Widget _buildCommand(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a search hint
+  // plus two palette rows. The live `Command` shell cannot render inline: it
+  // wraps itself in an `IntrinsicWidth` whose results viewport cannot compute
+  // intrinsic dimensions under loose canvas constraints, and its
+  // unconditional footer hint row overflows any gallery-fitting fixed width
+  // (the kit's own 300px preview overflows the same way). The catalog
+  // therefore renders the palette's STATIC query form — a real `TextField`
+  // search row plus the real `CommandCategory`/`CommandItem` result parts in
+  // the shared `MenuPopup` container (all bare-capable; `CommandItem` owns
+  // its focus/hover state internally). Debounced stream search, keyboard
+  // navigation, and the footer hints are runtime-only.
+  final hint = (props['hint'] ?? 'Search commands...') as String;
+  final item1 = (props['item1'] ?? 'Calendar') as String;
+  final item2 = (props['item2'] ?? 'Settings') as String;
+  return SizedBox(
+    width: 300,
+    child: shadcn.MenuPopup(
+      children: [
+        shadcn.TextField(placeholder: Text(hint)),
+        shadcn.CommandCategory(
+          title: const Text('Suggestions'),
+          children: [
+            shadcn.CommandItem(title: Text(item1), onTap: () {}),
+            shadcn.CommandItem(title: Text(item2), onTap: () {}),
+          ],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildSwiper(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a swipe hint
+  // plus the sheet body. The real `Swiper` builds bare (overlay only on
+  // swipe); the sheet content lives in `builder`, so canvas shows the trigger
+  // child — the same honest-static convention as the tooltip catalog
+  // builder. The fixed trigger height keeps the gesture surface visible.
+  final hint = (props['hint'] ?? 'Swipe up from the bottom') as String;
+  final content = (props['content'] ?? 'Swipe content') as String;
+  return shadcn.Swiper(
+    handler: shadcn.SwiperHandler.sheet,
+    position: shadcn.OverlayPosition.bottom,
+    builder: (context) => Padding(
+      padding: const EdgeInsets.all(24),
+      child: Text(content),
+    ),
+    child: SizedBox(
+      height: 96,
+      child: Center(
+        child: shadcn.OutlinedContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(hint),
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildRefreshTrigger(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: three static
+  // rows. The real `RefreshTrigger` builds bare around its child; the fixed
+  // height mirrors the drawer builder's fixed width (the scrollable needs
+  // bounded height, which root canvas columns do not provide). Pull gestures
+  // only animate at runtime; canvas shows the wrapped list.
+  final item1 = (props['item1'] ?? 'Row 1') as String;
+  final item2 = (props['item2'] ?? 'Row 2') as String;
+  final item3 = (props['item3'] ?? 'Row 3') as String;
+  return shadcn.RefreshTrigger(
+    onRefresh: () async {},
+    child: SizedBox(
+      height: 140,
+      child: ListView(
+        children: [
+          Padding(padding: const EdgeInsets.all(12), child: Text(item1)),
+          Padding(padding: const EdgeInsets.all(12), child: Text(item2)),
+          Padding(padding: const EdgeInsets.all(12), child: Text(item3)),
+        ],
+      ),
+    ),
+  );
+}
+
+/// Local selection state for the catalog tab container (builders are
+/// stateless). Mirrors the kit's own preview builder: a header row plus the
+/// selected-tab label. `TabContainer` + `TabItem` resolve to the tab_container
+/// barrel (the `tabs` barrel hides its own same-named types, so the
+/// `shadcn.` prefix is unambiguous).
+class _TabContainerCell extends StatefulWidget {
+  final int initialIndex;
+  final List<String> labels;
+
+  const _TabContainerCell({required this.initialIndex, required this.labels});
+
+  @override
+  State<_TabContainerCell> createState() => _TabContainerCellState();
+}
+
+class _TabContainerCellState extends State<_TabContainerCell> {
+  late int _selected = widget.initialIndex.clamp(0, widget.labels.length - 1);
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.TabContainer(
+      selected: _selected,
+      onSelect: (i) =>
+          setState(() => _selected = i.clamp(0, widget.labels.length - 1)),
+      builder: (context, children) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(mainAxisAlignment: MainAxisAlignment.center, children: children),
+          const SizedBox(height: 8),
+          Text('Selected tab: ${_selected + 1}'),
+        ],
+      ),
+      childBuilder: (context, data, child) {
+        final selected = data.selected == data.index;
+        return GestureDetector(
+          onTap: () => data.onSelect?.call(data.index),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: DefaultTextStyle.merge(
+              style: TextStyle(
+                fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+      children: [
+        for (final label in widget.labels) shadcn.TabItem(child: Text(label)),
+      ],
+    );
+  }
+}
+
+Widget _buildTabContainer(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: three tab
+  // labels plus the selected index (parsed via `num`, see _buildProgress).
+  final tab1 = (props['tab1'] ?? 'Overview') as String;
+  final tab2 = (props['tab2'] ?? 'Details') as String;
+  final tab3 = (props['tab3'] ?? 'Reviews') as String;
+  final index = (props['index'] as num?)?.toInt() ?? 0;
+  return _TabContainerCell(
+    initialIndex: index,
+    labels: [tab1, tab2, tab3],
+  );
+}
+
+/// Local active-tab state for the catalog tab list (builders are stateless).
+/// `tabs.TabList` (the tabs barrel's header row) wraps itself in a
+/// `TabContainer` internally, so no external scope is needed — mirrors
+/// `_TabsCell`, but for the standalone header-row component.
+class _TabListCell extends StatefulWidget {
+  final int initialIndex;
+  final String firstLabel;
+  final String secondLabel;
+
+  const _TabListCell({
+    required this.initialIndex,
+    required this.firstLabel,
+    required this.secondLabel,
+  });
+
+  @override
+  State<_TabListCell> createState() => _TabListCellState();
+}
+
+class _TabListCellState extends State<_TabListCell> {
+  late int _index = widget.initialIndex.clamp(0, 1);
+
+  @override
+  Widget build(BuildContext context) {
+    return tabs.TabList(
+      index: _index,
+      onChanged: (i) => setState(() => _index = i.clamp(0, 1)),
+      children: [
+        tabs.TabItem(child: Text(widget.firstLabel)),
+        tabs.TabItem(child: Text(widget.secondLabel)),
+      ],
+    );
+  }
+}
+
+Widget _buildTabList(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented, mirroring the
+  // tabs kind (two labels + selected index). NOTE: `tabs.TabItem` (not
+  // `shadcn.TabItem`) — the header row takes the tabs barrel's own `TabChild`
+  // family.
+  final index = (props['index'] as num?)?.toInt() ?? 0;
+  final first = (props['tab1'] ?? 'Tab 1') as String;
+  final second = (props['tab2'] ?? 'Tab 2') as String;
+  return _TabListCell(
+    initialIndex: index,
+    firstLabel: first,
+    secondLabel: second,
+  );
+}
+
+/// Local focus state for the catalog tab pane (builders are stateless).
+/// Mirrors the kit's own preview: `TabPaneData` items, an `itemBuilder`
+/// returning the tab_container barrel's `TabChildWidget`, and a content card
+/// reflecting the focused tab.
+class _TabPaneCell extends StatefulWidget {
+  final int initialFocused;
+  final List<String> labels;
+
+  const _TabPaneCell({required this.initialFocused, required this.labels});
+
+  @override
+  State<_TabPaneCell> createState() => _TabPaneCellState();
+}
+
+class _TabPaneCellState extends State<_TabPaneCell> {
+  late int _focused = widget.initialFocused.clamp(0, widget.labels.length - 1);
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      for (final label in widget.labels) shadcn.TabPaneData(label),
+    ];
+    final focused = _focused.clamp(0, items.length - 1);
+    return shadcn.TabPane<String>(
+      items: items,
+      focused: focused,
+      onFocused: (i) =>
+          setState(() => _focused = i.clamp(0, items.length - 1)),
+      itemBuilder: (context, item, index) =>
+          shadcn.TabChildWidget(indexed: true, child: Text(item.data)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Text('Content: ${items[focused].data}'),
+      ),
+    );
+  }
+}
+
+Widget _buildTabPane(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: three tab
+  // labels plus the focused index (parsed via `num`, see _buildProgress).
+  final tab1 = (props['tab1'] ?? 'Overview') as String;
+  final tab2 = (props['tab2'] ?? 'Analytics') as String;
+  final tab3 = (props['tab3'] ?? 'Settings') as String;
+  final focused = (props['focused'] as num?)?.toInt() ?? 0;
+  return _TabPaneCell(
+    initialFocused: focused,
+    labels: [tab1, tab2, tab3],
+  );
+}
+
+/// Local controller ownership for the catalog stepper (builders are
+/// stateless). Mirrors the kit's own preview: a `StepperController` created
+/// in `initState` and disposed with the cell. Vertical direction keeps the
+/// three steps narrow-safe on canvas.
+class _StepperCell extends StatefulWidget {
+  final int initialStep;
+  final List<String> steps;
+  final List<String> details;
+
+  const _StepperCell({
+    required this.initialStep,
+    required this.steps,
+    required this.details,
+  });
+
+  @override
+  State<_StepperCell> createState() => _StepperCellState();
+}
+
+class _StepperCellState extends State<_StepperCell> {
+  late final shadcn.StepperController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = shadcn.StepperController(
+      currentStep: widget.initialStep.clamp(0, widget.steps.length - 1),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.Stepper(
+      controller: _controller,
+      direction: Axis.vertical,
+      steps: [
+        for (var i = 0; i < widget.steps.length; i++)
+          shadcn.Step(
+            title: Text(widget.steps[i]),
+            // Required: the circle variant force-unwraps the built content
+            // (`child!` in `_step_variant_circle.dart`), so a null
+            // contentBuilder crashes even for inactive steps.
+            contentBuilder: (_) => Text(widget.details[i]),
+          ),
+      ],
+    );
+  }
+}
+
+Widget _buildStepper(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`navigation/stepper/preview.dart`: three titled
+  // steps with bodies): three step titles + bodies plus the active step
+  // index. (`Step` is kit-qualified: material's `Step` is also imported
+  // here.)
+  final step1 = (props['step1'] ?? 'Details') as String;
+  final detail1 = (props['detail1'] ?? 'Provide your details.') as String;
+  final step2 = (props['step2'] ?? 'Payment') as String;
+  final detail2 = (props['detail2'] ?? 'Choose a payment method.') as String;
+  final step3 = (props['step3'] ?? 'Confirm') as String;
+  final detail3 = (props['detail3'] ?? 'Review and submit.') as String;
+  final step = (props['step'] as num?)?.toInt() ?? 0;
+  return _StepperCell(
+    initialStep: step,
+    steps: [step1, step2, step3],
+    details: [detail1, detail2, detail3],
+  );
+}
+
+/// Local value state for the catalog slider (builders are stateless).
+/// `Slider` is controlled (`value` + `onChanged`, both required), so the
+/// cell owns a double exactly like `_StarRatingCell` owns its rating.
+/// (Qualified: material's `Slider` is also imported here.)
+class _SliderCell extends StatefulWidget {
+  final double initialValue;
+
+  const _SliderCell({required this.initialValue});
+
+  @override
+  State<_SliderCell> createState() => _SliderCellState();
+}
+
+class _SliderCellState extends State<_SliderCell> {
+  late double _value = widget.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.Slider(
+      value: _value,
+      onChanged: (v) => setState(() => _value = v.clamp(0.0, 1.0)),
+    );
+  }
+}
+
+Widget _buildSlider(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: the static value
+  // (parsed via `num`, clamped into the 0..1 domain like the progress
+  // catalog builder).
+  final value = ((props['value'] as num?)?.toDouble() ?? 0.6).clamp(0.0, 1.0);
+  return _SliderCell(initialValue: value);
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -1073,8 +1697,12 @@ final List<CatalogEntry> kCatalog = [
     defaults: const {
       'placeholder': 'Type here',
       'label': '',
+      // Track M: `initialValue`/`readOnly` promoted from spec-only (Track I)
+      // into wired builder props.
+      'initialValue': '',
       'disabled': false,
       'obscure': false,
+      'readOnly': false,
     },
     build: _buildInput,
   ),
@@ -1093,19 +1721,23 @@ final List<CatalogEntry> kCatalog = [
   CatalogEntry(
     kind: 'avatar',
     label: 'Initials/photo avatar with badge and group support.',
-    defaults: const {'initials': 'AB'},
+    // Track M: `size` promoted from spec-only (Track I) into a wired prop.
+    defaults: const {'initials': 'AB', 'size': 40.0},
     build: _buildAvatar,
   ),
   CatalogEntry(
     kind: 'checkbox',
     label: 'Animated checkbox with tri-state support and controllers.',
-    defaults: const {'value': false, 'disabled': false},
+    // Track M: `tristate` promoted from spec-only (Track I) into a wired prop.
+    defaults: const {'value': false, 'disabled': false, 'tristate': false},
     build: _buildCheckbox,
   ),
   CatalogEntry(
     kind: 'divider',
     label: 'Horizontal and vertical separators with optional label support.',
-    defaults: const {'label': ''},
+    // Track M: `thickness` promoted from spec-only (Track I) into a wired
+    // prop.
+    defaults: const {'label': '', 'thickness': 1.0},
     build: _buildDivider,
   ),
   CatalogEntry(
@@ -1117,7 +1749,13 @@ final List<CatalogEntry> kCatalog = [
   CatalogEntry(
     kind: 'tabs',
     label: 'Tabbed navigation primitives with lists and panes.',
-    defaults: const {'tab1': 'Tab 1', 'tab2': 'Tab 2', 'index': 0},
+    // Track M: `expand` promoted from spec-only (Track I) into a wired prop.
+    defaults: const {
+      'tab1': 'Tab 1',
+      'tab2': 'Tab 2',
+      'index': 0,
+      'expand': false,
+    },
     build: _buildTabs,
   ),
   CatalogEntry(
@@ -1134,21 +1772,27 @@ final List<CatalogEntry> kCatalog = [
     kind: 'select',
     label:
         'Dropdown/select control with popup menus, grouped items, and keyboard navigation.',
+    // Track M: `disabled` promoted from spec-only (Track I) into a wired
+    // prop.
     defaults: const {
       'placeholder': 'Select an option',
       'option1': 'Option 1',
       'option2': 'Option 2',
       'value': '',
+      'disabled': false,
     },
     build: _buildSelect,
   ),
   CatalogEntry(
     kind: 'radio_group',
     label: 'Exclusive selection group with radio items and cards.',
+    // Track M: `disabled` promoted from spec-only (Track I) into a wired
+    // prop.
     defaults: const {
       'option1': 'Option 1',
       'option2': 'Option 2',
       'value': 'Option 1',
+      'disabled': false,
     },
     build: _buildRadioGroup,
   ),
@@ -1162,7 +1806,9 @@ final List<CatalogEntry> kCatalog = [
     kind: 'breadcrumb',
     label:
         'Horizontal breadcrumb trail with arrow/slash separators and overflow handling.',
-    defaults: const {'home': 'Home', 'current': 'Page'},
+    // Track M: `separator` promoted from spec-only (Track I) into a wired
+    // prop.
+    defaults: const {'home': 'Home', 'current': 'Page', 'separator': 'arrow'},
     build: _buildBreadcrumb,
   ),
   CatalogEntry(
@@ -1184,13 +1830,25 @@ final List<CatalogEntry> kCatalog = [
   CatalogEntry(
     kind: 'toast',
     label: 'Overlay toast notifications with configurable timing.',
-    defaults: const {'title': 'Saved', 'message': 'Saved successfully'},
+    // Track M: `autoDismiss` promoted from spec-only (Track I) into a wired
+    // prop.
+    defaults: const {
+      'title': 'Saved',
+      'message': 'Saved successfully',
+      'autoDismiss': false,
+    },
     build: _buildToast,
   ),
   CatalogEntry(
     kind: 'drawer',
     label: 'Sliding drawer and sheet overlays with drag support.',
-    defaults: const {'title': 'Drawer', 'content': 'Drawer content'},
+    // Track M: `position` promoted from spec-only (Track I) into a wired
+    // prop.
+    defaults: const {
+      'title': 'Drawer',
+      'content': 'Drawer content',
+      'position': 'end',
+    },
     build: _buildDrawer,
   ),
   // Track J additions (2026-09-05): real builders for the triage kinds
@@ -1324,6 +1982,151 @@ final List<CatalogEntry> kCatalog = [
       'showActions': true,
     },
     build: _buildAlertDialog,
+  ),
+  // Track M additions (2026-09-05): overlay-driven inline forms (menu,
+  // popover, popup, menubar, dropdown_menu, context_menu, hover_card,
+  // command, swiper, refresh_trigger) plus the tab-controller trio,
+  // stepper, and slider. Labels mirror `components.json` descriptions;
+  // defaults are invented and documented per builder above. Only
+  // bool/string/num prop types already established by the seed kinds.
+  CatalogEntry(
+    kind: 'menu',
+    label: 'Menu primitives, items, and popup container.',
+    defaults: const {'heading': 'File', 'item1': 'New', 'item2': 'Open'},
+    build: _buildMenu,
+  ),
+  CatalogEntry(
+    kind: 'popover',
+    label: 'Anchored overlay surfaces for floating content.',
+    defaults: const {
+      'trigger': 'Open Popover',
+      'title': 'Popover title',
+      'body': 'Use popovers for contextual helper content.',
+    },
+    build: _buildPopover,
+  ),
+  CatalogEntry(
+    kind: 'popup',
+    label: 'Styled popup container for menus and dropdowns.',
+    defaults: const {
+      'item1': 'Profile',
+      'item2': 'Settings',
+      'item3': 'Sign out',
+    },
+    build: _buildPopup,
+  ),
+  CatalogEntry(
+    kind: 'menubar',
+    label:
+        'Horizontal desktop-style menubar with dropdown menus and keyboard navigation.',
+    defaults: const {'menu1': 'File', 'menu2': 'Edit'},
+    build: _buildMenubar,
+  ),
+  CatalogEntry(
+    kind: 'dropdown_menu',
+    label: 'Dropdown menu overlay built on menu primitives.',
+    defaults: const {
+      'heading': 'My Account',
+      'item1': 'Profile',
+      'item2': 'Settings',
+    },
+    build: _buildDropdownMenu,
+  ),
+  CatalogEntry(
+    kind: 'context_menu',
+    label: 'Desktop-style context menu overlay for editable text and custom actions.',
+    defaults: const {
+      'hint': 'Right-click me',
+      'item1': 'Back',
+      'item2': 'Reload',
+    },
+    build: _buildContextMenu,
+  ),
+  CatalogEntry(
+    kind: 'hover_card',
+    label: 'Hover or long-press triggered popovers for rich previews.',
+    defaults: const {
+      'handle': 'Hover card',
+      'title': 'Hover title',
+      'body': 'Rich preview content.',
+    },
+    build: _buildHoverCard,
+  ),
+  CatalogEntry(
+    kind: 'command',
+    label:
+        'Command palette with search, keyboard navigation, and customizable result builders.',
+    defaults: const {
+      'hint': 'Search commands...',
+      'item1': 'Calendar',
+      'item2': 'Settings',
+    },
+    build: _buildCommand,
+  ),
+  CatalogEntry(
+    kind: 'swiper',
+    label: 'Swipe-triggered overlays for drawers and sheets.',
+    defaults: const {
+      'hint': 'Swipe up from the bottom',
+      'content': 'Swipe content',
+    },
+    build: _buildSwiper,
+  ),
+  CatalogEntry(
+    kind: 'refresh_trigger',
+    label:
+        'Pull-to-refresh wrapper with customizable indicator, extents, and completion animations.',
+    defaults: const {'item1': 'Row 1', 'item2': 'Row 2', 'item3': 'Row 3'},
+    build: _buildRefreshTrigger,
+  ),
+  CatalogEntry(
+    kind: 'tab_container',
+    label: 'Coordinated tab state manager with customizable builders.',
+    defaults: const {
+      'tab1': 'Overview',
+      'tab2': 'Details',
+      'tab3': 'Reviews',
+      'index': 0,
+    },
+    build: _buildTabContainer,
+  ),
+  CatalogEntry(
+    kind: 'tab_list',
+    label: 'Horizontal tab header row with active indicator.',
+    defaults: const {'tab1': 'Tab 1', 'tab2': 'Tab 2', 'index': 0},
+    build: _buildTabList,
+  ),
+  CatalogEntry(
+    kind: 'tab_pane',
+    label: 'Sortable tab strip with integrated content card.',
+    defaults: const {
+      'tab1': 'Overview',
+      'tab2': 'Analytics',
+      'tab3': 'Settings',
+      'focused': 0,
+    },
+    build: _buildTabPane,
+  ),
+  CatalogEntry(
+    kind: 'stepper',
+    label: 'Multi-step progress with interactive step indicators.',
+    defaults: const {
+      'step1': 'Details',
+      'detail1': 'Provide your details.',
+      'step2': 'Payment',
+      'detail2': 'Choose a payment method.',
+      'step3': 'Confirm',
+      'detail3': 'Review and submit.',
+      'step': 0,
+    },
+    build: _buildStepper,
+  ),
+  CatalogEntry(
+    kind: 'slider',
+    label:
+        'General-purpose single and range slider engine with snapping and pluggable builders.',
+    defaults: const {'value': 0.6},
+    build: _buildSlider,
   ),
 ];
 

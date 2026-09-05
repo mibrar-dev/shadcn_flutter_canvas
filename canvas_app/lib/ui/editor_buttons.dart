@@ -6,6 +6,8 @@ library;
 
 import 'package:flutter/material.dart';
 
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+
 import 'editor_tokens.dart';
 
 /// One entry in an [EditorSegmented] control.
@@ -124,7 +126,10 @@ class _EditorIconButtonState extends State<EditorIconButton> {
 
     final tooltip = widget.tooltip;
     if (tooltip != null && tooltip.isNotEmpty) {
-      return Tooltip(message: tooltip, child: button);
+      return shadcn.Tooltip(
+        tooltip: (context) => shadcn.TooltipContainer(child: Text(tooltip)),
+        child: button,
+      );
     }
     return button;
   }
@@ -239,8 +244,10 @@ class _SegmentButtonState extends State<_SegmentButton> {
           scale: _pressed ? _pressScale : 1.0,
           duration: _pressDuration,
           curve: Curves.easeOutCubic,
-          child: Tooltip(
-            message: widget.item.tooltip,
+          child: shadcn.Tooltip(
+            tooltip: (context) => shadcn.TooltipContainer(
+              child: Text(widget.item.tooltip),
+            ),
             child: Container(
               width: EditorMetrics.toolbarButtonSize,
               height: EditorMetrics.toolbarButtonSize,

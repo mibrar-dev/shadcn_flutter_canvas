@@ -12,13 +12,14 @@ import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Shows the Open dialog; on successful import calls store.replaceDoc and
 /// closes. Never throws.
 Future<void> showOpenDialog(BuildContext context, CanvasStore store) async {
   try {
-    await showDialog<void>(
+    await shadcn.showDialog<void>(
       context: context,
       builder: (_) => _OpenDialog(store: store),
     );
@@ -77,11 +78,7 @@ class _OpenDialogState extends State<_OpenDialog> {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    return AlertDialog(
-      backgroundColor: colors.surface,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(EditorMetrics.tileRadius),
-      ),
+    return shadcn.AlertDialog(
       title: Text(
         'Open design',
         style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
@@ -95,33 +92,16 @@ class _OpenDialogState extends State<_OpenDialog> {
             style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
           ),
           const SizedBox(height: EditorMetrics.tileGap),
-          TextField(
+          shadcn.TextField(
             controller: _controller,
             keyboardType: TextInputType.multiline,
             maxLines: null,
             style: EditorType.field.copyWith(color: colors.onSurface),
             cursorColor: colors.onSurfaceVariant,
-            decoration: InputDecoration(
-              hintText: 'Share link or doc JSON',
-              hintStyle:
+            placeholder: Text(
+              'Share link or doc JSON',
+              style:
                   EditorType.field.copyWith(color: colors.onSurfaceVariant),
-              filled: true,
-              fillColor: colors.surfaceContainerHigh,
-              border: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(EditorMetrics.tileRadius),
-                borderSide: BorderSide.none,
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(EditorMetrics.tileRadius),
-                borderSide: BorderSide.none,
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius:
-                    BorderRadius.circular(EditorMetrics.tileRadius),
-                borderSide: BorderSide.none,
-              ),
             ),
             onChanged: (_) {
               if (_error != null) setState(() => _error = null);
@@ -139,19 +119,13 @@ class _OpenDialogState extends State<_OpenDialog> {
         ],
       ),
       actions: [
-        TextButton(
+        shadcn.TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: Text(
-            'Cancel',
-            style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
-          ),
+          child: const Text('Cancel'),
         ),
-        TextButton(
+        shadcn.TextButton(
           onPressed: _import,
-          child: Text(
-            'Import',
-            style: EditorType.field.copyWith(color: colors.onSurface),
-          ),
+          child: const Text('Import'),
         ),
       ],
     );

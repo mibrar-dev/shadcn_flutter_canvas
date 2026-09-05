@@ -45,24 +45,26 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 46 canvas-ready kinds (19 seed + 10 W1: chip, alert,
+// Exact metadata for the 61 canvas-ready kinds (19 seed + 10 W1: chip, alert,
 // circular_progress_indicator, linear_progress_indicator, triple_dots,
 // dot_indicator, empty_state, code_snippet, number_ticker, text_area + 17
 // Track J: basic, card_image, scaffold, collapsible, steps, timeline,
 // outlined_container, hidden, keyboard_shortcut, tracker, chat, selectable,
-// star_rating, clickable, scrollbar, pagination, alert_dialog —
-// snapshotted from the pinned kit's `components.json`: destination prefix
-// from `files[].destination` (`{installPath}/components/<category>/<id>/`),
-// alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
-// unknown dep ids warn at export time, same as the seed kinds' `text_field`).
+// star_rating, clickable, scrollbar, pagination, alert_dialog + 15 Track M:
+// menu, popover, popup, menubar, dropdown_menu, context_menu, hover_card,
+// command, swiper, refresh_trigger, tab_container, tab_list, tab_pane,
+// stepper, slider — snapshotted from the pinned kit's `components.json`:
+// destination prefix from `files[].destination`
+// (`{installPath}/components/<category>/<id>/`), alphabetized `shared`,
+// `pubspec.dependencies`, `dependsOn` verbatim — unknown dep ids warn at
+// export time, same as the seed kinds' `text_field`).
 // NOTE: `select`'s `dependsOn` (`async`, `command`, `hover`,
-// `menu`, `text_field`) names component ids with no `_KindSpec` here — they
-// warn at export time (transitively pulled bodies are out of scope for this
-// batch; the ids are kept verbatim, never invented). Its `chip` and `dialog`
-// deps now resolve (this batch adds `chip`; `dialog` came with the seed
-// batch, pulling `card` transitively).
-// NOTE: `tooltip`'s `dependsOn` (`popover`) likewise names a component id
-// with no `_KindSpec` here — it warns at export time (same verbatim policy).
+// `menu`, `text_field`) — `command`/`menu` now resolve (this batch),
+// `async`/`hover`/`text_field` still warn (transitively pulled bodies are out
+// of scope; the ids are kept verbatim, never invented). Its `chip` and
+// `dialog` deps resolve.
+// NOTE: `tooltip`'s `dependsOn` (`popover`) now resolves (this batch adds
+// `popover`).
 // NOTE: `text_area`'s `dependsOn` (`text_field`) warns the same way `input`'s
 // does (verbatim policy).
 // NOTE (Track J): `scaffold`'s `dependsOn` (`drawer`, `linear_progress_indicator`,
@@ -72,6 +74,14 @@ class _KindSpec {
 // three), `collapsible`'s (`button`), `keyboard_shortcut`'s (`card`),
 // `tracker`'s (`tooltip`), `pagination`'s (`button`, `triple_dots`), and
 // `alert_dialog`'s (`dialog`) deps all resolve.
+// NOTE (Track M): `menubar`'s (`menu`), `dropdown_menu`'s (`menu`, `drawer`),
+// `context_menu`'s (`menu`), `hover_card`'s (`tooltip`), `popup`'s
+// (`dialog`), `swiper`'s (`drawer`), `refresh_trigger`'s (`card`,
+// `checkbox`), and `tab_list`'s (`button`, `tab_container`) deps all resolve.
+// `command`'s (`button`, `dialog`, `divider`, `text_field`), `stepper`'s
+// (`icon`, `text`), and `tab_pane`'s (`outlined_container`, `sortable`,
+// `tab_container`) partially warn — `text`/`text_field`/`icon`/`sortable`
+// have no `_KindSpec` (verbatim policy).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -211,6 +221,51 @@ const _kinds = <String, _KindSpec>{
   'alert_dialog': _KindSpec('{installPath}/components/overlay/alert_dialog/',
       ['overlay', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog']),
+  'menu': _KindSpec('{installPath}/components/overlay/menu/',
+      ['basic_layout', 'color_extensions', 'component_schema', 'constants', 'geometry_extensions', 'keyboard_shortcut_utils', 'outlined_container', 'overlay', 'radix_icons', 'style_value', 'subfocus', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog', 'drawer', 'button']),
+  'popover': _KindSpec('{installPath}/components/overlay/popover/',
+      ['color_extensions', 'constants', 'geometry_extensions', 'overlay', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'popup': _KindSpec('{installPath}/components/overlay/popup/',
+      ['component_schema', 'menu_group', 'overlay', 'sheet_overlay', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog']),
+  'menubar': _KindSpec('{installPath}/components/overlay/menubar/',
+      ['component_schema', 'constants', 'outlined_container', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['menu']),
+  'dropdown_menu': _KindSpec('{installPath}/components/overlay/dropdown_menu/',
+      ['component_schema', 'overlay', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['menu', 'drawer']),
+  'context_menu': _KindSpec('{installPath}/components/overlay/context_menu/',
+      ['animated_value_builder', 'component_schema', 'constants', 'localizations', 'overlay', 'sheet_overlay', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['menu']),
+  'hover_card': _KindSpec('{installPath}/components/overlay/hover_card/',
+      ['component_schema', 'overlay', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['tooltip']),
+  'command': _KindSpec('{installPath}/components/control/command/',
+      ['border_utils', 'clickable', 'color_extensions', 'constants', 'focus_outline', 'icon_extensions', 'localizations', 'lucide_icons', 'outlined_container', 'overlay', 'subfocus', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'dialog', 'divider', 'text_field']),
+  'swiper': _KindSpec('{installPath}/components/overlay/swiper/',
+      ['component_schema', 'theme'],
+      {'gap': '^3.0.1'}, ['drawer']),
+  'refresh_trigger': _KindSpec('{installPath}/components/overlay/refresh_trigger/',
+      ['animated_value_builder', 'component_schema', 'constants', 'localizations', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['card', 'checkbox']),
+  'tab_container': _KindSpec('{installPath}/components/navigation/tab_container/',
+      ['theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'tab_list': _KindSpec('{installPath}/components/navigation/tab_list/',
+      ['style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['button', 'tab_container']),
+  'tab_pane': _KindSpec('{installPath}/components/navigation/tab_pane/',
+      ['fade_scroll', 'geometry_extensions', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['outlined_container', 'sortable', 'tab_container']),
+  'stepper': _KindSpec('{installPath}/components/navigation/stepper/',
+      ['clickable', 'component_schema', 'constants', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['icon', 'text']),
+  'slider': _KindSpec('{installPath}/components/form/slider/',
+      ['color_extensions', 'component_schema', 'form_control', 'form_value_supplier', 'slider_value', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
 };
 
 const _installPath = '{installPath}/';

@@ -230,23 +230,26 @@ class ScreenLabel extends StatelessWidget {
       left: Radius.circular(first ? 14 : 4),
       right: Radius.circular(last ? 14 : 4),
     );
-    return Tooltip(
-      message: device.label,
-      child: Material(
-        color: selected ? colors.railActive : Colors.transparent,
-        borderRadius: radius,
-        child: InkWell(
+    return shadcn.Tooltip(
+      tooltip: (context) =>
+          shadcn.TooltipContainer(child: Text(device.label)),
+      child: Container(
+        width: 28,
+        height: EditorMetrics.screenLabelHeight,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? colors.railActive : Colors.transparent,
           borderRadius: radius,
-          onTap: onTap,
-          child: SizedBox(
-            width: 28,
-            height: EditorMetrics.screenLabelHeight,
-            child: Icon(
-              device.icon,
-              size: 16,
-              color: selected ? colors.onRailActive : colors.onSurfaceVariant,
-            ),
+        ),
+        child: shadcn.IconButton.ghost(
+          icon: Icon(
+            device.icon,
+            size: 16,
+            color: selected ? colors.onRailActive : colors.onSurfaceVariant,
           ),
+          onPressed: onTap,
+          size: shadcn.ButtonSize.small,
+          density: shadcn.ButtonDensity.compact,
         ),
       ),
     );

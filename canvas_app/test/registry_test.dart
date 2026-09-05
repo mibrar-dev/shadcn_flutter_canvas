@@ -363,7 +363,7 @@ void main() {
 
     test('bridge: every catalog kind is canvas-ready with a matching label',
         () {
-      expect(kCatalog, hasLength(36));
+      expect(kCatalog, hasLength(51));
       for (final entry in kCatalog) {
         final reg = findRegistryEntry(entry.kind);
         expect(reg, isNotNull, reason: 'no registry entry ${entry.kind}');
@@ -380,8 +380,8 @@ void main() {
           if (entry.canvasReady) entry.kind,
       ];
       expect(ready.length, greaterThanOrEqualTo(25));
-      // Pinned: 36 bridged + 10 hand-verified + the row pseudo-kind.
-      expect(ready.length, 47);
+      // Pinned: 51 bridged + 10 hand-verified + the row pseudo-kind.
+      expect(ready.length, 62);
     });
 
     test('hidden utilities stay covered but leave the palette', () {

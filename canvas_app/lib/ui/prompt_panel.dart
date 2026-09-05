@@ -10,6 +10,8 @@ import 'package:canvas_core/canvas_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+
 import 'editor_buttons.dart';
 import 'editor_tokens.dart';
 
@@ -157,11 +159,8 @@ class _PromptPanelState extends State<PromptPanel> {
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              TextButton(
+              shadcn.TextButton(
                 onPressed: _isError ? null : _copy,
-                style: TextButton.styleFrom(
-                  foregroundColor: colors.onSurfaceVariant,
-                ),
                 child: const Text('Copy'),
               ),
               if (_copied) ...[

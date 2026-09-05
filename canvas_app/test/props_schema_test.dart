@@ -50,6 +50,22 @@ const _expectedKinds = {
   'scrollbar',
   'pagination',
   'alert_dialog',
+  // Track M additions (2026-09-05).
+  'menu',
+  'popover',
+  'popup',
+  'menubar',
+  'dropdown_menu',
+  'context_menu',
+  'hover_card',
+  'command',
+  'swiper',
+  'refresh_trigger',
+  'tab_container',
+  'tab_list',
+  'tab_pane',
+  'stepper',
+  'slider',
 };
 
 (CanvasStore, String, String) _storeWithButton() {
@@ -92,7 +108,7 @@ void main() {
       }
     });
 
-    test('all 36 catalog kinds plus the row container are covered', () {
+    test('all 51 catalog kinds plus the row container are covered', () {
       expect(Set.of(kCatalog.map((e) => e.kind)), _expectedKinds);
       expect(Set.of(kPropSchemas.keys), containsAll(_expectedKinds));
       expect(kPropSchemas.containsKey('row'), isTrue);
@@ -454,10 +470,11 @@ void main() {
   });
 
   group('Track I spec-only functional props', () {
-    // (kind, prop, spec default, edited sample). Every entry is a functional
-    // or layout constructor param with no catalog default: the inspector
-    // shows the spec default, edits persist via patchItem, and reset clears
-    // via clearItemProps back to the spec default.
+    // (kind, prop, spec default, edited sample). Track M promoted every entry
+    // from spec-only into a wired catalog builder prop: the inspector shows
+    // the (shared) default, edits persist via patchItem, reset clears via
+    // clearItemProps, and the canvas preview now honors the value. This group
+    // pins the promoted contract — spec default and catalog default agree.
     const trackI = [
       ('input', 'initialValue', '', 'hello'),
       ('input', 'readOnly', false, true),
@@ -481,10 +498,12 @@ void main() {
           defaultValue,
           reason: 'default mismatch for $kind.$name',
         );
+        // Track M: promoted — the catalog default mirrors the spec default
+        // (verified against each kit constructor; see component_catalog).
         expect(
-          findEntry(kind)?.defaults.containsKey(name),
-          isFalse,
-          reason: '$kind.$name unexpectedly gained a catalog default',
+          findEntry(kind)?.defaults[name],
+          defaultValue,
+          reason: '$kind.$name catalog default drifted from spec',
         );
       }
     });
