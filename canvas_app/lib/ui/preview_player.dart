@@ -26,8 +26,21 @@ import 'package:flutter/material.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_app/ui/editor_buttons.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/theme_bar.dart';
+
+/// Max content width in mobile (phone) preview mode. Centers a 390pt stage
+/// on the Scaffold surface.
+const double kPreviewMobileMaxWidth = 390;
+
+/// Max content width in web (desktop) preview mode. Frameless fluid stage
+/// capped at 1100pt, centered on the Scaffold surface.
+const double kPreviewWebMaxWidth = 1100;
+
+/// Preview device mode for [PreviewPlayer]. Internal state only — the widget
+/// constructor is unchanged so existing preview tests compile untouched.
+enum PreviewDevice { mobile, web }
 
 /// Preview host over [doc] starting at [startScreenId] (or the first screen).
 class PreviewPlayer extends StatefulWidget {
@@ -58,6 +71,9 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       widget.doc.screens.first.id,
   ];
 
+  /// Device toggle state. Defaults to mobile; internal only (no ctor change).
+  PreviewDevice _device = PreviewDevice.mobile;
+
   String? get _currentId => _stack.isEmpty ? null : _stack.last;
 
   CanvasScreen? _screen(String id) {
@@ -85,6 +101,13 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   Widget build(BuildContext context) {
     final current = _currentId == null ? null : _screen(_currentId!);
     final colors = EditorTheme.of(context);
+    // ONE-TREE RULE: mobile and web render the SAME content tree below (the
+    // keyed stage SizedBox + ListView/empty note). Only the width cap changes
+    // (390 vs 1100). Never branch into two separate content builders — the
+    // toggle must not alter item counts, tap handling, or back-stack behavior.
+    final maxWidth = _device == PreviewDevice.mobile
+        ? kPreviewMobileMaxWidth
+        : kPreviewWebMaxWidth;
     return ThemedCanvas(
       theme: widget.themeOverride ?? widget.doc.theme,
       child: Scaffold(
@@ -108,40 +131,76 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                             .copyWith(color: colors.onSurface),
                       ),
                     ),
+                    EditorSegmented(
+                      items: const [
+                        EditorSegmentItem(
+                          icon: Icons.smartphone,
+                          tooltip: 'Mobile 390',
+                        ),
+                        EditorSegmentItem(
+                          icon: Icons.desktop_windows_outlined,
+                          tooltip: 'Web fluid',
+                        ),
+                      ],
+                      selectedIndex: _device == PreviewDevice.mobile ? 0 : 1,
+                      onSelect: (index) => setState(() {
+                        _device = index == 0
+                            ? PreviewDevice.mobile
+                            : PreviewDevice.web;
+                      }),
+                    ),
                   ],
                 ),
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: current == null
-                    ? Center(
-                        child: Text(
-                          'No screens to preview',
-                          style: EditorType.field.copyWith(
-                            color: colors.onSurfaceVariant,
-                          ),
-                        ),
-                      )
-                    : ListView(
-                        padding: const EdgeInsets.all(16),
-                        children: [
-                          for (final node in widget.doc.nodes)
-                            if (node.screenId == current.id)
-                              Padding(
-                                padding:
-                                    const EdgeInsets.only(bottom: 12),
-                                child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    for (final item in node.items)
-                                      _previewItem(item),
-                                  ],
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Clamp the stage to the device cap but never exceed the
+                    // available viewport (narrow windows shrink gracefully).
+                    final stageWidth = constraints.maxWidth > maxWidth
+                        ? maxWidth
+                        : constraints.maxWidth;
+                    return Align(
+                      alignment: Alignment.topCenter,
+                      child: SizedBox(
+                        key: const ValueKey('previewStage'),
+                        width: stageWidth,
+                        height: constraints.maxHeight,
+                        child: current == null
+                            ? Center(
+                                child: Text(
+                                  'No screens to preview',
+                                  style: EditorType.field.copyWith(
+                                    color: colors.onSurfaceVariant,
+                                  ),
                                 ),
+                              )
+                            : ListView(
+                                padding: const EdgeInsets.all(16),
+                                children: [
+                                  for (final node in widget.doc.nodes)
+                                    if (node.screenId == current.id)
+                                      Padding(
+                                        padding: const EdgeInsets.only(
+                                          bottom: 12,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            for (final item in node.items)
+                                              _previewItem(item),
+                                          ],
+                                        ),
+                                      ),
+                                ],
                               ),
-                        ],
                       ),
+                    );
+                  },
+                ),
               ),
             ],
           ),

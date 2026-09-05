@@ -35,25 +35,31 @@ String buildSingleFile(
       ..writeln()
       ..writeln('  @override')
       ..writeln('  Widget build(BuildContext context) {')
-      ..writeln('    return Column(')
-      ..writeln('      children: [');
-    final items = [
-      for (final node in doc.nodes)
-        if (node.screenId == screen.id) ...node.items,
-    ];
-    if (items.isEmpty) {
-      out.writeln('        // (empty screen)');
+      // Flow root: screen padding outside, vertical Column inside. Gap and
+      // padding values come from kFlowScreenGap/kFlowScreenPadding so the
+      // generated literals track the model consts.
+      ..writeln('    return Padding(')
+      ..writeln(
+          '      padding: const EdgeInsets.all(${_flowNum(kFlowScreenPadding)}),')
+      ..writeln('      child: Column(')
+      ..writeln('        crossAxisAlignment: CrossAxisAlignment.start,')
+      ..writeln('        children: [');
+    final roots = _rootNodes(doc, screen.id);
+    if (roots.isEmpty) {
+      out.writeln('          // (empty screen)');
     }
-    for (final item in items) {
-      if (item.action != null) {
-        out.writeln('        // taps -> ${item.action!.to}');
+    var first = true;
+    for (final root in roots) {
+      if (!first) {
+        out.writeln(
+            '          const SizedBox(height: ${_flowNum(kFlowScreenGap)}),');
       }
-      for (final line in _itemExpression(item).split('\n')) {
-        out.writeln('        $line');
-      }
+      first = false;
+      _writeFlowChild(out, doc, root, '          ');
     }
     out
-      ..writeln('      ],')
+      ..writeln('        ],')
+      ..writeln('      ),')
       ..writeln('    );')
       ..writeln('  }')
       ..writeln('}');
@@ -79,6 +85,97 @@ String buildSingleFile(
   }
   return out.toString();
 }
+
+/// Root flow children for [screenId] in document (insertion) order.
+///
+/// Nodes whose `parentId` points at a missing node are treated as roots so
+/// codegen never silently drops nodes. Row children stay nested under their
+/// row via [_writeFlowChild] and are excluded here.
+List<CanvasNode> _rootNodes(ScreenDoc doc, String screenId) {
+  final ids = {for (final n in doc.nodes) n.id};
+  return [
+    for (final node in doc.nodes)
+      if (node.screenId == screenId &&
+          (node.parentId == null || !ids.contains(node.parentId))) node,
+  ];
+}
+
+/// Writes one root flow child: a leaf's items inline, or a [Row] for a row
+/// container whose children are the row's own items plus each child node's
+/// items (recurses for nested rows), separated by `SizedBox(width: gap)`.
+///
+/// No Expanded/Flex/Align v1 (deliberate): rows size to their content and
+/// align to the start/center, matching the flow renderer's simple box model.
+/// Added only when wrapping or flexible sizing is specified.
+void _writeFlowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  String indent,
+) {
+  if (!node.isRow) {
+    _writeItemBlock(out, node.items, indent);
+    return;
+  }
+  out
+    ..writeln('${indent}Row(')
+    ..writeln('$indent  mainAxisAlignment: MainAxisAlignment.start,')
+    ..writeln('$indent  crossAxisAlignment: CrossAxisAlignment.center,')
+    ..writeln('$indent  children: [');
+  final childIndent = '$indent    ';
+  var first = true;
+  void separator() {
+    if (!first) {
+      out.writeln(
+          '${childIndent}const SizedBox(width: ${_flowNum(node.gap)}),');
+    }
+    first = false;
+  }
+
+  var empty = true;
+  if (node.items.isNotEmpty) {
+    empty = false;
+    separator();
+    _writeItemBlock(out, node.items, childIndent);
+  }
+  for (final child in doc.nodes) {
+    if (child.parentId != node.id) continue;
+    empty = false;
+    separator();
+    if (child.isRow) {
+      _writeFlowChild(out, doc, child, childIndent);
+    } else {
+      _writeItemBlock(out, child.items, childIndent);
+    }
+  }
+  if (empty) {
+    out.writeln('${childIndent}// (empty row)');
+  }
+  out
+    ..writeln('$indent  ],')
+    ..writeln('$indent),');
+}
+
+/// Writes item constructor expressions (with tap comments) at [indent].
+void _writeItemBlock(
+  StringBuffer out,
+  List<CanvasItem> items,
+  String indent,
+) {
+  for (final item in items) {
+    if (item.action != null) {
+      out.writeln('$indent// taps -> ${item.action!.to}');
+    }
+    for (final line in _itemExpression(item).split('\n')) {
+      out.writeln('$indent$line');
+    }
+  }
+}
+
+/// Flow number literal: whole values print without `.0` to match the
+/// existing generated style (`EdgeInsets.all(16)`, `SizedBox(height: 12)`).
+String _flowNum(double value) =>
+    value == value.roundToDouble() ? '${value.toInt()}' : '$value';
 
 /// Used kinds in first-seen order.
 List<String> _usedKinds(ScreenDoc doc) {

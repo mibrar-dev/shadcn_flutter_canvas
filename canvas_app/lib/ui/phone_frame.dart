@@ -196,16 +196,77 @@ class ScreenLabel extends StatelessWidget {
   }
 }
 
+/// Finder for the flow insertion index line (used by flow-layout tests).
+const ValueKey<String> kFlowInsertLineKey =
+    ValueKey<String>('flow-insert-line');
+
+/// Insertion index for [pointerMain] (pointer position along a container's
+/// main axis, in screen-local logical px) given the container's
+/// [childCenters] along the same axis in flow (doc) order: the first index
+/// whose center sits past the pointer. An empty container yields 0. Shared by
+/// the hover line and the drop path so the visual and the landing agree.
+int flowInsertionIndex(double pointerMain, List<double> childCenters) {
+  var index = 0;
+  while (index < childCenters.length && childCenters[index] <= pointerMain) {
+    index++;
+  }
+  return index;
+}
+
 /// Renders one screen's nodes into a [PhoneFrame], with selection affordances.
-class ScreenSurface extends StatelessWidget {
+/// Insertion target resolved from a screen-local pointer: the deepest row
+/// containing it ([parentId], with [targetRect] driving the row highlight)
+/// else the screen root, plus the child [index] and the [lineMain] position
+/// of the 2px index line (x within a row, y at root; both screen-local px).
+class _FlowHit {
+  final String? parentId;
+  final int index;
+  final double lineMain;
+  final Rect? targetRect;
+
+  const _FlowHit({
+    required this.parentId,
+    required this.index,
+    required this.lineMain,
+    required this.targetRect,
+  });
+}
+
+/// Renders one screen's nodes into a [PhoneFrame], with selection
+/// affordances, in flow layout.
+///
+/// The screen content is `Padding(kFlowScreenPadding)` around a top-left
+/// `Column` of the screen's root nodes (`parentId == null`, doc order,
+/// `kFlowScreenGap` separators). A row container (`isRow`) renders as a
+/// start/center `Row` of its children (doc order, node `gap` separators);
+/// every other node renders today's `ConstrainedBox` leaf (the clamp stays,
+/// and inside rows the incoming flex width additionally bounds `maxWidth`,
+/// so every catalog widget gets the finite box it needs and nothing crashes
+/// on unbounded flex). Empty rows render a dashed drop placeholder (min
+/// height 64, always hit-testable); the empty-screen hint is unchanged.
+///
+/// `x`/`y` are stored drop metadata and ignored by this renderer (see
+/// [DesignCanvas.onAccept]). Bezel/labels/zoom/selection ring/drop-wash and
+/// the magnetic guide infra are unchanged; the guide infra is extended with
+/// a container wash on the hovered row plus the index line above.
+class ScreenSurface extends StatefulWidget {
   final CanvasScreen screen;
   final List<CanvasNode> nodes;
   final String? selectedNodeId;
   final ValueChanged<String>? onSelectNode;
 
   /// Fired when a palette tile is dropped, with the drop point in screen
-  /// coordinates (already relative to the phone's inner area).
-  final void Function(String kind, Offset position)? onDropKind;
+  /// coordinates (already relative to the phone's inner area) plus the
+  /// flow insertion target resolved from measured geometry: [parentId] is
+  /// the hovered row (null for the screen root) and [index] the child
+  /// position within it. [DesignCanvas] forwards these to `onAccept`, which
+  /// lands the node there in one commit.
+  final void Function(
+    String kind,
+    Offset position, {
+    String? parentId,
+    int? index,
+  })? onDropKind;
 
   /// Current viewport scale of the enclosing [DesignCanvas]. Kept so drop
   /// math can stay zoom-aware if the hit-testing path ever changes.
@@ -217,6 +278,11 @@ class ScreenSurface extends StatelessWidget {
   /// which trails the pointer by the grab offset inside the tile).
   final ValueListenable<Offset?>? dropPointer;
 
+  /// `true` while the pan tool is active: leaf pointer-down selection is
+  /// disabled so viewport pans never (de)select nodes. Threaded from
+  /// [DesignCanvas.panMode].
+  final bool panMode;
+
   const ScreenSurface({
     super.key,
     required this.screen,
@@ -226,11 +292,161 @@ class ScreenSurface extends StatelessWidget {
     this.onDropKind,
     this.zoom = 1.0,
     this.dropPointer,
+    this.panMode = false,
   });
+
+  @override
+  State<ScreenSurface> createState() => _ScreenSurfaceState();
+}
+
+class _ScreenSurfaceState extends State<ScreenSurface> {
+  /// Measured-layout keys per node id (rows and leaves alike).
+  final Map<String, GlobalKey> _flowKeys = {};
+
+  GlobalKey _flowKey(String id) => _flowKeys.putIfAbsent(id, () => GlobalKey());
+
+  /// Screen-local rect of a laid-out node, or null before first layout.
+  Rect? _nodeRect(String id, RenderBox screenBox) {
+    final nodeContext = _flowKeys[id]?.currentContext;
+    final box = nodeContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    final topLeft = screenBox.globalToLocal(box.localToGlobal(Offset.zero));
+    return Rect.fromLTWH(
+      topLeft.dx - EditorMetrics.phoneBezel,
+      topLeft.dy - EditorMetrics.phoneBezel,
+      box.size.width,
+      box.size.height,
+    );
+  }
+
+  /// Shared insert/reorder path: resolves the pointer to a flow target plus
+  /// a child index (by child midpoints along the container's axis; empty
+  /// containers yield 0) and the index-line position. Used identically by the
+  /// hover visuals and the drop path so the line and the landing agree.
+  _FlowHit _flowHit(Offset pointer, RenderBox screenBox) {
+    // Deepest row containing the pointer wins; smallest area breaks ties so
+    // nested rows (should they ever nest) resolve inward.
+    CanvasNode? hitRow;
+    Rect? hitRect;
+    for (final node in widget.nodes) {
+      if (node.parentId != null || !node.isRow) continue;
+      final rect = _nodeRect(node.id, screenBox);
+      if (rect == null || !rect.contains(pointer)) continue;
+      if (hitRect == null ||
+          rect.width * rect.height < hitRect.width * hitRect.height) {
+        hitRow = node;
+        hitRect = rect;
+      }
+    }
+    if (hitRow != null && hitRect != null) {
+      final kids = [
+        for (final node in widget.nodes)
+          if (node.parentId == hitRow.id) node,
+      ];
+      final centers = <double>[];
+      final starts = <double?>[];
+      final ends = <double?>[];
+      for (final kid in kids) {
+        final rect = _nodeRect(kid.id, screenBox);
+        if (rect == null) {
+          // Pre-layout fallback: stored x as the center proxy.
+          centers.add(kid.x);
+          starts.add(null);
+          ends.add(null);
+        } else {
+          centers.add((rect.left + rect.right) / 2);
+          starts.add(rect.left);
+          ends.add(rect.right);
+        }
+      }
+      final rowRect = hitRect;
+      final index =
+          flowInsertionIndex(pointer.dx, centers).clamp(0, kids.length);
+      return _FlowHit(
+        parentId: hitRow.id,
+        index: index,
+        lineMain: _boundary(
+          pointer.dx,
+          index,
+          starts,
+          ends,
+          rowRect.left,
+          rowRect.right,
+        ),
+        targetRect: rowRect,
+      );
+    }
+    final roots = [
+      for (final node in widget.nodes)
+        if (node.parentId == null) node,
+    ];
+    final centers = <double>[];
+    final starts = <double?>[];
+    final ends = <double?>[];
+    for (final root in roots) {
+      final rect = _nodeRect(root.id, screenBox);
+      if (rect == null) {
+        // Pre-layout fallback: stored y as the center proxy.
+        centers.add(root.y);
+        starts.add(null);
+        ends.add(null);
+      } else {
+        centers.add((rect.top + rect.bottom) / 2);
+        starts.add(rect.top);
+        ends.add(rect.bottom);
+      }
+    }
+    final index =
+        flowInsertionIndex(pointer.dy, centers).clamp(0, roots.length);
+    return _FlowHit(
+      parentId: null,
+      index: index,
+      lineMain: _boundary(
+        pointer.dy,
+        index,
+        starts,
+        ends,
+        kFlowScreenPadding,
+        null,
+      ),
+      targetRect: null,
+    );
+  }
+
+  /// Index-line position along the container's main axis: the midpoint
+  /// between the flanking measured children, the container's padding edge
+  /// before the first child, the last child's far edge at the end, else the
+  /// pointer itself (unmeasured fallback).
+  double _boundary(
+    double pointer,
+    int index,
+    List<double?> starts,
+    List<double?> ends,
+    double edgeStart,
+    double? edgeEnd,
+  ) {
+    if (index <= 0) {
+      if (starts.isNotEmpty && starts.first != null) return starts.first!;
+      return edgeStart;
+    }
+    if (index >= starts.length) {
+      if (ends.isNotEmpty && ends.last != null) return ends.last!;
+      if (edgeEnd != null) return edgeEnd;
+      return pointer;
+    }
+    final before = ends[index - 1];
+    final after = starts[index];
+    if (before != null && after != null) return (before + after) / 2;
+    return pointer;
+  }
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    // Drop keys for removed nodes so measurement never goes stale.
+    _flowKeys.removeWhere(
+      (id, _) => !widget.nodes.any((node) => node.id == id),
+    );
     return PhoneFrame(
       screenColor: colors.surface,
       child: DragTarget<String>(
@@ -239,7 +455,7 @@ class ScreenSurface extends StatelessWidget {
           if (box == null) return;
           // Prefer the live pointer (true drop point) when the enclosing
           // canvas tracked one; fall back to the feedback corner otherwise.
-          final global = dropPointer?.value ?? details.offset;
+          final global = widget.dropPointer?.value ?? details.offset;
           final local = box.globalToLocal(global);
           // ZOOM FINDING (test-driven, see canvas_store_screens_test.dart
           // 'drop at zoom 2.0 lands at unscaled screen coords'): pass the
@@ -257,9 +473,16 @@ class ScreenSurface extends StatelessWidget {
           // Magnetic snap applies to pointer drops only — `onAccept` itself
           // stays verbatim/unsnapped for programmatic callers, so the snapped
           // point is computed here and forwarded through `onDropKind`.
-          onDropKind?.call(
+          final snapped = snapDropPosition(position, widget.nodes);
+          // Shared insert path with the hover visuals below: the target and
+          // index resolve from measured geometry and `onAccept` lands the
+          // node there in one commit.
+          final hit = _flowHit(snapped, box);
+          widget.onDropKind?.call(
             details.data,
-            snapDropPosition(position, nodes),
+            snapped,
+            parentId: hit.parentId,
+            index: hit.index,
           );
         },
         builder: (_, candidate, rejected) {
@@ -268,31 +491,44 @@ class ScreenSurface extends StatelessWidget {
           // lines follow the hover and vanish with `candidate` on
           // drop/cancel/leave.
           return ValueListenableBuilder<Offset?>(
-            valueListenable: dropPointer ?? _kNoPointer,
+            valueListenable: widget.dropPointer ?? _kNoPointer,
             builder: (guideContext, global, _) {
               var guides = const DragGuides();
+              _FlowHit? hover;
               if (candidate.isNotEmpty && global != null) {
                 final box = context.findRenderObject() as RenderBox?;
                 if (box != null) {
                   final local = box.globalToLocal(global);
-                  guides = guidesForPointer(
-                    Offset(
-                      local.dx - EditorMetrics.phoneBezel,
-                      local.dy - EditorMetrics.phoneBezel,
-                    ),
-                    nodes,
+                  final pointer = Offset(
+                    local.dx - EditorMetrics.phoneBezel,
+                    local.dy - EditorMetrics.phoneBezel,
                   );
+                  guides = guidesForPointer(pointer, widget.nodes);
+                  hover = _flowHit(pointer, box);
                 }
               }
+              final hoverHit = hover;
+              final hoverRect = hover?.targetRect;
+              // A hovered row carries its own wash; otherwise the whole
+              // screen washes while a drag hovers it.
+              final hoveringRow = hoverHit?.parentId != null;
               return Stack(
                 children: [
-                  if (candidate.isNotEmpty)
+                  _buildFlow(colors),
+                  if (candidate.isNotEmpty && !hoveringRow)
                     Positioned.fill(
                       child: ColoredBox(
                         color: colors.railActive.withValues(alpha: 0.25),
                       ),
                     ),
-                  if (nodes.isEmpty && candidate.isEmpty)
+                  if (hoverRect != null)
+                    Positioned.fromRect(
+                      rect: hoverRect,
+                      child: ColoredBox(
+                        color: colors.railActive.withValues(alpha: 0.25),
+                      ),
+                    ),
+                  if (widget.nodes.isEmpty && candidate.isEmpty)
                     Positioned.fill(
                       child: Center(
                         child: Padding(
@@ -306,54 +542,10 @@ class ScreenSurface extends StatelessWidget {
                         ),
                       ),
                     ),
-                  for (final node in nodes)
-                    Positioned(
-                      left: node.x,
-                      top: node.y,
-                      child: GestureDetector(
-                        onTap: () => onSelectNode?.call(node.id),
-                        child: Container(
-                          padding: const EdgeInsets.all(4),
-                          decoration: node.id == selectedNodeId
-                              ? BoxDecoration(
-                                  border: Border.all(
-                                    color: colors.toolbarActive,
-                                    width: 2,
-                                  ),
-                                  borderRadius: BorderRadius.circular(8),
-                                )
-                              : null,
-                          // Positioned children get UNBOUNDED constraints from the
-                          // Stack, which detonates kit widgets with internal
-                          // Expanded rows (e.g. TextField's input row throws
-                          // "flex but unbounded width" and renders nothing).
-                          // Clamp to the remaining inner-screen room so every
-                          // catalog widget gets the finite box it needs.
-                          // Intrinsically-sized widgets (button/card/badge) are
-                          // unaffected — only the maximum shrinks.
-                          child: ConstrainedBox(
-                            constraints: BoxConstraints(
-                              maxWidth: math.max(
-                                _kMinNodeExtent,
-                                EditorMetrics.phoneInnerWidth - node.x,
-                              ),
-                              maxHeight: math.max(
-                                _kMinNodeExtent,
-                                EditorMetrics.phoneInnerHeight - node.y,
-                              ),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                for (final item in node.items)
-                                  buildCatalogItem(item.kind, item.props),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                  // 2px index line spanning the hovered container's cross
+                  // axis. Gated on `candidate` via `hover`, so it vanishes
+                  // on drop/leave with the guides.
+                  if (hoverHit != null) _buildInsertLine(hoverHit, colors),
                   if (guides.x != null)
                     Positioned(
                       key: kDragGuideVerticalKey,
@@ -384,4 +576,232 @@ class ScreenSurface extends StatelessWidget {
       ),
     );
   }
+
+  /// Screen content: padded top-left column of root nodes (doc order).
+  Widget _buildFlow(EditorColors colors) {
+    final roots = [
+      for (final node in widget.nodes)
+        if (node.parentId == null) node,
+    ];
+    return Padding(
+      padding: const EdgeInsets.all(kFlowScreenPadding),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var i = 0; i < roots.length; i++) ...[
+            if (i > 0) const SizedBox(height: kFlowScreenGap),
+            if (roots[i].isRow)
+              _buildRow(roots[i], colors)
+            else
+              _buildLeaf(roots[i], colors),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// One row container: full-width tap target (selects the row for gap
+  /// editing) around a start/center `Row` of its children (doc order, node
+  /// `gap` separators). Children ride `Flexible` so each gets a finite width
+  /// share — kit widgets with internal `Expanded` rows (e.g. `TextField`)
+  /// would detonate on the `Row`'s unbounded width otherwise.
+  Widget _buildRow(CanvasNode node, EditorColors colors) {
+    final kids = [
+      for (final child in widget.nodes)
+        if (child.parentId == node.id) child,
+    ];
+    // Clamp defensive: a negative stored gap must never size a separator.
+    final gap = math.max(0.0, node.gap);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => widget.onSelectNode?.call(node.id),
+      child: Container(
+        key: _flowKey(node.id),
+        width: double.infinity,
+        padding: const EdgeInsets.all(4),
+        decoration: node.id == widget.selectedNodeId
+            ? BoxDecoration(
+                border: Border.all(
+                  color: colors.toolbarActive,
+                  width: 2,
+                ),
+                borderRadius: BorderRadius.circular(8),
+              )
+            : null,
+        child: kids.isEmpty
+            ? _EmptyRowPlaceholder(colors: colors)
+            : Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < kids.length; i++) ...[
+                    if (i > 0) SizedBox(width: gap),
+                    Flexible(child: _buildLeaf(kids[i], colors)),
+                  ],
+                ],
+              ),
+      ),
+    );
+  }
+
+  /// One leaf node: today's `ConstrainedBox` content (the clamp stays —
+  /// guarantees a finite box even for drops at the screen's far edges, where
+  /// content clips at the frame instead of exploding). Intrinsically-sized
+  /// widgets (button/card/badge) are unaffected — only the maximum shrinks.
+  ///
+  /// Selection rides [Listener.onPointerDown], NOT `GestureDetector.onTap`:
+  /// interactive kit content (buttons, switches, inputs, tabs, …) owns tap
+  /// recognizers that beat the outer detector in the gesture arena, so
+  /// `onTap` never fires for those nodes (regression: tap_diagnosis_test).
+  /// A [Listener] is arena-exempt and always observes the hit. The
+  /// [GestureDetector] stays for tap semantics (screen readers) and for
+  /// non-interactive content; selecting the same id twice is harmless.
+  /// Gated on [ScreenSurface.panMode] so viewport pans never select.
+  /// The opaque behavior (unlike the old defer-to-child default) also makes
+  /// the 4px padding hit-testable, matching the row's full-bleed target.
+  Widget _buildLeaf(CanvasNode node, EditorColors colors) {
+    void select() {
+      if (!widget.panMode) widget.onSelectNode?.call(node.id);
+    }
+
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => select(),
+      child: GestureDetector(
+        onTap: select,
+        child: Container(
+          key: _flowKey(node.id),
+          padding: const EdgeInsets.all(4),
+          decoration: node.id == widget.selectedNodeId
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: colors.toolbarActive,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: math.max(
+                _kMinNodeExtent,
+                EditorMetrics.phoneInnerWidth - node.x,
+              ),
+              maxHeight: math.max(
+                _kMinNodeExtent,
+                EditorMetrics.phoneInnerHeight - node.y,
+              ),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (final item in node.items)
+                  buildCatalogItem(item.kind, item.props),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 2px index line spanning the hovered container's cross axis: horizontal
+  /// across the content for the root column, vertical across the row for a
+  /// row container.
+  Widget _buildInsertLine(_FlowHit hit, EditorColors colors) {
+    if (hit.parentId == null) {
+      return Positioned(
+        key: kFlowInsertLineKey,
+        left: kFlowScreenPadding,
+        right: kFlowScreenPadding,
+        top: hit.lineMain - 1,
+        height: 2,
+        child: ColoredBox(color: colors.toolbarActive),
+      );
+    }
+    final rect = hit.targetRect!;
+    return Positioned(
+      key: kFlowInsertLineKey,
+      left: hit.lineMain - 1,
+      width: 2,
+      top: rect.top,
+      height: rect.height,
+      child: ColoredBox(color: colors.toolbarActive),
+    );
+  }
+}
+
+/// Empty-row drop target: dashed rounded rect, min height 64, muted
+/// 'Drop here' label. Sized (never zero) so it stays hit-testable, and the
+/// row's opaque tap detector selects the row through it.
+class _EmptyRowPlaceholder extends StatelessWidget {
+  final EditorColors colors;
+
+  const _EmptyRowPlaceholder({required this.colors});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(minHeight: 64),
+      child: CustomPaint(
+        painter: _DashedOutline(
+          color: colors.toolbarActive.withValues(alpha: 0.5),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Text(
+              'Drop here',
+              style: EditorType.field.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Dashed rounded-rect stroke.
+class _DashedOutline extends CustomPainter {
+  final Color color;
+
+  const _DashedOutline({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(8),
+    );
+    final path = Path()..addRRect(rrect);
+    canvas.drawPath(
+      _dashPath(path, 6, 4),
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.5,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_DashedOutline oldDelegate) => oldDelegate.color != color;
+}
+
+/// Dashes [source] into alternating [dash]/[gap] lengths.
+Path _dashPath(Path source, double dash, double gap) {
+  final out = Path();
+  for (final metric in source.computeMetrics()) {
+    var dist = 0.0;
+    while (dist < metric.length) {
+      final end = math.min(dist + dash, metric.length);
+      out.addPath(metric.extractPath(dist, end), Offset.zero);
+      dist = end + gap;
+    }
+  }
+  return out;
 }

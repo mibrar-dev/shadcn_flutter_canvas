@@ -20,7 +20,20 @@
 /// skeleton → `SkeletonExtension.asSkeleton()` on any widget (the kit ships
 /// no bare `Skeleton` widget — only `ShadcnSkeletonizerConfigLayer` plus the
 /// extension; the catalog wraps a `Text` label),
-/// breadcrumb → `Breadcrumb` (+ `arrowSeparator`/`slashSeparator`).
+/// breadcrumb → `Breadcrumb` (+ `arrowSeparator`/`slashSeparator`),
+/// dialog → `ModalContainer` (the kit ships no bare `Dialog` widget — only
+/// `showDialog`/`showAlertDialog` context APIs plus `ModalContainer` /
+/// `ModalBackdrop` primitives; the catalog renders the preview's dialog
+/// content — title + body + action row — inside a `ModalContainer`),
+/// tooltip → `Tooltip` + `TooltipContainer` (hover-triggered overlay; builds
+/// bare, the tip shows on hover at runtime),
+/// toast → `ToastEntry` (overlay-driven via `ToastController.show`, but the
+/// entry itself builds bare; `autoDismiss: false` keeps the canvas node
+/// stable and `dismissDirections` stays empty),
+/// drawer → `DrawerWrapper` + `OverlayPosition` (overlay-driven via
+/// `openDrawer`, but the wrapper builds bare — the layer lookup is
+/// null-safe; `draggable: false` renders a plain themed container, so the
+/// catalog wraps a fixed-width column as the side-panel mock).
 ///
 /// Prop defaults mirror the canvas blocks' `propsSchema` in `components.json`
 /// (reconciled 2026-09-04; entry labels mirror `components.json`
@@ -34,10 +47,11 @@
 /// the catalog intentionally omits it.
 /// No canvas blocks (`components[].canvas.propsSchema`) exist for avatar,
 /// checkbox, divider, progress, tabs, accordion, select, radio_group,
-/// skeleton, or breadcrumb in the pinned kit's `components.json` (verified by
-/// scan 2026-09-05 — no `canvas` key on any of the 134 components), so those
-/// ten defaults are invented, documented per builder below, and use only
-/// bool/string/num prop types already established by the seed kinds.
+/// skeleton, breadcrumb, dialog, tooltip, toast, or drawer in the pinned
+/// kit's `components.json` (verified by scan 2026-09-05 — no `canvas` key on
+/// any of the 134 components), so those fourteen defaults are invented,
+/// documented per builder below, and use only bool/string/num prop types
+/// already established by the seed kinds.
 library;
 
 import 'package:flutter/material.dart';
@@ -392,7 +406,8 @@ class _SelectCell extends StatefulWidget {
 }
 
 class _SelectCellState extends State<_SelectCell> {
-  late String? _value = widget.initialValue.isEmpty ? null : widget.initialValue;
+  late String? _value =
+      widget.initialValue.isEmpty ? null : widget.initialValue;
 
   @override
   Widget build(BuildContext context) {
@@ -449,7 +464,8 @@ class _RadioGroupCell extends StatefulWidget {
 }
 
 class _RadioGroupCellState extends State<_RadioGroupCell> {
-  late String? _value = widget.initialValue.isEmpty ? null : widget.initialValue;
+  late String? _value =
+      widget.initialValue.isEmpty ? null : widget.initialValue;
 
   @override
   Widget build(BuildContext context) {
@@ -506,6 +522,121 @@ Widget _buildBreadcrumb(Map<String, dynamic> props) {
   final home = (props['home'] ?? 'Home') as String;
   final current = (props['current'] ?? 'Page') as String;
   return shadcn.Breadcrumb(children: [Text(home), Text(current)]);
+}
+
+Widget _buildDialog(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/dialog/preview.dart`), whose
+  // `showDialog` builder content is a padded title + body + Close action
+  // row. The kit ships no bare `Dialog` widget (`showDialog` needs a
+  // `BuildContext` + overlay), so the catalog renders that same content
+  // inside the real `ModalContainer` primitive (bare-capable: its only
+  // context read is a null-safe `Model.maybeOf`).
+  final title = (props['title'] ?? 'Dialog title') as String;
+  final message =
+      (props['message'] ?? 'Use dialogs for important confirmations.')
+          as String;
+  final showActions = (props['showActions'] ?? true) as bool;
+  return shadcn.ModalContainer(
+    filled: true,
+    padding: const EdgeInsets.all(24),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title),
+        const SizedBox(height: 12),
+        Text(message),
+        if (showActions) ...[
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              const Spacer(),
+              shadcn.OutlineButton(
+                onPressed: () {},
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+Widget _buildTooltip(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`overlay/tooltip/preview.dart`: a labeled
+  // control with a `TooltipContainer` tip). The real `Tooltip` builds bare
+  // (overlay handlers attach on hover at runtime); the tip text only
+  // materializes on hover, so canvas shows the labeled control. Qualified
+  // as `shadcn.Tooltip`: material's `Tooltip` is also imported here.
+  final label = (props['label'] ?? 'Hover me') as String;
+  final tip = (props['tip'] ?? 'Helpful context') as String;
+  return shadcn.Tooltip(
+    tooltip: (context) => shadcn.TooltipContainer(child: Text(tip)),
+    child: shadcn.OutlineButton(onPressed: () {}, child: Text(label)),
+  );
+}
+
+Widget _buildToast(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: an icon + title
+  // + message notification row (the kit's preview shows a bare `Text` via
+  // `ToastController.show`; the entry takes any child). The real
+  // `ToastEntry` builds bare; `autoDismiss: false` disables the dismiss
+  // timer so the canvas node never self-dismisses, and the empty default
+  // `dismissDirections` disables swipe handling.
+  final title = (props['title'] ?? 'Saved') as String;
+  final message = (props['message'] ?? 'Saved successfully') as String;
+  return shadcn.ToastEntry(
+    duration: const Duration(seconds: 3),
+    animationDuration: const Duration(milliseconds: 200),
+    animationCurve: Curves.easeOut,
+    onDismissed: () {},
+    autoDismiss: false,
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(Icons.check_circle, size: 20),
+        const SizedBox(width: 8),
+        Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Text(title), Text(message)],
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildDrawer(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a title plus
+  // body content. The real `DrawerWrapper` builds bare (its overlay-layer
+  // lookup is null-safe and it owns its `AnimationController`); with
+  // `draggable: false` it renders a plain themed container, so the catalog
+  // wraps a fixed-width column as the side-panel mock. `size` is required
+  // but only feeds drag math — the visible width comes from the `SizedBox`.
+  final title = (props['title'] ?? 'Drawer') as String;
+  final content = (props['content'] ?? 'Drawer content') as String;
+  return shadcn.DrawerWrapper(
+    position: shadcn.OverlayPosition.end,
+    size: const Size(240, 480),
+    stackIndex: 0,
+    draggable: false,
+    showDragHandle: false,
+    child: SizedBox(
+      width: 240,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title),
+          const SizedBox(height: 16),
+          Text(content),
+        ],
+      ),
+    ),
+  );
 }
 
 /// Seed entries. Labels mirror `components.json` descriptions.
@@ -630,7 +761,47 @@ final List<CatalogEntry> kCatalog = [
     defaults: const {'home': 'Home', 'current': 'Page'},
     build: _buildBreadcrumb,
   ),
+  CatalogEntry(
+    kind: 'dialog',
+    label: 'Modal dialog primitives with alert dialog and overlay handlers.',
+    defaults: const {
+      'title': 'Dialog title',
+      'message': 'Use dialogs for important confirmations.',
+      'showActions': true,
+    },
+    build: _buildDialog,
+  ),
+  CatalogEntry(
+    kind: 'tooltip',
+    label: 'Hover-triggered tooltip overlays with themed containers.',
+    defaults: const {'label': 'Hover me', 'tip': 'Helpful context'},
+    build: _buildTooltip,
+  ),
+  CatalogEntry(
+    kind: 'toast',
+    label: 'Overlay toast notifications with configurable timing.',
+    defaults: const {'title': 'Saved', 'message': 'Saved successfully'},
+    build: _buildToast,
+  ),
+  CatalogEntry(
+    kind: 'drawer',
+    label: 'Sliding drawer and sheet overlays with drag support.',
+    defaults: const {'title': 'Drawer', 'content': 'Drawer content'},
+    build: _buildDrawer,
+  ),
 ];
+
+/// Container (layout) tiles for the flow canvas.
+///
+/// These are NOT [CatalogEntry]s: a row has no registry widget and renders
+/// structurally in `ScreenSurface` (a horizontal container of its child
+/// nodes), so there is nothing for `build` to construct. The parts palette
+/// resolves these when a section kind is absent from [kCatalog] and renders
+/// them with the same tile chrome (`Draggable` data = kind). Record shape is
+/// `({String label, IconData icon})`.
+const Map<String, ({String label, IconData icon})> kContainerTiles = {
+  'row': (label: 'Row', icon: Icons.view_column),
+};
 
 /// Looks up a catalog entry by kind, or null when unknown.
 CatalogEntry? findEntry(String kind) {

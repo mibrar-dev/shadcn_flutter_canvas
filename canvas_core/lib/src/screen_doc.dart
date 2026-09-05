@@ -5,6 +5,49 @@
 /// numbers and `as double` would crash on those.
 library;
 
+/// Flow layout spacing (single source of truth; canvas_app imports these,
+/// canvas_core stays Flutter-free so the CLI can share it).
+///
+/// The screen root is an implicit vertical Column: [kFlowScreenGap] is the
+/// vertical gap between root children and [kFlowScreenPadding] the inner
+/// screen padding. Row containers space their children with the node's own
+/// `gap`, which defaults to [kFlowRowGapDefault].
+const double kFlowScreenGap = 12.0;
+const double kFlowScreenPadding = 16.0;
+const double kFlowRowGapDefault = 8.0;
+
+/// Migrates a legacy absolute-layout doc to flow layout.
+///
+/// Pure function: root nodes (`parentId == null`, i.e. every node in a
+/// legacy doc) are rewritten in `(y, x)` order so list order becomes the
+/// flow order; `x`/`y` values are PRESERVED as metadata (the flow renderer
+/// ignores them). `theme`/`meta`/`screens` are untouched, and row-child
+/// nodes (`parentId != null`) keep their original relative order.
+///
+/// Row detection is explicitly OUT of scope for v1: no auto-grouping is
+/// attempted. Heuristic grouping (e.g. "nodes sharing a baseline form a
+/// row") guesses intent from pixels and corrupts layouts often enough that
+/// rows must be created explicitly by the user instead.
+ScreenDoc migrateToFlow(ScreenDoc doc) {
+  final roots = [
+    for (final n in doc.nodes)
+      if (n.parentId == null) n,
+  ]..sort((a, b) {
+      final dy = a.y.compareTo(b.y);
+      return dy != 0 ? dy : a.x.compareTo(b.x);
+    });
+  final children = [
+    for (final n in doc.nodes)
+      if (n.parentId != null) n,
+  ];
+  return ScreenDoc(
+    screens: doc.screens,
+    nodes: [...roots, ...children],
+    theme: doc.theme,
+    meta: doc.meta,
+  );
+}
+
 /// Top-level canvas document.
 class ScreenDoc {
   final List<CanvasScreen> screens;
@@ -88,13 +131,22 @@ class CanvasScreen {
       {'id': id, 'name': name, 'x': x, 'y': y, 'bg': bg};
 }
 
-/// A positioned container of items on a screen.
+/// A flow-layout container of items on a screen.
+///
+/// `parentId == null` means the node sits in the screen-root vertical flow.
+/// `isRow == true` makes the node a horizontal container whose children are
+/// the nodes with `parentId == id`; `gap` is that row spacing (ignored for
+/// leaves). `x`/`y` are kept as metadata for legacy docs; the flow renderer
+/// ignores them and uses list order instead.
 class CanvasNode {
   final String id;
   final String screenId;
   final double x;
   final double y;
   final List<CanvasItem> items;
+  final String? parentId;
+  final bool isRow;
+  final double gap;
 
   const CanvasNode({
     required this.id,
@@ -102,6 +154,9 @@ class CanvasNode {
     required this.x,
     required this.y,
     required this.items,
+    this.parentId,
+    this.isRow = false,
+    this.gap = kFlowRowGapDefault,
   });
 
   factory CanvasNode.fromJson(Map<String, dynamic> json) => CanvasNode(
@@ -112,6 +167,10 @@ class CanvasNode {
         items: (json['items'] as List)
             .map((i) => CanvasItem.fromJson(i as Map<String, dynamic>))
             .toList(),
+        // Backward compatible: old docs lack these keys.
+        parentId: json['parentId'] as String?,
+        isRow: (json['isRow'] as bool?) ?? false,
+        gap: (json['gap'] as num?)?.toDouble() ?? kFlowRowGapDefault,
       );
 
   Map<String, dynamic> toJson() => {
@@ -120,6 +179,9 @@ class CanvasNode {
         'x': x,
         'y': y,
         'items': items.map((i) => i.toJson()).toList(),
+        'parentId': parentId,
+        'isRow': isRow,
+        'gap': gap,
       };
 }
 

@@ -90,7 +90,7 @@ void main() {
     expect(find.text('unknown: mystery'), findsOneWidget);
   });
 
-  testWidgets('parts palette shows one draggable tile per catalog kind', (
+  testWidgets('parts palette shows one draggable tile per kind + row', (
     tester,
   ) async {
     useReferenceViewport(tester);
@@ -101,7 +101,12 @@ void main() {
     for (final entry in kCatalog) {
       expect(find.text(_tileLabel(entry.kind)), findsOneWidget);
     }
-    expect(find.byType(Draggable<String>), findsNWidgets(kCatalog.length));
+    // The Layout section adds the row container tile on top of the catalog.
+    expect(find.text('Row'), findsOneWidget);
+    expect(
+      find.byType(Draggable<String>),
+      findsNWidgets(kCatalog.length + 1),
+    );
   });
 
   testWidgets('palette search filters tiles and reports empty results', (

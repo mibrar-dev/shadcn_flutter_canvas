@@ -18,9 +18,13 @@ void main() {
         'radio_group',
         'skeleton',
         'breadcrumb',
+        'dialog',
+        'tooltip',
+        'toast',
+        'drawer',
       ]),
     );
-    expect(kCatalog, hasLength(15));
+    expect(kCatalog, hasLength(19));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -200,6 +204,105 @@ void main() {
     expect(find.text('Type here'), findsOneWidget);
   });
 
+  testWidgets('dialog renders content card with optional action row', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: buildCatalogItem('dialog', {
+            'title': 'T',
+            'message': 'M',
+            'showActions': true,
+          }),
+        ),
+      ),
+    );
+    expect(find.byType(shadcn.ModalContainer), findsOneWidget);
+    expect(find.text('T'), findsOneWidget);
+    expect(find.text('M'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: buildCatalogItem('dialog', {'showActions': false})),
+      ),
+    );
+    expect(find.text('Close'), findsNothing);
+  });
+
+  testWidgets('tooltip renders the labeled control', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: buildCatalogItem('tooltip', {
+            'label': 'Hover me',
+            'tip': 'Helpful context',
+          }),
+        ),
+      ),
+    );
+    // The tip only materializes on hover at runtime; canvas shows the
+    // labeled control.
+    expect(find.byType(shadcn.Tooltip), findsOneWidget);
+    expect(find.text('Hover me'), findsOneWidget);
+  });
+
+  testWidgets('toast renders the notification row', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: buildCatalogItem('toast', {
+            'title': 'Saved',
+            'message': 'Saved successfully',
+          }),
+        ),
+      ),
+    );
+    expect(find.byType(shadcn.ToastEntry), findsOneWidget);
+    expect(find.text('Saved'), findsOneWidget);
+    expect(find.text('Saved successfully'), findsOneWidget);
+  });
+
+  testWidgets('drawer renders the side-panel mock', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: buildCatalogItem('drawer', {
+            'title': 'Drawer',
+            'content': 'Drawer content',
+          }),
+        ),
+      ),
+    );
+    expect(find.byType(shadcn.DrawerWrapper), findsOneWidget);
+    expect(find.text('Drawer'), findsOneWidget);
+    expect(find.text('Drawer content'), findsOneWidget);
+  });
+
+  testWidgets('overlay builders tolerate empty props (defaults kick in)', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Column(
+            children: [
+              buildCatalogItem('dialog', {}),
+              buildCatalogItem('tooltip', {}),
+              buildCatalogItem('toast', {}),
+              buildCatalogItem('drawer', {}),
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Dialog title'), findsOneWidget);
+    expect(find.text('Hover me'), findsOneWidget);
+    expect(find.text('Saved successfully'), findsOneWidget);
+    expect(find.text('Drawer content'), findsOneWidget);
+  });
+
   testWidgets('fallbackBuilder renders placeholder plus kind label', (
     tester,
   ) async {
@@ -264,14 +367,14 @@ void main() {
   });
 }
 
-/// Compact copy of the canvas blocks' `propsSchema` for the fifteen catalog
+/// Compact copy of the canvas blocks' `propsSchema` for the nineteen catalog
 /// kinds, transcribed from
 /// `shadcn_flutter_kit/flutter_shadcn_kit/lib/registry/manifests/components.json`
 /// (`components[].canvas.propsSchema`).
 ///
 /// Tests cannot read kit files (the kit package is not a dependency of
 /// canvas_app), so this copy is hard-coded — re-transcribe it if
-/// `components.json` changes. The ten newer kinds have no canvas block in
+/// `components.json` changes. The fourteen newer kinds have no canvas block in
 /// the pinned kit rev; their copies mirror the invented catalog defaults
 /// (marked inline) until real blocks land.
 const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
@@ -364,5 +467,29 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'breadcrumb': [
     {'name': 'home', 'type': 'string', 'default': 'Home'},
     {'name': 'current', 'type': 'string', 'default': 'Page'},
+  ],
+  // No canvas blocks exist for these four kinds either (same pinned-kit
+  // scan — no `canvas` key on any of the 134 components), so these copies
+  // likewise mirror the invented catalog defaults until real blocks land.
+  'dialog': [
+    {'name': 'title', 'type': 'string', 'default': 'Dialog title'},
+    {
+      'name': 'message',
+      'type': 'string',
+      'default': 'Use dialogs for important confirmations.',
+    },
+    {'name': 'showActions', 'type': 'bool', 'default': true},
+  ],
+  'tooltip': [
+    {'name': 'label', 'type': 'string', 'default': 'Hover me'},
+    {'name': 'tip', 'type': 'string', 'default': 'Helpful context'},
+  ],
+  'toast': [
+    {'name': 'title', 'type': 'string', 'default': 'Saved'},
+    {'name': 'message', 'type': 'string', 'default': 'Saved successfully'},
+  ],
+  'drawer': [
+    {'name': 'title', 'type': 'string', 'default': 'Drawer'},
+    {'name': 'content', 'type': 'string', 'default': 'Drawer content'},
   ],
 };

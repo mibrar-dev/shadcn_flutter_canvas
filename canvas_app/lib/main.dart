@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart' hide ChangeNotifier;
+import 'package:canvas_app/canvas/persistence.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
@@ -79,7 +80,9 @@ class CanvasRoot extends StatelessWidget {
     return MaterialApp(
       title: 'Shadcn Canvas',
       debugShowCheckedModeBanner: false,
-      home: EditorShell(store: CanvasStore()),
+      // Production prefs: autosave persists to localStorage on web and
+      // initState's load() restores it (migrated to flow on read).
+      home: EditorShell(store: CanvasStore(prefs: SharedPreferencesPrefs())),
     );
   }
 }
@@ -118,6 +121,15 @@ class _EditorShellState extends State<EditorShell> {
   double _zoom = 0.79;
   String _railId = kRailParts;
   String? _selectedNodeId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Restore the last autosaved doc (migrated to flow on load). The relay
+    // rebuilds the shell when the async read lands; until then the empty doc
+    // shows — no loading spinner for a local read.
+    widget.store.load();
+  }
 
   @override
   void dispose() {

@@ -1,10 +1,13 @@
 /// Z-order Layers panel replacing the icon rail's `<id> panel` placeholder.
 ///
 /// Groups one row per node under its screen header (HANDOFF P1-4). Doc order
-/// is reversed within a group so the top row is the frontmost node. Rows
-/// carry bring-forward/send-backward controls wired to
-/// [CanvasStore.reorderNode], and screen headers carry a rename affordance
-/// wired to [CanvasStore.renameScreen].
+/// is reversed within a group so the top row is the frontmost node. Row
+/// containers render as a header with their children indented one level
+/// beneath (frontmost-first within the row); the row header itself is
+/// selectable for gap editing. Rows carry bring-forward/send-backward
+/// controls wired to [CanvasStore.reorderNode] within their visual group,
+/// and screen headers carry a rename affordance wired to
+/// [CanvasStore.renameScreen].
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -98,8 +101,7 @@ class _LayersBodyState extends State<_LayersBody> {
           return Center(
             child: Text(
               'No screens',
-              style:
-                  EditorType.field.copyWith(color: colors.onSurfaceVariant),
+              style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
             ),
           );
         }
@@ -133,36 +135,16 @@ class _LayersBodyState extends State<_LayersBody> {
               const SizedBox(height: EditorMetrics.tileGap),
               Builder(
                 builder: (_) {
-                  final rows = _frontmostFirst(doc, screen);
+                  final roots = _rootsFrontmostFirst(doc, screen);
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      for (var index = 0; index < rows.length; index++)
-                        _LayerRow(
-                          node: rows[index],
-                          selected: rows[index].id == widget.selectedNodeId,
-                          onTap: () =>
-                              widget.onSelectNode(rows[index].id),
-                          onDuplicate: () =>
-                              widget.store.duplicateNode(rows[index].id),
-                          onDelete: () =>
-                              widget.store.deleteNode(rows[index].id),
-                          // Displayed frontmost-first: screen-local doc index
-                          // of this row is rows.length-1-index; up moves
-                          // toward the front (+1).
-                          onMoveUp: index == 0
-                              ? null
-                              : () => widget.store.reorderNode(
-                                    rows[index].id,
-                                    rows.length - index,
-                                  ),
-                          onMoveDown: index == rows.length - 1
-                              ? null
-                              : () => widget.store.reorderNode(
-                                    rows[index].id,
-                                    rows.length - 2 - index,
-                                  ),
-                        ),
+                      for (var index = 0; index < roots.length; index++) ...[
+                        _layerRow(roots[index], roots.length, index),
+                        // Row children indent one level under their row
+                        // header, reordering within their own visual group.
+                        ..._childRows(doc, roots[index]),
+                      ],
                     ],
                   );
                 },
@@ -179,6 +161,48 @@ class _LayersBodyState extends State<_LayersBody> {
         );
       },
     );
+  }
+
+  /// One layer row wired to the store: tap selects (rows select for gap
+  /// editing), duplicate/delete act, and the reorder buttons move within the
+  /// node's visual group ([groupLength]/[visualIndex] in frontmost-first
+  /// display order) by passing the group-relative doc index.
+  Widget _layerRow(CanvasNode node, int groupLength, int visualIndex) {
+    return _LayerRow(
+      node: node,
+      selected: node.id == widget.selectedNodeId,
+      onTap: () => widget.onSelectNode(node.id),
+      onDuplicate: () => widget.store.duplicateNode(node.id),
+      onDelete: () => widget.store.deleteNode(node.id),
+      // Displayed frontmost-first: group-relative doc index of this row is
+      // groupLength-1-visualIndex; up moves toward the front (+1).
+      onMoveUp: visualIndex == 0
+          ? null
+          : () => widget.store.reorderNode(
+                node.id,
+                groupLength - visualIndex,
+              ),
+      onMoveDown: visualIndex == groupLength - 1
+          ? null
+          : () => widget.store.reorderNode(
+                node.id,
+                groupLength - 2 - visualIndex,
+              ),
+    );
+  }
+
+  /// Indented child rows for a row container (frontmost-first in the row).
+  /// Empty for leaves.
+  List<Widget> _childRows(ScreenDoc doc, CanvasNode row) {
+    if (!row.isRow) return const [];
+    final kids = _childrenFrontmostFirst(doc, row);
+    return [
+      for (var ci = 0; ci < kids.length; ci++)
+        Padding(
+          padding: const EdgeInsets.only(left: EditorMetrics.panelInset),
+          child: _layerRow(kids[ci], kids.length, ci),
+        ),
+    ];
   }
 
   /// Opens the screen-rename dialog (prefilled; empty Save is a no-op close).
@@ -199,8 +223,7 @@ class _LayersBodyState extends State<_LayersBody> {
           backgroundColor: colors.surfaceContainer,
           title: Text(
             'Rename screen',
-            style: EditorType.sectionHeader
-                .copyWith(color: colors.onSurface),
+            style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
           ),
           content: TextField(
             controller: controller,
@@ -231,8 +254,7 @@ class _LayersBodyState extends State<_LayersBody> {
               onPressed: save,
               child: Text(
                 'Save',
-                style:
-                    EditorType.tileLabel.copyWith(color: colors.onSurface),
+                style: EditorType.tileLabel.copyWith(color: colors.onSurface),
               ),
             ),
           ],
@@ -242,11 +264,20 @@ class _LayersBodyState extends State<_LayersBody> {
   }
 }
 
-/// Nodes of [screen] in doc order reversed (top row = frontmost).
-List<CanvasNode> _frontmostFirst(ScreenDoc doc, CanvasScreen screen) {
+/// Root nodes of [screen] in doc order reversed (top row = frontmost).
+List<CanvasNode> _rootsFrontmostFirst(ScreenDoc doc, CanvasScreen screen) {
   final nodes = [
     for (final n in doc.nodes)
-      if (n.screenId == screen.id) n,
+      if (n.screenId == screen.id && n.parentId == null) n,
+  ];
+  return nodes.reversed.toList();
+}
+
+/// Children of [row] in doc order reversed (top row = frontmost).
+List<CanvasNode> _childrenFrontmostFirst(ScreenDoc doc, CanvasNode row) {
+  final nodes = [
+    for (final n in doc.nodes)
+      if (n.parentId == row.id) n,
   ];
   return nodes.reversed.toList();
 }
@@ -254,8 +285,10 @@ List<CanvasNode> _frontmostFirst(ScreenDoc doc, CanvasScreen screen) {
 bool _hasNodes(ScreenDoc doc, CanvasScreen screen) =>
     doc.nodes.any((n) => n.screenId == screen.id);
 
-/// Capitalized kind of the node's first item, or 'empty' when it has none.
+/// Capitalized kind of the node's first item, 'Row' for row containers, or
+/// 'empty' when it has none.
 String _kindLabel(CanvasNode node) {
+  if (node.isRow) return 'Row';
   if (node.items.isEmpty) return 'Empty';
   final kind = node.items.first.kind;
   if (kind.isEmpty) return 'Empty';
@@ -287,8 +320,7 @@ class _LayerRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    final radius =
-        BorderRadius.circular(EditorMetrics.segmentInnerRadius);
+    final radius = BorderRadius.circular(EditorMetrics.segmentInnerRadius);
     return Material(
       color: selected
           ? colors.toolbarActive.withValues(alpha: 0.25)
@@ -310,9 +342,8 @@ class _LayerRow extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: EditorType.tileLabel.copyWith(
-                    color: selected
-                        ? colors.onSurface
-                        : colors.onSurfaceVariant,
+                    color:
+                        selected ? colors.onSurface : colors.onSurfaceVariant,
                   ),
                 ),
               ),

@@ -73,11 +73,15 @@ class CanvasStore extends ChangeNotifier {
   bool get canRedo => _redo.isNotEmpty;
 
   /// Restores the last autosaved doc, if any. Keeps current on bad data.
+  /// Persisted docs predate flow layout, so every load runs the one-shot
+  /// [migrateToFlow] (idempotent: already-flow docs keep their order).
   Future<void> load() async {
     final raw = await _prefs?.read(docKey);
     if (raw == null || raw.isEmpty) return;
     try {
-      _doc = ScreenDoc.fromJson(jsonDecode(raw) as Map<String, dynamic>);
+      _doc = migrateToFlow(
+        ScreenDoc.fromJson(jsonDecode(raw) as Map<String, dynamic>),
+      );
       notifyListeners();
     } on FormatException {
       // Keep current doc on corrupt payloads.
@@ -125,7 +129,15 @@ class CanvasStore extends ChangeNotifier {
     _commit(_mapNodes(
       (n) => n.id == nodeId
           ? CanvasNode(
-              id: n.id, screenId: n.screenId, x: x, y: y, items: n.items)
+              id: n.id,
+              screenId: n.screenId,
+              x: x,
+              y: y,
+              items: n.items,
+              parentId: n.parentId,
+              isRow: n.isRow,
+              gap: n.gap,
+            )
           : n,
     ));
   }
@@ -145,13 +157,14 @@ class CanvasStore extends ChangeNotifier {
         screenId: n.screenId,
         x: n.x,
         y: n.y,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
         items: [
           for (final i in n.items)
             if (i.id == itemId)
               i.copyWith(
-                props: props == null
-                    ? null
-                    : {...i.props, ...props},
+                props: props == null ? null : {...i.props, ...props},
                 action: action,
               )
             else
@@ -164,10 +177,27 @@ class CanvasStore extends ChangeNotifier {
   void setItemAction(String nodeId, String itemId, NodeAction? action) =>
       patchItem(nodeId, itemId, action: () => action);
 
+  /// Deletes a node. Deleting a row cascades to its descendants (they live
+  /// inside it — leaving them orphaned would make them invisible). Unknown
+  /// ids are a no-op (no history pollution), matching reorderNode/patchNode
+  /// which throw before committing.
   void deleteNode(String nodeId) {
+    if (_doc.nodes.every((n) => n.id != nodeId)) return;
+    final doomed = <String>{nodeId};
+    var grew = true;
+    while (grew) {
+      grew = false;
+      for (final n in _doc.nodes) {
+        if (n.parentId != null &&
+            doomed.contains(n.parentId) &&
+            doomed.add(n.id)) {
+          grew = true;
+        }
+      }
+    }
     _commit(ScreenDoc(
       screens: List.of(_doc.screens),
-      nodes: [for (final n in _doc.nodes) if (n.id != nodeId) n],
+      nodes: [for (final n in _doc.nodes) if (!doomed.contains(n.id)) n],
       theme: _doc.theme,
       meta: _doc.meta,
     ));
@@ -187,9 +217,6 @@ class CanvasStore extends ChangeNotifier {
   /// Returns the new node id.
   String duplicateNode(String nodeId) {
     final source = _doc.nodes.singleWhere((n) => n.id == nodeId);
-    final copy = CanvasNode.fromJson(
-      jsonDecode(jsonEncode(source.toJson())) as Map<String, dynamic>,
-    );
     final taken = {
       for (final n in _doc.nodes) n.id,
       for (final n in _doc.nodes)
@@ -204,31 +231,49 @@ class CanvasStore extends ChangeNotifier {
       return id;
     }
 
-    final renamed = CanvasNode(
-      id: fresh(copy.id),
-      screenId: copy.screenId,
-      x: copy.x + 16,
-      y: copy.y + 16,
-      items: [
-        for (final i in copy.items)
-          CanvasItem(
-            id: fresh(i.id),
-            kind: i.kind,
-            props: Map<String, dynamic>.from(i.props),
-            action: i.action == null
-                ? null
-                : NodeAction(
-                    to: i.action!.to, transition: i.action!.transition),
-          ),
-      ],
-    );
+    // Duplicating a row duplicates its whole subtree, any depth
+    // (Figma-frame semantics); clones are re-parented to the fresh ids.
+    final subtree = <CanvasNode>[source];
+    final known = <String>{source.id};
+    var cursor = 0;
+    while (cursor < subtree.length) {
+      final parent = subtree[cursor++];
+      for (final n in _doc.nodes) {
+        if (n.parentId == parent.id && known.add(n.id)) subtree.add(n);
+      }
+    }
+    final idMap = {for (final n in subtree) n.id: fresh(n.id)};
+    final clones = [
+      for (final n in subtree)
+        CanvasNode(
+          id: idMap[n.id]!,
+          screenId: n.screenId,
+          x: n.x + 16,
+          y: n.y + 16,
+          parentId: n.id == source.id ? n.parentId : idMap[n.parentId],
+          isRow: n.isRow,
+          gap: n.gap,
+          items: [
+            for (final i in n.items)
+              CanvasItem(
+                id: fresh(i.id),
+                kind: i.kind,
+                props: Map<String, dynamic>.from(i.props),
+                action: i.action == null
+                    ? null
+                    : NodeAction(
+                        to: i.action!.to, transition: i.action!.transition),
+              ),
+          ],
+        ),
+    ];
     _commit(ScreenDoc(
       screens: List.of(_doc.screens),
-      nodes: [..._doc.nodes, renamed],
+      nodes: [..._doc.nodes, ...clones],
       theme: _doc.theme,
       meta: _doc.meta,
     ));
-    return renamed.id;
+    return clones.first.id;
   }
 
   /// Deletes a screen (plus its nodes). Refuses — returning the dangling
@@ -236,8 +281,14 @@ class CanvasStore extends ChangeNotifier {
   /// Returns `[]` on success.
   List<String> deleteScreen(String screenId) {
     final candidate = ScreenDoc(
-      screens: [for (final s in _doc.screens) if (s.id != screenId) s],
-      nodes: [for (final n in _doc.nodes) if (n.screenId != screenId) n],
+      screens: [
+        for (final s in _doc.screens)
+          if (s.id != screenId) s
+      ],
+      nodes: [
+        for (final n in _doc.nodes)
+          if (n.screenId != screenId) n
+      ],
       theme: _doc.theme,
       meta: _doc.meta,
     );
@@ -288,29 +339,36 @@ class CanvasStore extends ChangeNotifier {
     ));
   }
 
-  /// Moves the node with [nodeId] within its own screen's z-order to
-  /// [newIndex] (position among that screen's nodes in doc order; later =
-  /// more frontmost). [newIndex] is clamped into the screen's node list.
-  /// Cross-screen moves are refused: the node's `screenId` never changes and
-  /// other screens' nodes keep their exact positions. Throws [StateError]
-  /// when [nodeId] is unknown (before committing, so history stays clean).
+  /// Moves the node with [nodeId] within its own parent group to
+  /// [newIndex] (position among the group's nodes in doc order; later =
+  /// more frontmost in the layers panel and later in the flow).
+  ///
+  /// The group is the node's flow siblings: the screen-root nodes
+  /// (`parentId == null`) when the node is root-level, or the row's children
+  /// (equal `parentId`) when it lives inside a row. Only same-screen nodes
+  /// are ever siblings, so [newIndex] is clamped into the group and
+  /// cross-parent / cross-screen moves are refused structurally (neither
+  /// `screenId` nor `parentId` ever changes). Throws [StateError] when
+  /// [nodeId] is unknown (before committing, so history stays clean).
   /// Undoable and autosaved like every other mutation.
   void reorderNode(String nodeId, int newIndex) {
     final current = _doc.nodes.indexWhere((n) => n.id == nodeId);
     if (current < 0) throw StateError('Unknown node: $nodeId');
-    final screenId = _doc.nodes[current].screenId;
+    final node = _doc.nodes[current];
     final group = [
       for (final n in _doc.nodes)
-        if (n.screenId == screenId) n,
+        if (n.screenId == node.screenId && n.parentId == node.parentId) n,
     ];
     final from = group.indexWhere((n) => n.id == nodeId);
     final to = newIndex.clamp(0, group.length - 1);
     if (from == to) return;
-    final node = group.removeAt(from);
+    group.removeAt(from);
     group.insert(to, node);
     final spots = <int>[
       for (var i = 0; i < _doc.nodes.length; i++)
-        if (_doc.nodes[i].screenId == screenId) i,
+        if (_doc.nodes[i].screenId == node.screenId &&
+            _doc.nodes[i].parentId == node.parentId)
+          i,
     ];
     final next = List.of(_doc.nodes);
     for (var k = 0; k < spots.length; k++) {
@@ -322,6 +380,55 @@ class CanvasStore extends ChangeNotifier {
       theme: _doc.theme,
       meta: _doc.meta,
     ));
+  }
+
+  /// Appends a root-level row container to [screenId].
+  ///
+  /// The container node carries no items (`items` is empty), `isRow` is true,
+  /// `gap` is [kFlowRowGapDefault], and `parentId` is null (root-level row).
+  /// `x`/`y` are stored as 0 metadata; the flow renderer ignores them and
+  /// uses doc order instead. Returns the id. Undoable and autosaved like
+  /// every other mutation.
+  String addRow({required String screenId}) {
+    final node = CanvasNode(
+      id: uid(),
+      screenId: screenId,
+      x: 0.0,
+      y: 0.0,
+      items: const [],
+      parentId: null,
+      isRow: true,
+      gap: kFlowRowGapDefault,
+    );
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: [..._doc.nodes, node],
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+    return node.id;
+  }
+
+  /// Updates a row container's [gap] (horizontal spacing between its
+  /// children in logical px). Throws [StateError] when [nodeId] is unknown
+  /// (before committing, so history stays clean). A null [gap] is a no-op.
+  /// Undoable and autosaved like every other mutation.
+  void patchNode(String nodeId, {double? gap}) {
+    final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (index < 0) throw StateError('Unknown node: $nodeId');
+    if (gap == null) return;
+    _commit(_mapNodes((n) => n.id == nodeId
+        ? CanvasNode(
+            id: n.id,
+            screenId: n.screenId,
+            x: n.x,
+            y: n.y,
+            items: n.items,
+            parentId: n.parentId,
+            isRow: n.isRow,
+            gap: gap,
+          )
+        : n));
   }
 
   /// Replaces the whole doc (undoable import path for the Open dialog).

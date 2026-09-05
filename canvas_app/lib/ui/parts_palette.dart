@@ -10,6 +10,8 @@ import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Section name to catalog kinds. Kinds absent from [kCatalog] are skipped.
+/// Layout containers start their own section: they create structure, not
+/// content. Resolved via [resolvePaletteEntry] (container fallback).
 const Map<String, List<String>> kPartSections = <String, List<String>>{
   'Components': <String>[
     'button',
@@ -27,6 +29,13 @@ const Map<String, List<String>> kPartSections = <String, List<String>>{
     'radio_group',
     'skeleton',
     'breadcrumb',
+    'dialog',
+    'tooltip',
+    'toast',
+    'drawer',
+  ],
+  'Layout': <String>[
+    'row',
   ],
 };
 
@@ -62,9 +71,37 @@ IconData _iconFor(String kind) {
       return Icons.blur_on;
     case 'breadcrumb':
       return Icons.chevron_right;
+    case 'dialog':
+      return Icons.web_asset;
+    case 'tooltip':
+      return Icons.help_outline;
+    case 'toast':
+      return Icons.notifications;
+    case 'drawer':
+      return Icons.menu_open;
     default:
       return Icons.widgets;
   }
+}
+
+/// Resolves a section kind to tile content: [kCatalog] first, else
+/// [kContainerTiles] (a synthetic entry carrying the container label with the
+/// same tile chrome and `Draggable` data = kind). Null when the kind names
+/// neither — sections skip those, as before.
+CatalogEntry? resolvePaletteEntry(String kind) {
+  for (final entry in kCatalog) {
+    if (entry.kind == kind) return entry;
+  }
+  final tile = kContainerTiles[kind];
+  if (tile == null) return null;
+  // Container tiles render structurally on canvas (never via this build),
+  // so the builder is inert by construction.
+  return CatalogEntry(
+    kind: kind,
+    label: tile.label,
+    defaults: const {},
+    build: (_) => const SizedBox(),
+  );
 }
 
 /// Human label for a kind id: `radio_group` → `Radio Group` (plain kinds
@@ -103,16 +140,15 @@ class _PartsPaletteState extends State<PartsPalette> {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    final byKind = <String, CatalogEntry>{
-      for (final entry in kCatalog) entry.kind: entry,
-    };
     final q = _query.trim().toLowerCase();
 
     final visible = <String, List<CatalogEntry>>{};
     for (final section in kPartSections.entries) {
+      // Container kinds (e.g. 'row' once listed) resolve via the
+      // kContainerTiles fallback; unknown kinds are still skipped.
       final resolved = <CatalogEntry>[
         for (final kind in section.value)
-          if (byKind[kind] != null) byKind[kind]!,
+          if (resolvePaletteEntry(kind) case final entry?) entry,
       ];
       if (q.isEmpty) {
         visible[section.key] = resolved;
@@ -379,9 +415,7 @@ class _PressableTileState extends State<_PressableTile> {
         onPointerUp: (_) => _setPressed(false),
         onPointerCancel: (_) => _setPressed(false),
         child: AnimatedSlide(
-          offset: _hovered && !_pressed
-              ? const Offset(0, -0.014)
-              : Offset.zero,
+          offset: _hovered && !_pressed ? const Offset(0, -0.014) : Offset.zero,
           duration: const Duration(milliseconds: 140),
           curve: Curves.easeOutCubic,
           child: AnimatedScale(
@@ -405,6 +439,9 @@ class _TileContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    // Container tiles (kContainerTiles) supply their own icon; catalog kinds
+    // keep the per-kind icon below.
+    final icon = kContainerTiles[entry.kind]?.icon ?? _iconFor(entry.kind);
     return Tooltip(
       message: entry.label,
       child: Container(
@@ -418,7 +455,7 @@ class _TileContent extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              _iconFor(entry.kind),
+              icon,
               size: 20,
               color: colors.onSurfaceVariant,
             ),

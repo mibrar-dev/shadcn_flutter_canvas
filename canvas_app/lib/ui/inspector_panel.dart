@@ -138,6 +138,23 @@ const kInspectorSchemas = <String, List<PropDef>>{
     PropDef(name: 'home', type: 'string', group: 'content'),
     PropDef(name: 'current', type: 'string', group: 'content'),
   ],
+  'dialog': [
+    PropDef(name: 'title', type: 'string', group: 'content'),
+    PropDef(name: 'message', type: 'string', group: 'content'),
+    PropDef(name: 'showActions', type: 'bool', group: 'state'),
+  ],
+  'tooltip': [
+    PropDef(name: 'label', type: 'string', group: 'content'),
+    PropDef(name: 'tip', type: 'string', group: 'content'),
+  ],
+  'toast': [
+    PropDef(name: 'title', type: 'string', group: 'content'),
+    PropDef(name: 'message', type: 'string', group: 'content'),
+  ],
+  'drawer': [
+    PropDef(name: 'title', type: 'string', group: 'content'),
+    PropDef(name: 'content', type: 'string', group: 'content'),
+  ],
 };
 
 /// Forwards pure-Dart store notifications to Flutter listeners.
@@ -206,6 +223,17 @@ class _InspectorPanelState extends State<InspectorPanel> {
     widget.store.patchItem(widget.nodeId!, widget.itemId!, props: {name: value});
   }
 
+  /// Row container matching [InspectorPanel.nodeId], or null. Row nodes carry
+  /// no items, so they never resolve through [_selectedItem].
+  CanvasNode? _selectedRow(ScreenDoc doc) {
+    final nodeId = widget.nodeId;
+    if (nodeId == null) return null;
+    for (final node in doc.nodes) {
+      if (node.id == nodeId && node.isRow) return node;
+    }
+    return null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -213,6 +241,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
       builder: (context, _) {
         final item = _selectedItem(widget.store.doc);
         if (item == null) {
+          final row = _selectedRow(widget.store.doc);
+          if (row != null) return _rowCard(row);
           return const Center(child: Text('Select an item to edit its props'));
         }
         final schema = widget.schemas[item.kind];
@@ -243,6 +273,79 @@ class _InspectorPanelState extends State<InspectorPanel> {
           ],
         );
       },
+    );
+  }
+
+  /// Container editor for a row node: badge + id + child count + gap
+  /// stepper (0–32, step 4) reporting through `store.patchItem`-style
+  /// undoable `store.patchNode`.
+  Widget _rowCard(CanvasNode node) {
+    final children = [
+      for (final n in widget.store.doc.nodes)
+        if (n.parentId == node.id) n,
+    ];
+    return ListView(
+      padding: const EdgeInsets.all(12),
+      shrinkWrap: true,
+      children: [
+        shadcn.Card(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  shadcn.PrimaryBadge(child: Text('row')),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(node.id)),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                '${children.length} ${children.length == 1 ? 'child' : 'children'}',
+              ),
+              const Padding(
+                padding: EdgeInsets.only(top: 8, bottom: 4),
+                child: Text('layout'),
+              ),
+              Row(
+                children: [
+                  const Expanded(child: Text('gap')),
+                  shadcn.OutlineButton(
+                    size: shadcn.ButtonSize.small,
+                    onPressed: node.gap > 0
+                        ? () => widget.store.patchNode(
+                              node.id,
+                              gap: (node.gap - 4).clamp(0.0, 32.0).toDouble(),
+                            )
+                        : null,
+                    child: const Text('−'),
+                  ),
+                  SizedBox(
+                    width: 48,
+                    child: Text(
+                      node.gap.toInt().toString(),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  shadcn.OutlineButton(
+                    size: shadcn.ButtonSize.small,
+                    onPressed: node.gap < 32
+                        ? () => widget.store.patchNode(
+                              node.id,
+                              gap: (node.gap + 4).clamp(0.0, 32.0).toDouble(),
+                            )
+                        : null,
+                    child: const Text('+'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('Children are arranged on the canvas and in Layers.'),
+            ],
+          ),
+        ),
+      ],
     );
   }
 

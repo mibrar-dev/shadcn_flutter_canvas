@@ -111,16 +111,19 @@ String _themeSection(ScreenDoc doc) {
 String _screensSection(ScreenDoc doc) {
   final blocks = <String>[];
   for (final screen in doc.screens) {
-    final nodes = [
+    // Orphans (parentId pointing at a missing node) render as roots so the
+    // brief never silently drops nodes.
+    final ids = {for (final n in doc.nodes) n.id};
+    final roots = [
       for (final n in doc.nodes)
-        if (n.screenId == screen.id) n,
+        if (n.screenId == screen.id &&
+            (n.parentId == null || !ids.contains(n.parentId))) n,
     ]..sort((a, b) {
         final dy = a.y.compareTo(b.y);
         return dy != 0 ? dy : a.x.compareTo(b.x);
       });
     final rows = [
-      for (final n in nodes)
-        for (final i in n.items) _itemRow(n, i),
+      for (final n in roots) ..._nodeRows(doc, n, 0),
     ];
     blocks.add(
       '## ${_routeOf(screen.name)} (${screen.name})\n'
@@ -128,6 +131,36 @@ String _screensSection(ScreenDoc doc) {
     );
   }
   return 'Screens:\n\n${blocks.join('\n\n')}';
+}
+
+/// Brief lines for [node] at indent [level].
+///
+/// Leaf items keep the exact legacy `- kind "label" (...) at (x, y)` format.
+/// Row containers add one header line noting their gap, with their own items
+/// and row children indented one level underneath (recurses for nesting).
+List<String> _nodeRows(ScreenDoc doc, CanvasNode node, int level) {
+  final pad = '  ' * level;
+  if (!node.isRow) {
+    // Root leaves keep the legacy positioned format; row children flow, so
+    // their stored x/y would be noise.
+    final positioned = node.parentId == null;
+    return [
+      for (final i in node.items)
+        '$pad${_itemRow(node, i, positioned: positioned)}',
+    ];
+  }
+  final lines = <String>['$pad- row (gap ${_num(node.gap)})'];
+  for (final item in node.items) {
+    lines.add('  $pad${_itemRow(node, item, positioned: false)}');
+  }
+  // Row children follow document (insertion) order: their x/y are flow
+  // metadata, not positions.
+  for (final child in doc.nodes) {
+    if (child.parentId == node.id) {
+      lines.addAll(_nodeRows(doc, child, level + 1));
+    }
+  }
+  return lines;
 }
 
 String _behaviorSection(ScreenDoc doc) {
@@ -163,11 +196,11 @@ String _rulesSection() => '''Rules:
 - Add gap and data_widget to pubspec dependencies where used.
 - Use real data with validation and empty states.''';
 
-String _itemRow(CanvasNode node, CanvasItem item) {
+String _itemRow(CanvasNode node, CanvasItem item, {bool positioned = true}) {
   final detail = _detailOf(item);
-  final at = 'at (${_num(node.x)}, ${_num(node.y)})';
+  final at = positioned ? ' at (${_num(node.x)}, ${_num(node.y)})' : '';
   return '- ${item.kind} "${_labelOf(item)}"'
-      '${detail.isEmpty ? '' : ' ($detail)'} $at';
+      '${detail.isEmpty ? '' : ' ($detail)'}$at';
 }
 
 String _labelOf(CanvasItem item) {

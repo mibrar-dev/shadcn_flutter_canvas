@@ -1,7 +1,7 @@
 /// Clean-folders bundle exporter (P2c): screens + shadcn bodies + manifest + zip.
 ///
 /// Pure Dart (CLI-reusable): builds the installable `screen add` bundle from
-/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 15 catalog
+/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 19 catalog
 /// kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
 library;
 
@@ -38,14 +38,17 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 15 catalog kinds (snapshotted from the pinned kit's
+// Exact metadata for the 19 catalog kinds (snapshotted from the pinned kit's
 // `components.json`: destination prefix from `files[].destination`,
 // alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
 // unknown dep ids warn at export time, same as the seed kinds' `text_field`).
-// NOTE: `select`'s `dependsOn` (`async`, `chip`, `command`, `dialog`,
-// `hover`, `menu`, `text_field`) names component ids with no `_KindSpec`
-// here — they warn at export time (transitively pulled bodies are out of
-// scope for this batch; the ids are kept verbatim, never invented).
+// NOTE: `select`'s `dependsOn` (`async`, `chip`, `command`, `hover`,
+// `menu`, `text_field`) names component ids with no `_KindSpec` here — they
+// warn at export time (transitively pulled bodies are out of scope for this
+// batch; the ids are kept verbatim, never invented). Its `dialog` dep now
+// resolves (this batch adds it, pulling `card` transitively).
+// NOTE: `tooltip`'s `dependsOn` (`popover`) likewise names a component id
+// with no `_KindSpec` here — it warns at export time (same verbatim policy).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -92,6 +95,18 @@ const _kinds = <String, _KindSpec>{
   'breadcrumb': _KindSpec('{installPath}/components/navigation/breadcrumb/',
       ['basic_layout', 'radix_icons', 'style_value', 'text_modifiers', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'dialog': _KindSpec('{installPath}/components/overlay/dialog/',
+      ['color_extensions', 'component_schema', 'constants', 'geometry_extensions', 'overlay', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['card']),
+  'tooltip': _KindSpec('{installPath}/components/overlay/tooltip/',
+      ['animated_value_builder', 'color_extensions', 'component_schema', 'constants', 'hover', 'outlined_container', 'overlay', 'style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['popover']),
+  'toast': _KindSpec('{installPath}/components/overlay/toast/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'drawer': _KindSpec('{installPath}/components/overlay/drawer/',
+      ['color_extensions', 'component_schema', 'constants', 'controlled_animation', 'geometry_extensions', 'outlined_container', 'overlay', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog']),
 };
 
 const _installPath = '{installPath}/';
