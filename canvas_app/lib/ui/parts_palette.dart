@@ -11,7 +11,18 @@ import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Section name to catalog kinds. Kinds absent from [kCatalog] are skipped.
 const Map<String, List<String>> kPartSections = <String, List<String>>{
-  'Components': <String>['button', 'card', 'input', 'badge', 'switch'],
+  'Components': <String>[
+    'button',
+    'card',
+    'input',
+    'badge',
+    'switch',
+    'avatar',
+    'checkbox',
+    'divider',
+    'progress',
+    'tabs',
+  ],
 };
 
 IconData _iconFor(String kind) {
@@ -26,6 +37,16 @@ IconData _iconFor(String kind) {
       return Icons.label;
     case 'switch':
       return Icons.toggle_on;
+    case 'avatar':
+      return Icons.account_circle;
+    case 'checkbox':
+      return Icons.check_box;
+    case 'divider':
+      return Icons.horizontal_rule;
+    case 'progress':
+      return Icons.linear_scale;
+    case 'tabs':
+      return Icons.tab;
     default:
       return Icons.widgets;
   }
@@ -317,15 +338,27 @@ class _PressableTileState extends State<_PressableTile> {
   bool _hovered = false;
   bool _pressed = false;
 
+  // Draggable swaps `child` for `childWhenDragging` when a drag starts,
+  // unmounting this tile mid-gesture; the trailing pointer-up/exit events
+  // then arrive post-dispose. Guard everything (DDC-proven crash:
+  // "setState() called after dispose" on every web drop).
+  void _setHovered(bool v) {
+    if (mounted) setState(() => _hovered = v);
+  }
+
+  void _setPressed(bool v) {
+    if (mounted) setState(() => _pressed = v);
+  }
+
   @override
   Widget build(BuildContext context) {
     return MouseRegion(
-      onEnter: (_) => setState(() => _hovered = true),
-      onExit: (_) => setState(() => _hovered = false),
+      onEnter: (_) => _setHovered(true),
+      onExit: (_) => _setHovered(false),
       child: Listener(
-        onPointerDown: (_) => setState(() => _pressed = true),
-        onPointerUp: (_) => setState(() => _pressed = false),
-        onPointerCancel: (_) => setState(() => _pressed = false),
+        onPointerDown: (_) => _setPressed(true),
+        onPointerUp: (_) => _setPressed(false),
+        onPointerCancel: (_) => _setPressed(false),
         child: AnimatedSlide(
           offset: _hovered && !_pressed
               ? const Offset(0, -0.014)

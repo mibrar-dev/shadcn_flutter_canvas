@@ -9,6 +9,7 @@
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
@@ -46,6 +47,12 @@ class DesignCanvas extends StatefulWidget {
   /// of selecting.
   final bool panMode;
 
+  /// Shell-owned selection (single source of truth — the shell also feeds
+  /// the layers panel and inspector from it). Never duplicated locally: a
+  /// stale local copy is exactly how the canvas ring used to desync from
+  /// layers-driven selection.
+  final String? selectedNodeId;
+
   /// Forwarded whenever the selection changes (shell wires it to the inspector).
   final ValueChanged<String?>? onSelectNode;
 
@@ -55,6 +62,7 @@ class DesignCanvas extends StatefulWidget {
     this.screenId = 's1',
     this.zoom = 1.0,
     this.panMode = false,
+    this.selectedNodeId,
     this.onSelectNode,
   });
 
@@ -89,11 +97,32 @@ class DesignCanvas extends StatefulWidget {
 
 class _DesignCanvasState extends State<DesignCanvas> {
   late final _StoreRelay _relay = _StoreRelay(widget.store);
-  String? _selectedNodeId;
   Offset _pan = Offset.zero;
+
+  /// Latest global pointer position, tracked so drops can land at the
+  /// pointer instead of the drag feedback's top-left corner.
+  /// See [ScreenSurface.dropPointer].
+  late final ValueNotifier<Offset?> _pointerGlobal =
+      ValueNotifier<Offset?>(null);
+
+  void _recordPointer(PointerEvent e) {
+    _pointerGlobal.value = e.position;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Global route (not a hit-test Listener): raw pointer events reach here
+    // even while a Draggable owns the gesture, and in widget tests a
+    // hit-test Listener around the canvas observes nothing mid-drag.
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_recordPointer);
+  }
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter
+        .removeGlobalRoute(_recordPointer);
+    _pointerGlobal.dispose();
     _relay.dispose();
     super.dispose();
   }
@@ -135,17 +164,15 @@ class _DesignCanvasState extends State<DesignCanvas> {
                       for (final n in doc.nodes)
                         if (n.screenId == doc.screens[i].id) n,
                     ],
-                    selectedNodeId: _selectedNodeId,
+                    selectedNodeId: widget.selectedNodeId,
                     zoom: widget.zoom,
-                    onSelectNode: (id) {
-                      setState(() => _selectedNodeId = id);
-                      widget.onSelectNode?.call(id);
-                    },
+                    onSelectNode: (id) => widget.onSelectNode?.call(id),
                     onDropKind: (kind, position) => widget.onAccept(
                       kind,
                       position,
                       screenId: doc.screens[i].id,
                     ),
+                    dropPointer: _pointerGlobal,
                   ),
                 ],
               ),

@@ -9,7 +9,7 @@ void main() {
       kCatalog.map((e) => e.kind),
       containsAll(['button', 'card', 'input', 'badge', 'switch']),
     );
-    expect(kCatalog, hasLength(5));
+    expect(kCatalog, hasLength(10));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -222,6 +222,10 @@ void main() {
                 contains(value),
                 reason: '${entry.kind}.${defaultProp.key} default not in $options',
               );
+            case 'double':
+              expect(value, isA<double>(), reason: '${entry.kind}.${defaultProp.key}');
+            case 'int':
+              expect(value, isA<int>(), reason: '${entry.kind}.${defaultProp.key}');
             default:
               fail('unknown schema type $type for ${entry.kind}.${defaultProp.key}');
           }
@@ -249,14 +253,16 @@ void main() {
   });
 }
 
-/// Compact copy of the canvas blocks' `propsSchema` for the five catalog
+/// Compact copy of the canvas blocks' `propsSchema` for the ten catalog
 /// kinds, transcribed from
 /// `shadcn_flutter_kit/flutter_shadcn_kit/lib/registry/manifests/components.json`
 /// (`components[].canvas.propsSchema`).
 ///
 /// Tests cannot read kit files (the kit package is not a dependency of
 /// canvas_app), so this copy is hard-coded — re-transcribe it if
-/// `components.json` changes.
+/// `components.json` changes. The five newer kinds have no canvas block in
+/// the pinned kit rev; their copies mirror the invented catalog defaults
+/// (marked inline) until real blocks land.
 const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'button': [
     {'name': 'label', 'type': 'string', 'default': 'Button'},
@@ -298,5 +304,27 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'label', 'type': 'string', 'default': ''},
     {'name': 'value', 'type': 'bool', 'default': false},
     {'name': 'disabled', 'type': 'bool', 'default': false},
+  ],
+  // No canvas blocks exist for these five kinds in the pinned kit rev, so
+  // these copies mirror the (documented, invented) catalog defaults instead
+  // of a block transcription. If real blocks land, re-transcribe and the
+  // drift assertions above will flag any divergence for review.
+  'avatar': [
+    {'name': 'initials', 'type': 'string', 'default': 'AB'},
+  ],
+  'checkbox': [
+    {'name': 'value', 'type': 'bool', 'default': false},
+    {'name': 'disabled', 'type': 'bool', 'default': false},
+  ],
+  'divider': [
+    {'name': 'label', 'type': 'string', 'default': ''},
+  ],
+  'progress': [
+    {'name': 'progress', 'type': 'double', 'default': 0.5},
+  ],
+  'tabs': [
+    {'name': 'tab1', 'type': 'string', 'default': 'Tab 1'},
+    {'name': 'tab2', 'type': 'string', 'default': 'Tab 2'},
+    {'name': 'index', 'type': 'int', 'default': 0},
   ],
 };

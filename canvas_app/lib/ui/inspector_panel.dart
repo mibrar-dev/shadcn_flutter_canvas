@@ -35,7 +35,8 @@ class PropDef {
   /// Prop key inside [CanvasItem.props].
   final String name;
 
-  /// One of `'string'`, `'bool'`, `'enum'`.
+  /// One of `'string'`, `'bool'`, `'enum'`; anything else (e.g. `'double'`,
+  /// `'int'`) renders read-only until an editor exists.
   final String type;
 
   /// Allowed values when [type] is `'enum'`.
@@ -94,6 +95,24 @@ const kInspectorSchemas = <String, List<PropDef>>{
   'switch': [
     PropDef(name: 'value', type: 'bool', group: 'state'),
     PropDef(name: 'disabled', type: 'bool', group: 'state'),
+  ],
+  'avatar': [
+    PropDef(name: 'initials', type: 'string', group: 'content'),
+  ],
+  'checkbox': [
+    PropDef(name: 'value', type: 'bool', group: 'state'),
+    PropDef(name: 'disabled', type: 'bool', group: 'state'),
+  ],
+  'divider': [
+    PropDef(name: 'label', type: 'string', group: 'content'),
+  ],
+  // Doubles/ints have no editor yet and render read-only (see _editor).
+  'progress': [
+    PropDef(name: 'progress', type: 'double', group: 'state'),
+  ],
+  'tabs': [
+    PropDef(name: 'tab1', type: 'string', group: 'content'),
+    PropDef(name: 'tab2', type: 'string', group: 'content'),
   ],
 };
 

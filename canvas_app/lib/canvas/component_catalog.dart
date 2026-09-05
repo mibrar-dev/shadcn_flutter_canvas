@@ -10,7 +10,10 @@
 /// exist in this repo):
 /// `grep -rn "^class .* extends .*Widget" <component>/_impl/ | head`
 /// Verified: button → `Button` family (`PrimaryButton`, …), card → `Card`,
-/// input → `TextField`, badge → `*Badge`, switch → `Switch`.
+/// input → `TextField`, badge → `*Badge`, switch → `Switch`,
+/// avatar → `Avatar`, checkbox → `Checkbox` (+ `CheckboxState`),
+/// divider → `Divider`, progress → `Progress`,
+/// tabs → `Tabs` + `TabItem` (concrete `TabChild`).
 ///
 /// Prop defaults mirror the canvas blocks' `propsSchema` in `components.json`
 /// (reconciled 2026-09-04; entry labels mirror `components.json`
@@ -22,11 +25,23 @@
 /// `TextButton` exist (builder supports it anyway); switch schema has a
 /// `label` prop but `Switch` takes no label (only `leading`/`trailing`), so
 /// the catalog intentionally omits it.
+/// No canvas blocks (`components[].canvas.propsSchema`) exist for avatar,
+/// checkbox, divider, progress, or tabs in the pinned kit's
+/// `components.json` (verified by scan 2026-09-05 — no `canvas` key on any
+/// of the 134 components), so those five defaults are invented, documented
+/// per builder below, and use only bool/string/num prop types already
+/// established by the seed kinds.
 library;
 
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+// Direct component-library import: the barrel exports `TabItem`/`TabChild`
+// from three navigation libraries (`tabs`, `tab_container`, `tab_list`), so
+// the prefixed barrel names do not resolve to the `Tabs`-compatible ones.
+// Only `Tabs` itself is unique to this library.
+import 'package:flutter_shadcn_kit/registry/components/navigation/tabs/tabs.dart'
+    as tabs;
 
 /// Builds a canvas node widget from stringly-typed props.
 typedef NodeBuilder = Widget Function(Map<String, dynamic> props);
@@ -219,6 +234,118 @@ Widget _buildSwitch(Map<String, dynamic> props) {
   return _SwitchCell(initialValue: value, disabled: disabled);
 }
 
+Widget _buildAvatar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. `Avatar`
+  // requires `initials`; color/size/badge/theme all fall back to theme
+  // defaults, so a bare initials-only construction is canvas-true.
+  final initials = (props['initials'] ?? 'AB') as String;
+  return shadcn.Avatar(initials: initials);
+}
+
+/// Local state for the catalog checkbox (builders are stateless).
+/// `Checkbox` is controlled (`state` + `onChanged`, both required params),
+/// so the cell owns a `CheckboxState` exactly like `_SwitchCell` owns a bool.
+class _CheckboxCell extends StatefulWidget {
+  final bool initialValue;
+  final bool disabled;
+
+  const _CheckboxCell({required this.initialValue, required this.disabled});
+
+  @override
+  State<_CheckboxCell> createState() => _CheckboxCellState();
+}
+
+class _CheckboxCellState extends State<_CheckboxCell> {
+  late shadcn.CheckboxState _state = widget.initialValue
+      ? shadcn.CheckboxState.checked
+      : shadcn.CheckboxState.unchecked;
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.Checkbox(
+      state: _state,
+      // Null `onChanged` renders the disabled state (auto-detected).
+      onChanged: widget.disabled ? null : (s) => setState(() => _state = s),
+    );
+  }
+}
+
+Widget _buildCheckbox(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented to mirror the
+  // switch kind's bool-pair convention (`value` + `disabled`).
+  final value = (props['value'] ?? false) as bool;
+  final disabled = (props['disabled'] ?? false) as bool;
+  return _CheckboxCell(initialValue: value, disabled: disabled);
+}
+
+Widget _buildDivider(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. `Divider` takes
+  // an optional `child`, so the canvas-level `label` prop renders as that
+  // child (mirrors the input builder's label-caption pattern).
+  final label = (props['label'] ?? '') as String;
+  return shadcn.Divider(child: label.isEmpty ? null : Text(label));
+}
+
+Widget _buildProgress(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. `Progress`
+  // asserts `progress` lies within [min, max], so hand-written docs are
+  // clamped instead of crashing. Parsed via `num` because `jsonDecode`
+  // yields `int` for whole numbers (same trap as §6's JSON doubles note).
+  final value = ((props['progress'] as num?)?.toDouble() ?? 0.5).clamp(
+    0.0,
+    1.0,
+  );
+  return shadcn.Progress(progress: value);
+}
+
+/// Local tab-index state for the catalog tabs (builders are stateless).
+/// Headers only — content panes are app-level (`IndexedStack` in the
+/// component's own preview) and have no canvas counterpart.
+class _TabsCell extends StatefulWidget {
+  final int initialIndex;
+  final String firstLabel;
+  final String secondLabel;
+
+  const _TabsCell({
+    required this.initialIndex,
+    required this.firstLabel,
+    required this.secondLabel,
+  });
+
+  @override
+  State<_TabsCell> createState() => _TabsCellState();
+}
+
+class _TabsCellState extends State<_TabsCell> {
+  late int _index = widget.initialIndex.clamp(0, 1);
+
+  @override
+  Widget build(BuildContext context) {
+    return tabs.Tabs(
+      index: _index,
+      onChanged: (i) => setState(() => _index = i.clamp(0, 1)),
+      children: [
+        // `TabItem` is the concrete `TabChild` (per the kit's preview).
+        tabs.TabItem(child: Text(widget.firstLabel)),
+        tabs.TabItem(child: Text(widget.secondLabel)),
+      ],
+    );
+  }
+}
+
+Widget _buildTabs(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two tab labels
+  // plus the selected index (parsed via `num`, see _buildProgress).
+  final index = (props['index'] as num?)?.toInt() ?? 0;
+  final first = (props['tab1'] ?? 'Tab 1') as String;
+  final second = (props['tab2'] ?? 'Tab 2') as String;
+  return _TabsCell(
+    initialIndex: index,
+    firstLabel: first,
+    secondLabel: second,
+  );
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -265,6 +392,36 @@ final List<CatalogEntry> kCatalog = [
     label: 'Toggle control for boolean values with themed styling.',
     defaults: const {'value': false, 'disabled': false},
     build: _buildSwitch,
+  ),
+  CatalogEntry(
+    kind: 'avatar',
+    label: 'Initials/photo avatar with badge and group support.',
+    defaults: const {'initials': 'AB'},
+    build: _buildAvatar,
+  ),
+  CatalogEntry(
+    kind: 'checkbox',
+    label: 'Animated checkbox with tri-state support and controllers.',
+    defaults: const {'value': false, 'disabled': false},
+    build: _buildCheckbox,
+  ),
+  CatalogEntry(
+    kind: 'divider',
+    label: 'Horizontal and vertical separators with optional label support.',
+    defaults: const {'label': ''},
+    build: _buildDivider,
+  ),
+  CatalogEntry(
+    kind: 'progress',
+    label: 'Normalized linear progress bar with theme overrides.',
+    defaults: const {'progress': 0.5},
+    build: _buildProgress,
+  ),
+  CatalogEntry(
+    kind: 'tabs',
+    label: 'Tabbed navigation primitives with lists and panes.',
+    defaults: const {'tab1': 'Tab 1', 'tab2': 'Tab 2', 'index': 0},
+    build: _buildTabs,
   ),
 ];
 

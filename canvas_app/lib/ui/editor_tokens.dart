@@ -73,17 +73,18 @@ class EditorColors {
     bezel: Color(0xFFE4E1E7),
   );
 
-  /// Light counterpart, derived from the reference's light mode (body
-  /// `#ffffff` / `#1d1b20`) with the same role structure as [dark].
+  /// Light counterpart, measured from the reference's light mode (body
+  /// `#FEF7FF` / `#1D1B20`, app-root gaps `#F3EDF7`) with the same role
+  /// structure as [dark]. Tiles and the canvas well use `#F7F2FA`.
   static const light = EditorColors(
-    surface: Color(0xFFFFFFFF),
-    surfaceContainer: Color(0xFFF3EDF7),
+    surface: Color(0xFFFEF7FF),
+    surfaceContainer: Color(0xFFF7F2FA),
     surfaceContainerHigh: Color(0xFFECE6F0),
     onSurface: Color(0xFF1D1B20),
     onSurfaceVariant: Color(0xFF49454F),
-    disabled: Color(0xFFC9C4D1),
+    disabled: Color(0xFFCAC4D0),
     railActive: Color(0xFFE8DEF8),
-    onRailActive: Color(0xFF21005D),
+    onRailActive: Color(0xFF1D192B),
     toolbarActive: Color(0xFF6750A4),
     onToolbarActive: Color(0xFFFFFFFF),
     bezel: Color(0xFF322F35),

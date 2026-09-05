@@ -14,6 +14,7 @@ import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/icon_rail.dart';
+import 'package:canvas_app/ui/keyboard_shortcuts.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/open_dialog.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
@@ -135,48 +136,51 @@ class _EditorShellState extends State<EditorShell> {
         final doc = widget.store.doc;
         final colors =
             doc.theme.dark ? EditorColors.dark : EditorColors.light;
-        if (_preview) {
-          return PreviewPlayer(
-            doc: doc,
-            themeOverride: doc.theme,
-            onExit: () => setState(() => _preview = false),
-          );
-        }
+        // EditorTheme sits above both branches so the preview chrome can
+        // use the same tokens as the editor (it previously had no styled
+        // ancestor at all, which is why its title rendered unstyled).
         return EditorTheme(
           colors: colors,
-          child: ThemedCanvas(
-            theme: doc.theme,
-            child: Scaffold(
-              backgroundColor: colors.surface,
-              body: Row(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  SizedBox(
-                    width: EditorMetrics.sidePanelWidth,
-                    child: Row(
+          child: _preview
+              ? PreviewPlayer(
+                  doc: doc,
+                  themeOverride: doc.theme,
+                  onExit: () => setState(() => _preview = false),
+                )
+              : ThemedCanvas(
+                  theme: doc.theme,
+                  child: Scaffold(
+                    backgroundColor: colors.surface,
+                    body: Row(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        EditorIconRail(
-                          activeId: _railId,
-                          onSelect: (id) => setState(() => _railId = id),
+                        SizedBox(
+                          width: EditorMetrics.sidePanelWidth,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              EditorIconRail(
+                                activeId: _railId,
+                                onSelect: (id) =>
+                                    setState(() => _railId = id),
+                              ),
+                              Expanded(child: _leftPanel()),
+                            ],
+                          ),
                         ),
-                        Expanded(child: _leftPanel()),
+                        Expanded(child: _canvasArea()),
+                        SizedBox(
+                          width: EditorMetrics.promptPanelWidth,
+                          child: RightAside(
+                            store: widget.store,
+                            nodeId: _selectedNodeId,
+                            itemId: _selectedItemId(),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  Expanded(child: _canvasArea()),
-                  SizedBox(
-                    width: EditorMetrics.promptPanelWidth,
-                    child: RightAside(
-                      store: widget.store,
-                      nodeId: _selectedNodeId,
-                      itemId: _selectedItemId(),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
+                ),
         );
       },
     );
@@ -252,13 +256,30 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Widget _canvasArea() {
-    return Stack(
-      children: [
+    return EditorShortcuts(
+      store: widget.store,
+      selectedNodeId: _selectedNodeId,
+      onDeleteNode: (id) {
+        widget.store.deleteNode(id);
+        setState(() => _selectedNodeId = null);
+      },
+      onDuplicateNode: (id) {
+        final nodes = widget.store.doc.nodes;
+        if (nodes.any((n) => n.id == id)) {
+          setState(() => _selectedNodeId = widget.store.duplicateNode(id));
+        } else {
+          setState(() => _selectedNodeId = null);
+        }
+      },
+      onPreview: () => setState(() => _preview = true),
+      child: Stack(
+        children: [
         Positioned.fill(
           child: DesignCanvas(
             store: widget.store,
             zoom: _zoom,
             panMode: _panMode,
+            selectedNodeId: _selectedNodeId,
             onSelectNode: (id) => setState(() => _selectedNodeId = id),
           ),
         ),
@@ -289,7 +310,8 @@ class _EditorShellState extends State<EditorShell> {
             onFit: () => _setZoom(0.79),
           ),
         ),
-      ],
+        ],
+      ),
     );
   }
 

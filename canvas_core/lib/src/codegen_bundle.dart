@@ -1,7 +1,7 @@
 /// Clean-folders bundle exporter (P2c): screens + shadcn bodies + manifest + zip.
 ///
 /// Pure Dart (CLI-reusable): builds the installable `screen add` bundle from
-/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 5 catalog
+/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 10 catalog
 /// kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
 library;
 
@@ -38,7 +38,10 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 5 catalog kinds.
+// Exact metadata for the 10 catalog kinds (snapshotted from the pinned kit's
+// `components.json`: destination prefix from `files[].destination`,
+// alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
+// unknown dep ids warn at export time, same as the seed kinds' `text_field`).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -55,6 +58,21 @@ const _kinds = <String, _KindSpec>{
   'switch': _KindSpec('{installPath}/components/form/switch/',
       ['border_utils', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'style_value', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'avatar': _KindSpec('{installPath}/components/display/avatar/',
+      ['component_schema', 'geometry_extensions', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'checkbox': _KindSpec('{installPath}/components/form/checkbox/',
+      ['animated_value_builder', 'border_utils', 'clickable', 'color_extensions', 'component_schema', 'constants', 'form_control', 'form_value_supplier', 'style_value', 'text_modifiers', 'theme'],
+      {'animation_kit': '^0.0.2', 'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'divider': _KindSpec('{installPath}/components/display/divider/',
+      ['animated_value_builder', 'axis', 'axis_insets', 'axis_insets_directional', 'axis_insets_geometry', 'component_schema', 'constants', 'style_value', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'progress': _KindSpec('{installPath}/components/display/progress/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'tabs': _KindSpec('{installPath}/components/navigation/tabs/',
+      ['border_utils', 'component_schema', 'constants', 'fade_scroll', 'geometry_extensions', 'outlined_container', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['sortable', 'text', 'button']),
 };
 
 const _installPath = '{installPath}/';

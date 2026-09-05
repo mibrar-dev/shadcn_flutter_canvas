@@ -26,6 +26,7 @@ import 'package:flutter/material.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/theme_bar.dart';
 
 /// Preview host over [doc] starting at [startScreenId] (or the first screen).
@@ -83,44 +84,68 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   @override
   Widget build(BuildContext context) {
     final current = _currentId == null ? null : _screen(_currentId!);
+    final colors = EditorTheme.of(context);
     return ThemedCanvas(
       theme: widget.themeOverride ?? widget.doc.theme,
-      child: Column(
-        children: [
-          Row(
+      child: Scaffold(
+        backgroundColor: colors.surface,
+        body: SafeArea(
+          child: Column(
             children: [
-              shadcn.GhostButton(
-                onPressed: _onBack,
-                child: const Text('‹ Back'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
+                child: Row(
+                  children: [
+                    shadcn.GhostButton(
+                      onPressed: _onBack,
+                      child: const Text('‹ Back'),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        current?.name ?? 'No screens',
+                        style: EditorType.screenLabel
+                            .copyWith(color: colors.onSurface),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(width: 8),
-              Expanded(child: Text(current?.name ?? 'No screens')),
+              const SizedBox(height: 8),
+              Expanded(
+                child: current == null
+                    ? Center(
+                        child: Text(
+                          'No screens to preview',
+                          style: EditorType.field.copyWith(
+                            color: colors.onSurfaceVariant,
+                          ),
+                        ),
+                      )
+                    : ListView(
+                        padding: const EdgeInsets.all(16),
+                        children: [
+                          for (final node in widget.doc.nodes)
+                            if (node.screenId == current.id)
+                              Padding(
+                                padding:
+                                    const EdgeInsets.only(bottom: 12),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    for (final item in node.items)
+                                      _previewItem(item),
+                                  ],
+                                ),
+                              ),
+                        ],
+                      ),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: current == null
-                ? const Center(child: Text('No screens to preview'))
-                : ListView(
-                    padding: const EdgeInsets.all(16),
-                    children: [
-                      for (final node in widget.doc.nodes)
-                        if (node.screenId == current.id)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 12),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                for (final item in node.items)
-                                  _previewItem(item),
-                              ],
-                            ),
-                          ),
-                    ],
-                  ),
-          ),
-        ],
+        ),
       ),
     );
   }

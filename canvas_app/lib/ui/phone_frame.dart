@@ -8,11 +8,18 @@
 /// kinds render fallback output instead of crashing.
 library;
 
+import 'dart:math' as math;
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_core/canvas_core.dart';
+
+/// Floor for the node clamp below: guarantees a finite box even for drops at
+/// the screen's far edges (content clips at the frame instead of exploding).
+const double _kMinNodeExtent = 48.0;
 
 /// The bezel + screen body. Clips [child] to the inner screen radius.
 class PhoneFrame extends StatelessWidget {
@@ -140,6 +147,12 @@ class ScreenSurface extends StatelessWidget {
   /// math can stay zoom-aware if the hit-testing path ever changes.
   final double zoom;
 
+  /// Live global pointer position tracked by the enclosing [DesignCanvas].
+  /// When available, the drop point is derived from it (the true pointer)
+  /// instead of `DragTargetDetails.offset` (the drag feedback's top-left,
+  /// which trails the pointer by the grab offset inside the tile).
+  final ValueListenable<Offset?>? dropPointer;
+
   const ScreenSurface({
     super.key,
     required this.screen,
@@ -148,6 +161,7 @@ class ScreenSurface extends StatelessWidget {
     this.onSelectNode,
     this.onDropKind,
     this.zoom = 1.0,
+    this.dropPointer,
   });
 
   @override
@@ -159,7 +173,10 @@ class ScreenSurface extends StatelessWidget {
         onAcceptWithDetails: (details) {
           final box = context.findRenderObject() as RenderBox?;
           if (box == null) return;
-          final local = box.globalToLocal(details.offset);
+          // Prefer the live pointer (true drop point) when the enclosing
+          // canvas tracked one; fall back to the feedback corner otherwise.
+          final global = dropPointer?.value ?? details.offset;
+          final local = box.globalToLocal(global);
           // ZOOM FINDING (test-driven, see canvas_store_screens_test.dart
           // 'drop at zoom 2.0 lands at unscaled screen coords'): pass the
           // converted point through WITHOUT dividing by [zoom].
@@ -217,13 +234,33 @@ class ScreenSurface extends StatelessWidget {
                               borderRadius: BorderRadius.circular(8),
                             )
                           : null,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          for (final item in node.items)
-                            buildCatalogItem(item.kind, item.props),
-                        ],
+                      // Positioned children get UNBOUNDED constraints from the
+                      // Stack, which detonates kit widgets with internal
+                      // Expanded rows (e.g. TextField's input row throws
+                      // "flex but unbounded width" and renders nothing).
+                      // Clamp to the remaining inner-screen room so every
+                      // catalog widget gets the finite box it needs.
+                      // Intrinsically-sized widgets (button/card/badge) are
+                      // unaffected — only the maximum shrinks.
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: math.max(
+                            _kMinNodeExtent,
+                            EditorMetrics.phoneInnerWidth - node.x,
+                          ),
+                          maxHeight: math.max(
+                            _kMinNodeExtent,
+                            EditorMetrics.phoneInnerHeight - node.y,
+                          ),
+                        ),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            for (final item in node.items)
+                              buildCatalogItem(item.kind, item.props),
+                          ],
+                        ),
                       ),
                     ),
                   ),
