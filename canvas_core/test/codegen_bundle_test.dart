@@ -100,8 +100,7 @@ void main() {
     expect(bundle.pubspecPatch, contains('dependencies:'));
   });
 
-  test('buildCleanBundle warns on unknown kinds instead of crashing', () {
-    final doc = ScreenDoc.fromJson({
+  test('buildCleanBundle warns on unknown kinds instead of crashing', () {    final doc = ScreenDoc.fromJson({
       'screens': [
         {'id': 's1', 'name': 'Pay', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
       ],
@@ -130,4 +129,202 @@ void main() {
     expect((manifest['warnings'] as List), isNotEmpty);
     expect(bundle.files.keys, contains('lib/ui/screens/pay_screen.dart'));
   });
+
+  test('tap action emits a pushNamed navigation to the screen route', () {
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
+    final payScreen = bundle.files['lib/ui/screens/pay_screen.dart']!;
+
+    // Vanilla StatefulWidget with no store dependency (easy adoption).
+    expect(payScreen, contains('extends StatefulWidget'));
+    expect(payScreen, contains('no store dependency'));
+    expect(payScreen, isNot(contains('CanvasStore')));
+
+    // The Pay button navigates to the Done route by name.
+    expect(payScreen, contains('GestureDetector('));
+    expect(payScreen, contains("pushNamed('/done')"));
+    expect(payScreen, contains('// transition: slide'));
+
+    // The Done screen has no actions: no navigation emitted there.
+    final doneScreen = bundle.files['lib/ui/screens/done_screen.dart']!;
+    expect(doneScreen, isNot(contains('pushNamed')));
+    expect(doneScreen, isNot(contains('Navigator')));
+  });
+
+  test('unknown action target emits a comment and no navigation', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'button',
+              'label': 'Lost',
+              'action': {'to': 'missing', 'transition': 'fade'},
+            },
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Dangling', 'brief': ''},
+    });
+
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    expect(screen, contains("unknown target 'missing'"));
+    expect(screen, isNot(contains('pushNamed')));
+    expect(screen, isNot(contains('Navigator')));
+  });
+
+  test('hiddenOn emits a tier conditional in the bundle idiom', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'hiddenOn': ['mobile'],
+          'items': [
+            {'id': 'i1', 'kind': 'button', 'label': 'Pay'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Hidden', 'brief': ''},
+    });
+
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    expect(screen, contains('LayoutBuilder'));
+    expect(screen, contains("tier == 'mobile'"));
+    expect(screen, contains('SizedBox.shrink'));
+    expect(screen, contains("'Pay'"));
+  });
+
+  test('breakpointValues merge per tier with a static default', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'breakpointValues': {
+            'desktop': {'label': 'Wide Pay'},
+          },
+          'items': [
+            {'id': 'i1', 'kind': 'button', 'label': 'Pay'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Overrides', 'brief': ''},
+    });
+
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    expect(screen, contains('LayoutBuilder'));
+    expect(screen, contains("tier == 'desktop'"));
+    expect(screen, contains("'Wide Pay'"));
+    expect(screen, contains("'Pay'"));
+  });
+
+  test('docs without responsive/actions produce byte-identical output', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'button',
+              'label': 'Pay',
+              'variant': 'primary',
+            },
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Plain', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, kTestSources);
+    expect(
+      bundle.files['lib/ui/screens/home_screen.dart'],
+      kBundleScreenGolden,
+    );
+  });
 }
+
+/// Byte-identical golden for the bundle screen scaffold on a plain doc (no
+/// actions, no responsive fields): responsive/action emission must not alter
+/// output for such docs. Regenerate only by reviewing the exporter diff.
+const kBundleScreenGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// Screen: Home (id: s1). Component bodies ship
+// separately under lib/ui/shadcn/ — wire them here:
+// - button -> lib/ui/shadcn/components/control/button/button.dart
+import 'package:flutter/widgets.dart';
+
+/// Home screen.
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+      // button 'Pay' (variant primary).
+      Text('Pay'),
+      ],
+    );
+  }
+}
+''';

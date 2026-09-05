@@ -63,7 +63,9 @@ void main() {
     await _pumpInspector(tester, store, nodeId: nodeId, itemId: itemId);
 
     expect(find.byType(shadcn.TextField), findsOneWidget);
-    expect(find.byType(shadcn.Select<String>), findsNWidgets(2));
+    // variant + size prop selects plus the "On tap" target + transition
+    // selects (Track K).
+    expect(find.byType(shadcn.Select<String>), findsNWidgets(4));
     expect(find.byType(shadcn.Switch), findsOneWidget);
   });
 

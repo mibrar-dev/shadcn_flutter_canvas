@@ -111,6 +111,12 @@ void main() {
       final (nodeId, itemId) = _addButtonNode(store);
       await _pumpInspector(tester, store, nodeId: nodeId, itemId: itemId);
 
+      // The inspector list lazily builds below-the-fold cards: scroll the
+      // "On tap" card (Track K, above Visibility) into view so the
+      // Visibility section builds before asserting.
+      await tester.ensureVisible(find.text('On tap'));
+      await tester.pump();
+
       expect(find.text('Visibility'), findsOneWidget);
       expect(find.text('Mobile'), findsOneWidget);
       expect(find.text('Tablet'), findsOneWidget);

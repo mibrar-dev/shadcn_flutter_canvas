@@ -108,7 +108,13 @@ void main() {
       );
       expect(
         tester.widget<PhoneFrame>(find.byType(PhoneFrame)).screenColor,
-        EditorColors.dark.surface,
+        // Track K: `surface` screens follow the components (light) theme,
+        // not the dark chrome.
+        Color(
+          resolveCanvasThemeData(
+            _componentsLight,
+          ).colorScheme.background.toARGB32(),
+        ),
       );
       // ...canvas components stayed put (correct new behavior, not a bug).
       expect(

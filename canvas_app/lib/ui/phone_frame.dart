@@ -14,6 +14,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/responsive.dart';
@@ -343,6 +344,23 @@ class _FlowHit {
   });
 }
 
+/// Screen background for [screen] inside the inner components-themed canvas.
+///
+/// `bg == 'surface'` follows the kit scheme background — read live from the
+/// enclosing `ThemedCanvas` via `shadcn.Theme.of(context)` — while any other
+/// `bg` keeps the chrome [EditorColors.surface]. The kit color converts
+/// through the same `Color(color.toARGB32())` idiom as `_materialColor` in
+/// `theme_bar.dart` (no hardcoded hex); this makes the long-dead
+/// `screen.bg` config live again.
+Color _screenBackground(
+  BuildContext context,
+  EditorColors chrome,
+  CanvasScreen screen,
+) {
+  if (screen.bg != 'surface') return chrome.surface;
+  return Color(shadcn.Theme.of(context).colorScheme.background.toARGB32());
+}
+
 /// Renders one screen's nodes into a [PhoneFrame], with selection
 /// affordances, in flow layout.
 ///
@@ -594,7 +612,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       (id, _) => !widget.nodes.any((node) => node.id == id),
     );
     final frame = PhoneFrame(
-      screenColor: colors.surface,
+      screenColor: _screenBackground(context, colors, widget.screen),
       outerWidth: _innerWidth + EditorMetrics.phoneBezel * 2,
       child: DragTarget<String>(
         onAcceptWithDetails: (details) {

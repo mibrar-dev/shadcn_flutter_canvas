@@ -3,6 +3,13 @@
 /// Pure Dart (CLI-reusable): builds the installable `screen add` bundle from
 /// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 29
 /// canvas-ready kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
+///
+/// Emitted screens are vanilla `StatefulWidget`s with no store dependency
+/// (flutter + kit only): adopt any state management by lifting the `build`
+/// body into your own widget. Per-node responsive uses the same
+/// tier-conditional idiom as `codegen_single.dart`; tap actions navigate
+/// with `Navigator.pushNamed` to the target screen's route (unknown `to`
+/// ids emit a comment and no navigation, never a crash).
 library;
 
 import 'dart:convert';
@@ -347,8 +354,13 @@ String _barrel(String kind) => '$_installRoot/${_kinds[kind]!.prefix.substring(_
 /// Minimal screen scaffold: package imports plus item placeholders.
 /// Component bodies are NOT inlined — they ship under `lib/ui/shadcn/`
 /// (barrel paths listed in the header for wiring).
+///
+/// Vanilla `StatefulWidget` with no store dependency (see the library docs):
+/// per-node responsive rides the `codegen_single.dart` tier-conditional
+/// idiom, and items with tap actions navigate with `Navigator.pushNamed`.
 String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   final routes = {for (final s in doc.screens) s.id: _routeOf(s.name)};
+  final ids = {for (final s in doc.screens) s.id};
   final nodes = [
     for (final n in doc.nodes)
       if (n.screenId == screen.id) n,
@@ -364,17 +376,7 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
     ..sort();
   final rows = <String>[];
   for (final node in nodes) {
-    for (final item in node.items) {
-      final detail = _detailOf(item);
-      final action = item.action == null
-          ? ''
-          : ' — pushes ${routes[item.action!.to] ?? '/${item.action!.to}'}';
-      rows.add(
-        "      // ${item.kind} '${_labelOf(item)}'"
-        "${detail.isEmpty ? '' : ' ($detail)'}$action.",
-      );
-      rows.add("      Text('${_labelOf(item)}'),");
-    }
+    _writeBundleNode(rows, node, routes, ids, '      ');
   }
   if (rows.isEmpty) rows.add('      // (empty screen).');
   final barrels = usedKinds.isEmpty ? '// (no known components on this screen).' : [for (final k in usedKinds) '// - $k -> ${_barrel(k)}'].join('\n');
@@ -386,9 +388,19 @@ $barrels
 import '$_flutterWidgets';
 
 /// ${screen.name} screen.
-class ${cls}Screen extends StatelessWidget {
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class ${cls}Screen extends StatefulWidget {
   const ${cls}Screen({super.key});
 
+  @override
+  State<${cls}Screen> createState() => _${cls}ScreenState();
+}
+
+class _${cls}ScreenState extends State<${cls}Screen> {
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -399,6 +411,189 @@ ${rows.join('\n')}
   }
 }
 ''';
+}
+
+/// Whether [node] needs a responsive wrapper: the same rule as
+/// `codegen_single.dart` — a known `hiddenOn` tier or a known-tier
+/// `breakpointValues` entry. Unknown tiers are inert, so docs without
+/// responsive fields keep byte-identical output.
+bool _isBundleResponsive(CanvasNode node) =>
+    _bundleHiddenTiers(node).isNotEmpty || _bundleOverrideTiers(node).isNotEmpty;
+
+/// Known `hiddenOn` tiers, sorted (deterministic conditions/comments).
+List<String> _bundleHiddenTiers(CanvasNode node) =>
+    (node.hiddenOn.where(kResponsiveTiers.contains).toList()..sort());
+
+/// Known `breakpointValues` tiers, sorted (deterministic branch order).
+List<String> _bundleOverrideTiers(CanvasNode node) =>
+    (node.breakpointValues.keys.where(kResponsiveTiers.contains).toList()
+      ..sort());
+
+/// One-line `// kind 'label' (...)` doc comment for [item], naming the tap
+/// target route (or the unknown-target fallback) when it has an action.
+String _bundleItemComment(
+  CanvasItem item,
+  Map<String, String> routes,
+  Set<String> ids,
+) {
+  final detail = _detailOf(item);
+  final head =
+      "// ${item.kind} '${_labelOf(item)}'${detail.isEmpty ? '' : ' ($detail)'}";
+  final action = item.action;
+  if (action == null) return '$head.';
+  final route = ids.contains(action.to) ? routes[action.to] : null;
+  if (route == null) return "$head — unknown target '${action.to}': no navigation.";
+  return '$head — pushes $route (transition: ${action.transition}).';
+}
+
+/// Placeholder widget expression lines for [item] (unindented, trailing
+/// comma on the last line). An item whose action targets a known screen
+/// wraps in a `GestureDetector` pushing the route by name (the transition
+/// rides along as a comment — `pushNamed` carries no transition); unknown
+/// `to` ids and action-less items render the bare placeholder, never a
+/// crash.
+List<String> _bundleItemExpr(
+  CanvasItem item,
+  Map<String, String> routes,
+  Set<String> ids,
+) {
+  final label = _labelOf(item);
+  final action = item.action;
+  if (action == null) return ["Text('$label'),"];
+  final route = ids.contains(action.to) ? routes[action.to] : null;
+  if (route == null) return ["Text('$label'),"];
+  return [
+    'GestureDetector(',
+    "  onTap: () => Navigator.of(context).pushNamed('$route'), // transition: ${action.transition}",
+    "  child: Text('$label'),",
+    '),',
+  ];
+}
+
+/// Writes [node]'s placeholder rows at [indent]: plain item widgets, or —
+/// for responsive nodes — a `LayoutBuilder` tier conditional in the
+/// `codegen_single.dart` idiom (tier resolution line, hidden-tier early
+/// return, one `if (tier == …)` branch per override tier with statically
+/// merged props, then the default branch). A node hidden on every tier
+/// emits a bare `SizedBox.shrink()`.
+void _writeBundleNode(
+  List<String> rows,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+) {
+  final hidden = _bundleHiddenTiers(node);
+  final tiers = _bundleOverrideTiers(node);
+  if (hidden.length == kResponsiveTiers.length) {
+    rows
+      ..add('$indent// hidden on: ${hidden.join(', ')} (all tiers)')
+      ..add('${indent}const SizedBox.shrink(),');
+    return;
+  }
+  if (!_isBundleResponsive(node)) {
+    for (final item in node.items) {
+      rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+      for (final line in _bundleItemExpr(item, routes, ids)) {
+        rows.add('$indent$line');
+      }
+    }
+    return;
+  }
+  final summary = [
+    if (hidden.isNotEmpty) 'hidden on ${hidden.join(', ')}',
+    if (tiers.isNotEmpty) 'overrides on ${tiers.join(', ')}',
+  ].join('; ');
+  rows
+    ..add('$indent// responsive ($summary)')
+    ..add('${indent}LayoutBuilder(')
+    ..add('$indent  builder: (context, constraints) {')
+    ..add(
+      "$indent    final tier = constraints.maxWidth >= 1024 "
+      "? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';",
+    );
+  if (hidden.isNotEmpty) {
+    final cond = hidden.map((t) => "tier == '$t'").join(' || ');
+    rows.add('$indent    if ($cond) return const SizedBox.shrink();');
+  }
+  for (final tier in tiers) {
+    _writeBundleBranch(
+      rows,
+      node,
+      node.breakpointValues[tier]!,
+      routes,
+      ids,
+      '$indent    ',
+      "tier == '$tier'",
+    );
+  }
+  _writeBundleBranch(rows, node, const {}, routes, ids, '$indent    ', null);
+  rows
+    ..add('$indent  },')
+    ..add('$indent),');
+}
+
+/// Writes one tier branch (or the default branch when [guard] is null):
+/// the item doc comments above a `return <expr>;` for the node's
+/// placeholder content with [overrides] statically merged over item props.
+void _writeBundleBranch(
+  List<String> rows,
+  CanvasNode node,
+  Map<String, dynamic> overrides,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  String? guard,
+) {
+  final items = [
+    for (final item in node.items)
+      overrides.isEmpty
+          ? item
+          : item.copyWith(props: {...item.props, ...overrides}),
+  ];
+  for (final item in items) {
+    rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+  }
+  final expr = _bundleNodeExpr(items, routes, ids);
+  final prefix = guard == null ? 'return ' : 'if ($guard) return ';
+  final lines = [
+    for (final line in expr.split('\n')) if (line.isNotEmpty) line,
+  ];
+  for (var i = 0; i < lines.length; i++) {
+    final tail = i == lines.length - 1 ? ';' : '';
+    if (i == 0) {
+      rows.add('$indent$prefix${lines[i]}$tail');
+    } else {
+      rows.add('$indent${lines[i]}$tail');
+    }
+  }
+}
+
+/// Placeholder content expression for [items] (unindented, no trailing
+/// comma): one item renders its widget, empty renders
+/// `SizedBox.shrink()`, many render a `Column` of widgets.
+String _bundleNodeExpr(
+  List<CanvasItem> items,
+  Map<String, String> routes,
+  Set<String> ids,
+) {
+  if (items.length == 1) {
+    var out = _bundleItemExpr(items.single, routes, ids).join('\n').trimRight();
+    if (out.endsWith(',')) out = out.substring(0, out.length - 1);
+    return out;
+  }
+  if (items.isEmpty) return 'SizedBox.shrink()';
+  final buf = StringBuffer()
+    ..writeln('Column(')
+    ..writeln('mainAxisSize: MainAxisSize.min,')
+    ..writeln('children: [');
+  for (final item in items) {
+    for (final line in _bundleItemExpr(item, routes, ids)) {
+      buf.writeln('  $line');
+    }
+  }
+  buf.write(')');
+  return buf.toString();
 }
 
 String _labelOf(CanvasItem item) {

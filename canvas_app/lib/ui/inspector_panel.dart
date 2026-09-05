@@ -54,6 +54,14 @@ import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 /// [EditorMetrics.panelInset].
 const double _kInspectorGap = 8.0;
 
+/// Legal `NodeAction.transition` values for the "On tap" editor: the exact
+/// set the AI contract validator enforces ([kAiAllowedTransitions] in
+/// canvas_core's `screen_doc_schema.dart` — also referenced by
+/// `prompt_builder.dart`'s behavior section and `validateRefs`), sorted for
+/// a deterministic dropdown order. Never invent transitions here.
+final List<String> _kActionTransitions =
+    kAiAllowedTransitions.toList()..sort();
+
 /// Fixed width of the row-gap stepper readout (fits two digits plus padding;
 /// mirrors the zoom readout role — see [EditorMetrics.zoomLabelWidth]).
 const double _kGapValueWidth = 48.0;
@@ -296,8 +304,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
 
   /// One tier toggle: filled while visible, outlined while hidden. Tapping
   /// flips the tier through [_toggleVisibility].
-  Widget _visibilityToggle(CanvasNode node, String tier, bool visible) {
-    final label = visible ? 'Visible' : 'Hidden';
+  Widget _visibilityToggle(CanvasNode node, String tier, bool visible) {    final label = visible ? 'Visible' : 'Hidden';
     if (visible) {
       return shadcn.PrimaryButton(
         key: ValueKey('visibility-$tier'),
@@ -311,6 +318,113 @@ class _InspectorPanelState extends State<InspectorPanel> {
       size: shadcn.ButtonSize.small,
       onPressed: () => _toggleVisibility(node, tier, true),
       child: Text(label),
+    );
+  }
+
+  /// Per-item "On tap" action editor: a screen picker (dropdown listing every
+  /// doc screen by name; the value is the action target id, or null when the
+  /// item has no action or points at a missing screen) plus a transition
+  /// select (legal values from [_kActionTransitions], never invented) and a
+  /// Clear action button. Every write goes through the undoable
+  /// `store.setItemAction` path (clearing passes null, i.e. the
+  /// `action: () => null` clear). A fresh pick defaults the transition to
+  /// `'slide'` while keeping an existing transition untouched; the
+  /// transition select stays disabled until a target is picked. Deleting a
+  /// screen needs no handling here: `store.deleteScreen` already refuses
+  /// while an action points at it (the shell surfaces the dangling list),
+  /// so a target can never dangle through the UI — a stale `to` from an
+  /// imported doc shows a missing-target note instead of a value.
+  Widget _actionCard(CanvasItem item) {
+    final screens = widget.store.doc.screens;
+    final action = item.action;
+    final targetValue =
+        (action != null && screens.any((s) => s.id == action.to))
+            ? action.to
+            : null;
+    final hasTarget = action != null && targetValue != null;
+    final transitionValue =
+        action != null && _kActionTransitions.contains(action.transition)
+            ? action.transition
+            : null;
+
+    String screenName(String id) {
+      for (final s in screens) {
+        if (s.id == id) return s.name;
+      }
+      return id;
+    }
+
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('On tap', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          shadcn.Select<String>(
+            key: const ValueKey('action-target'),
+            value: targetValue,
+            placeholder: const Text('No action'),
+            itemBuilder: (context, option) => Text(screenName(option)),
+            onChanged: (to) {
+              if (to == null) return;
+              widget.store.setItemAction(
+                widget.nodeId!,
+                widget.itemId!,
+                NodeAction(to: to, transition: action?.transition ?? 'slide'),
+              );
+            },
+            popup: shadcn.SelectPopup(
+              items: shadcn.SelectItemList(
+                children: [
+                  for (final s in screens)
+                    shadcn.SelectItemButton(
+                      value: s.id,
+                      child: Text(s.name),
+                    ),
+                ],
+              ),
+            ).call,
+          ),
+          const SizedBox(height: _kInspectorGap),
+          PropSelectEditor(
+            key: const ValueKey('action-transition'),
+            value: transitionValue,
+            options: _kActionTransitions,
+            placeholderLabel: 'Pick transition',
+            enabled: action != null,
+            onChanged: (v) {
+              if (v != null && action != null) {
+                widget.store.setItemAction(
+                  widget.nodeId!,
+                  widget.itemId!,
+                  NodeAction(to: action.to, transition: v),
+                );
+              }
+            },
+          ),
+          const SizedBox(height: _kInspectorGap),
+          shadcn.OutlineButton(
+            key: const ValueKey('action-clear'),
+            size: shadcn.ButtonSize.small,
+            onPressed: action == null
+                ? null
+                : () => widget.store.setItemAction(
+                      widget.nodeId!,
+                      widget.itemId!,
+                      null,
+                    ),
+            child: const Text('Clear action'),
+          ),
+          if (action != null && !hasTarget) ...[
+            const SizedBox(height: _kInspectorGap),
+            Text(
+              'Target screen “${action.to}” is missing.',
+              style: EditorType.tileLabel,
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -403,6 +517,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
               ),
               if (node != null) ...[
                 const SizedBox(height: EditorMetrics.panelInset),
+                _actionCard(item),
+                const SizedBox(height: EditorMetrics.panelInset),
                 _visibilityCard(node),
               ],
             ],
@@ -431,6 +547,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 ],
               ),
             ),
+            const SizedBox(height: EditorMetrics.panelInset),
+            _actionCard(item),
             if (node != null) ...[
               const SizedBox(height: EditorMetrics.panelInset),
               _visibilityCard(node),
