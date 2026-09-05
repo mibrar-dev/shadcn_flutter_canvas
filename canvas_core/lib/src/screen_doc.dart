@@ -342,32 +342,77 @@ class NodeAction {
 }
 
 /// Canvas-wide theme selection.
+///
+/// `chrome` is the optional app-chrome (editor shell) theme override; null
+/// means the chrome follows the main (components) theme (current behavior,
+/// backward compatible). Chrome is editor-only and never leaks into export
+/// (prompt_builder/codegen keep using the main/components theme).
+/// Chrome-of-chrome is not supported: a nested chrome's own `chrome` is
+/// always null (fromJson forces it).
 class CanvasTheme {
   final String paletteKey;
   final bool dark;
   final String shape;
   final String motion;
 
+  /// The app-chrome theme override; null = chrome follows the main theme.
+  final CanvasTheme? chrome;
+
   const CanvasTheme({
     required this.paletteKey,
     required this.dark,
     required this.shape,
     required this.motion,
+    this.chrome,
   });
 
-  factory CanvasTheme.fromJson(Map<String, dynamic> json) => CanvasTheme(
-        paletteKey: json['paletteKey'] as String,
-        dark: json['dark'] as bool,
-        shape: json['shape'] as String,
-        motion: json['motion'] as String,
+  factory CanvasTheme.fromJson(Map<String, dynamic> json) {
+    for (final key in ['paletteKey', 'dark', 'shape', 'motion']) {
+      if (!json.containsKey(key)) {
+        throw FormatException('CanvasTheme missing required key: $key');
+      }
+    }
+    CanvasTheme? chrome;
+    if (json.containsKey('chrome') && json['chrome'] != null) {
+      final raw = json['chrome'];
+      if (raw is! Map) {
+        throw FormatException('CanvasTheme chrome must be an object');
+      }
+      final cmap = Map<String, dynamic>.from(raw);
+      for (final key in ['paletteKey', 'dark', 'shape', 'motion']) {
+        if (!cmap.containsKey(key)) {
+          throw FormatException(
+            'CanvasTheme chrome missing required key: $key',
+          );
+        }
+      }
+      // Chrome-of-chrome is not supported: nested chrome forced null.
+      chrome = CanvasTheme(
+        paletteKey: cmap['paletteKey'] as String,
+        dark: cmap['dark'] as bool,
+        shape: cmap['shape'] as String,
+        motion: cmap['motion'] as String,
       );
+    }
+    return CanvasTheme(
+      paletteKey: json['paletteKey'] as String,
+      dark: json['dark'] as bool,
+      shape: json['shape'] as String,
+      motion: json['motion'] as String,
+      chrome: chrome,
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'paletteKey': paletteKey,
         'dark': dark,
         'shape': shape,
         'motion': motion,
+        if (chrome != null) 'chrome': chrome!.toJson(),
       };
+
+  /// Effective chrome theme: the override when set, else the main theme.
+  CanvasTheme get effectiveChrome => chrome ?? this;
 }
 
 /// Document title/brief.

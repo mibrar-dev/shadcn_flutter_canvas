@@ -118,6 +118,18 @@ List<String> checkContract(Map<String, dynamic> json) {
           problems.add('theme is missing required key "$key"');
         }
       }
+      final chrome = theme['chrome'];
+      if (chrome != null) {
+        if (chrome is! Map) {
+          problems.add('theme.chrome must be an object');
+        } else {
+          for (final key in ['paletteKey', 'dark', 'shape', 'motion']) {
+            if (!chrome.containsKey(key)) {
+              problems.add('theme.chrome is missing required key "$key"');
+            }
+          }
+        }
+      }
     }
   }
 

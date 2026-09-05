@@ -148,8 +148,13 @@ class _EditorShellState extends State<EditorShell> {
         // ignore: avoid_print
         print("SHELL_BUILD sel=$_selectedNodeId");
         final doc = widget.store.doc;
+        // Track G split: the editor chrome (rail/panels/toolbar/zoom) renders
+        // under the chrome override while the canvas area keeps the main
+        // (components) theme. `effectiveChrome` is chrome-or-main, so a null
+        // chrome preserves the old single-theme behavior.
+        final chrome = doc.theme.effectiveChrome;
         final colors =
-            doc.theme.dark ? EditorColors.dark : EditorColors.light;
+            chrome.dark ? EditorColors.dark : EditorColors.light;
         // EditorTheme sits above both branches so the preview chrome can
         // use the same tokens as the editor (it previously had no styled
         // ancestor at all, which is why its title rendered unstyled).
@@ -162,7 +167,7 @@ class _EditorShellState extends State<EditorShell> {
                   onExit: () => setState(() => _preview = false),
                 )
               : ThemedCanvas(
-                  theme: doc.theme,
+                  theme: chrome,
                   child: Scaffold(
                     backgroundColor: colors.surface,
                     body: Row(
@@ -270,6 +275,9 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   Widget _canvasArea() {
+    // Inner components theme: screens/components render under `doc.theme`
+    // while rail/panels/toolbar/zoom stay under the outer chrome theme.
+    final doc = widget.store.doc;
     return EditorShortcuts(
       store: widget.store,
       selectedNodeId: _selectedNodeId,
@@ -289,7 +297,9 @@ class _EditorShellState extends State<EditorShell> {
       child: Stack(
         children: [
         Positioned.fill(
-          child: DesignCanvas(
+          child: ThemedCanvas(
+            theme: doc.theme,
+            child: DesignCanvas(
             store: widget.store,
             zoom: _zoom,
             panMode: _panMode,
@@ -297,6 +307,7 @@ class _EditorShellState extends State<EditorShell> {
             onSelectNode: (id) {
             setState(() => _selectedNodeId = id);
           },
+          ),
           ),
         ),
         Positioned(

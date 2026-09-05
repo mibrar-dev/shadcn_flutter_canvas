@@ -100,6 +100,7 @@ String _paletteSection(ScreenDoc doc) {
 
 String _themeSection(ScreenDoc doc) {
   final theme = doc.theme;
+  // NOTE: theme.chrome is editor-only and intentionally excluded from export.
   final radius = _radii[theme.shape] ?? '0.625rem';
   final mode = theme.dark ? 'dark' : 'light';
   return 'Theme:\n'

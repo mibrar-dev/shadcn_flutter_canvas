@@ -28,16 +28,11 @@ import 'package:flutter/material.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 
-/// Palette ids offered by the bar. All verified present in
-/// `registryThemePresets` (`registry/shared/theme/preset_themes.dart`).
-const kPaletteOptions = <String>[
-  'clean-slate',
-  'amber-minimal',
-  'mono',
-  'neo-brutalism',
-  'ocean-breeze',
-  'supabase',
-  't3-chat',
+/// Palette ids offered by the bar. Derived from the shared shadcn registry
+/// (`shadcn.registryThemePresets`), so every installed preset is selectable.
+/// Kept as a top-level NAME because callers use `.contains` and for-loops.
+final List<String> kPaletteOptions = <String>[
+  for (final p in shadcn.registryThemePresets) p.id,
 ];
 
 /// Shape ids offered by the bar. Mirrors the `_radii` keys in
@@ -146,6 +141,7 @@ class ThemeBar extends StatelessWidget {
         dark: dark ?? theme.dark,
         shape: shape ?? theme.shape,
         motion: theme.motion,
+        chrome: theme.chrome,
       ),
     );
   }

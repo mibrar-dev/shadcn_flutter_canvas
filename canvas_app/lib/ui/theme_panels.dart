@@ -123,8 +123,12 @@ Widget _panelShell({required List<Widget> children}) {
   );
 }
 
-/// Color panel: dark-mode [shadcn.Switch] plus palette [shadcn.Select] built
-/// from [kPaletteOptions].
+/// Color panel: TWO groups — "Components" edits the main (components) theme
+/// fields, "App chrome" edits `theme.chrome` (null = follows components).
+/// The chrome controls read the current chrome-or-main as their base, so a
+/// null chrome still shows the effective values; "Follow components" sets
+/// chrome back to null. Shape/motion stay components-only (carried over
+/// unchanged into the chrome override so it never diverges on those axes).
 class ColorPanel extends StatelessWidget {
   const ColorPanel({super.key, required this.theme, required this.onChanged});
 
@@ -138,15 +142,49 @@ class ColorPanel extends StatelessWidget {
         dark: dark ?? theme.dark,
         shape: theme.shape,
         motion: theme.motion,
+        chrome: theme.chrome,
+      ),
+    );
+  }
+
+  void _emitChrome({String? paletteKey, bool? dark}) {
+    final base = theme.chrome ?? theme;
+    onChanged(
+      CanvasTheme(
+        paletteKey: theme.paletteKey,
+        dark: theme.dark,
+        shape: theme.shape,
+        motion: theme.motion,
+        chrome: CanvasTheme(
+          paletteKey: paletteKey ?? base.paletteKey,
+          dark: dark ?? base.dark,
+          shape: theme.shape,
+          motion: theme.motion,
+        ),
+      ),
+    );
+  }
+
+  void _followComponents() {
+    onChanged(
+      CanvasTheme(
+        paletteKey: theme.paletteKey,
+        dark: theme.dark,
+        shape: theme.shape,
+        motion: theme.motion,
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final chromeBase = theme.chrome ?? theme;
+    final following = theme.chrome == null;
     return _panelShell(
       children: [
         const _PanelTitle('Color'),
+        const SizedBox(height: EditorMetrics.panelInset),
+        const _FieldLabel('Components'),
         const SizedBox(height: EditorMetrics.panelInset),
         const _FieldLabel('Dark'),
         Align(
@@ -166,6 +204,38 @@ class ColorPanel extends StatelessWidget {
           options: kPaletteOptions,
           onSelected: (v) => _emit(paletteKey: v),
         ),
+        const SizedBox(height: EditorMetrics.panelInset),
+        const _FieldLabel('App chrome'),
+        const SizedBox(height: EditorMetrics.panelInset),
+        const _FieldLabel('Dark'),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: shadcn.Switch(
+            value: chromeBase.dark,
+            onChanged: (v) => _emitChrome(dark: v),
+          ),
+        ),
+        const SizedBox(height: EditorMetrics.panelInset),
+        const _FieldLabel('Palette'),
+        _optionSelect(
+          value: kPaletteOptions.contains(chromeBase.paletteKey)
+              ? chromeBase.paletteKey
+              : null,
+          placeholder: 'Palette',
+          options: kPaletteOptions,
+          onSelected: (v) => _emitChrome(paletteKey: v),
+        ),
+        const SizedBox(height: EditorMetrics.panelInset),
+        if (following)
+          const _MutedNote('Following components.')
+        else
+          Align(
+            alignment: Alignment.centerLeft,
+            child: shadcn.GhostButton(
+              onPressed: _followComponents,
+              child: const Text('Follow components'),
+            ),
+          ),
       ],
     );
   }
@@ -186,6 +256,7 @@ class ShapePanel extends StatelessWidget {
         dark: theme.dark,
         shape: shape ?? theme.shape,
         motion: theme.motion,
+        chrome: theme.chrome,
       ),
     );
   }
@@ -252,6 +323,7 @@ class MotionPanel extends StatelessWidget {
         dark: theme.dark,
         shape: theme.shape,
         motion: motion ?? theme.motion,
+        chrome: theme.chrome,
       ),
     );
   }
