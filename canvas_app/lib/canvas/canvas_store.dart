@@ -193,6 +193,51 @@ class CanvasStore extends ChangeNotifier {
   void setItemAction(String nodeId, String itemId, NodeAction? action) =>
       patchItem(nodeId, itemId, action: () => action);
 
+  /// Removes [keys] from the item's sparse props override map (true sparse
+  /// delete: the keys resolve back to their schema/catalog defaults).
+  /// Unknown node/item ids, an empty [keys] set, or none of the keys present
+  /// in the item's props are a no-op (returns without committing, so history
+  /// stays clean). Otherwise undoable and autosaved like every other
+  /// mutation.
+  void clearItemProps(String nodeId, String itemId, Set<String> keys) {
+    if (keys.isEmpty) return;
+    CanvasItem? target;
+    for (final n in _doc.nodes) {
+      if (n.id != nodeId) continue;
+      for (final i in n.items) {
+        if (i.id == itemId) target = i;
+      }
+    }
+    if (target == null) return;
+    if (!keys.any(target.props.containsKey)) return;
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      return CanvasNode(
+        id: n.id,
+        screenId: n.screenId,
+        x: n.x,
+        y: n.y,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
+        items: [
+          for (final i in n.items)
+            if (i.id == itemId)
+              i.copyWith(
+                props: Map<String, dynamic>.from(i.props)
+                  ..removeWhere((k, _) => keys.contains(k)),
+              )
+            else
+              i,
+        ],
+      );
+    }));
+  }
+
   /// Deletes a node. Deleting a row cascades to its descendants (they live
   /// inside it — leaving them orphaned would make them invisible). Unknown
   /// ids are a no-op (no history pollution), matching reorderNode/patchNode

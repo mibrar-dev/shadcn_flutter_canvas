@@ -16,6 +16,10 @@ const double kFlowScreenGap = 12.0;
 const double kFlowScreenPadding = 16.0;
 const double kFlowRowGapDefault = 8.0;
 
+/// Responsive tiers known to the doc model (single source of truth; the
+/// app-side [Tier] enum mirrors these names in `canvas_app/lib/ui/responsive.dart`).
+const Set<String> kResponsiveTiers = {'mobile', 'tablet', 'desktop'};
+
 /// Migrates a legacy absolute-layout doc to flow layout.
 ///
 /// Pure function: root nodes (`parentId == null`, i.e. every node in a
@@ -146,6 +150,16 @@ class CanvasScreen {
 /// ROW container. `expand` (`none|flex|expanded`, null/none = default) and
 /// `flex` (default 1 when expand is flex/expanded and flex is null) live on
 /// the CHILD node.
+///
+/// Responsive visibility/overrides (FlutterFlow parity):
+/// `hiddenOn` lists the tiers the node is hidden on (subset of
+/// [kResponsiveTiers], empty = always visible); `breakpointValues` holds
+/// per-tier prop overrides keyed by tier name
+/// (e.g. `{'tablet': {'columns': 2}}`); `slots` holds per-tier slot
+/// overrides mapping slot name → item id or value
+/// (e.g. `{'tablet': 'item-id'}`). Render-time filtering and inspector
+/// editing of these fields are app-side concerns (later batch); the model
+/// only stores, validates, and round-trips them.
 class CanvasNode {
   final String id;
   final String screenId;
@@ -160,6 +174,25 @@ class CanvasNode {
   final String? expand;
   final int? flex;
 
+  /// Tiers this node is hidden on (subset of [kResponsiveTiers]).
+  ///
+  /// Serialized as a sorted list under JSON key `hiddenOn`; a missing key
+  /// parses to empty (always visible). Unknown tier strings throw
+  /// [FormatException] (fail fast).
+  final Set<String> hiddenOn;
+
+  /// Per-tier prop overrides keyed by tier name.
+  ///
+  /// Serialized as a map under JSON key `breakpointValues`; a missing key
+  /// parses to empty (no overrides).
+  final Map<String, Map<String, dynamic>> breakpointValues;
+
+  /// Per-tier slot overrides mapping slot name → item id or value.
+  ///
+  /// Serialized as a map under JSON key `slots`; a missing key parses to
+  /// empty (no overrides).
+  final Map<String, String> slots;
+
   const CanvasNode({
     required this.id,
     required this.screenId,
@@ -173,25 +206,52 @@ class CanvasNode {
     this.crossAxis,
     this.expand,
     this.flex,
+    this.hiddenOn = const {},
+    this.breakpointValues = const {},
+    this.slots = const {},
   });
 
-  factory CanvasNode.fromJson(Map<String, dynamic> json) => CanvasNode(
-        id: json['id'] as String,
-        screenId: json['screenId'] as String,
-        x: (json['x'] as num).toDouble(),
-        y: (json['y'] as num).toDouble(),
-        items: (json['items'] as List)
-            .map((i) => CanvasItem.fromJson(i as Map<String, dynamic>))
-            .toList(),
-        // Backward compatible: old docs lack these keys.
-        parentId: json['parentId'] as String?,
-        isRow: (json['isRow'] as bool?) ?? false,
-        gap: (json['gap'] as num?)?.toDouble() ?? kFlowRowGapDefault,
-        mainAxis: json['mainAxis'] as String?,
-        crossAxis: json['crossAxis'] as String?,
-        expand: json['expand'] as String?,
-        flex: (json['flex'] as num?)?.toInt(),
-      );
+  factory CanvasNode.fromJson(Map<String, dynamic> json) {
+    final hiddenRaw = (json['hiddenOn'] as List?)
+            ?.map((e) => e as String)
+            .toList() ??
+        <String>[];
+    for (final tier in hiddenRaw) {
+      if (!kResponsiveTiers.contains(tier)) {
+        throw FormatException('CanvasNode unknown hiddenOn tier: $tier');
+      }
+    }
+    final breakpointRaw =
+        (json['breakpointValues'] as Map?) ?? const <String, dynamic>{};
+    final slotsRaw = (json['slots'] as Map?) ?? const <String, dynamic>{};
+    return CanvasNode(
+      id: json['id'] as String,
+      screenId: json['screenId'] as String,
+      x: (json['x'] as num).toDouble(),
+      y: (json['y'] as num).toDouble(),
+      items: (json['items'] as List)
+          .map((i) => CanvasItem.fromJson(i as Map<String, dynamic>))
+          .toList(),
+      // Backward compatible: old docs lack these keys.
+      parentId: json['parentId'] as String?,
+      isRow: (json['isRow'] as bool?) ?? false,
+      gap: (json['gap'] as num?)?.toDouble() ?? kFlowRowGapDefault,
+      mainAxis: json['mainAxis'] as String?,
+      crossAxis: json['crossAxis'] as String?,
+      expand: json['expand'] as String?,
+      flex: (json['flex'] as num?)?.toInt(),
+      hiddenOn: hiddenRaw.toSet(),
+      breakpointValues: {
+        for (final entry in breakpointRaw.entries)
+          entry.key as String:
+              Map<String, dynamic>.from(entry.value as Map),
+      },
+      slots: {
+        for (final entry in slotsRaw.entries)
+          entry.key as String: entry.value as String,
+      },
+    );
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,
@@ -206,6 +266,12 @@ class CanvasNode {
         'crossAxis': crossAxis,
         'expand': expand,
         'flex': flex,
+        'hiddenOn': (hiddenOn.toList()..sort()),
+        'breakpointValues': {
+          for (final entry in breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        'slots': Map<String, String>.from(slots),
       };
 }
 

@@ -11,12 +11,10 @@
 /// OVERRIDE MODEL (Figma-style): the inspector shows the resolved value
 /// (`schema default <- kind defaults <- node.props`) plus, when `node.props`
 /// carries an override differing from the default, a `modified` badge and a
-/// `reset` affordance. COMPROMISE (documented): `store.patchItem` has no
-/// key-deletion path — it merges `{...old, ...new}` — so `reset` writes the
-/// default value back instead of deleting the key. The badge still clears
-/// because [isPropOverridden] treats "key present with default value" as not
-/// overridden; true sparse deletion needs a store `clearProps` path that does
-/// not exist at this runtime.
+/// `reset` affordance. `reset` performs a true sparse delete via
+/// `store.clearItemProps` (removes the key from `node.props` so the value
+/// falls back to the schema/catalog default); normal edits keep going
+/// through `store.patchItem`, which merges `{...old, ...new}`.
 ///
 /// DICTATED APIs (W3 — landed in the working tree at integration time):
 /// `CanvasNode.mainAxis`/`crossAxis` + per-child `expand`/`flex`, written via
@@ -457,16 +455,15 @@ class _InspectorPanelState extends State<InspectorPanel> {
       item.props,
       kindDefaults,
     );
-    // Reset writes the default value back. True sparse deletion (removing
-    // the key from node.props) needs a store clear-path that patchItem does
-    // not offer — see the library doc compromise note.
+    // Reset is a true sparse delete: removes the override key from
+    // node.props via the store clear-path so the value falls back to the
+    // schema/catalog default. Normal edits keep using [_patch].
     void reset() {
-      final baseline =
-          kindDefaults != null && kindDefaults.containsKey(spec.name)
-          ? kindDefaults[spec.name]
-          : spec.defaultValue;
-      if (baseline == null && spec.defaultValue == null) return;
-      _patch(spec.name, baseline);
+      widget.store.clearItemProps(
+        widget.nodeId!,
+        widget.itemId!,
+        {spec.name},
+      );
     }
 
     late final Widget editor;

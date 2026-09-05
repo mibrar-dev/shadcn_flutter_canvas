@@ -4,19 +4,25 @@
 /// The preview canvas IS the breakpoint: the stage width resolves the tier
 /// (see `preview_player.dart`), so resizing the device frame re-tiers live.
 ///
-/// v1 scope: breakpoints + device frames + the adaptive-nav demo template.
-/// Per-node responsive visibility (FlutterFlow parity) is DESIGNED here
-/// ([isHiddenOnTier] + the `hiddenOn` shape) but NOT wired to the doc model:
-/// without `canvas_core` access the per-node field has nowhere to live
-/// (node `props` are item-level, so storing it there would be wrong).
-/// Promoting `hiddenOn` (plus responsive values/slots) to `canvas_core`'s
-/// `screen_doc.dart` is the explicit next batch — see the report.
+/// Doc-model status: the per-node fields HAVE landed — `hiddenOn`,
+/// `breakpointValues`, and `slots` live on `CanvasNode` in
+/// `canvas_core`'s `screen_doc.dart` (pure Dart; this file may import
+/// `package:canvas_core/canvas_core.dart`). Use [hiddenOnStringsFromTiers]
+/// / [tiersFromHiddenOnStrings] to convert between [Tier] sets and the
+/// stored string sets, and [isNodeHiddenOnWidth] to resolve visibility
+/// from a layout width.
+///
+/// What REMAINS (explicit later batch, do NOT implement here):
+/// render-time filtering (skip hidden nodes in the preview player),
+/// inspector UI (per-tier visibility toggles), and codegen emission
+/// (responsive variants in generated code).
 ///
 /// `device_preview` was deliberately NOT added (1.3.1 is what resolves on
 /// Flutter 3.44.6; 3.0.0 needs ≥3.47; 2.x has web gesture bugs), so this
 /// file plus `device_picker.dart` are our own picker.
 library;
 
+import 'package:canvas_core/canvas_core.dart' show kResponsiveTiers;
 import 'package:flutter/widgets.dart';
 
 /// Tablet breakpoint: widths ≥ this are at least tablet.
@@ -49,9 +55,38 @@ Tier tierForWidth(double w) {
 /// v1 app-side visibility shape (FlutterFlow parity design).
 ///
 /// A node's `hiddenOn` set lists the tiers it is hidden on. This helper is
-/// the resolver; the doc-model field itself lands with the `canvas_core`
-/// promotion next batch, so for now callers pass the set explicitly.
+/// the resolver; the stored field itself lives on `CanvasNode.hiddenOn`
+/// (string set) in `canvas_core` — convert with [hiddenOnStringsFromTiers]
+/// / [tiersFromHiddenOnStrings], or resolve straight from a layout width
+/// with [isNodeHiddenOnWidth].
 bool isHiddenOnTier(Tier tier, Set<Tier> hiddenOn) => hiddenOn.contains(tier);
+
+/// Converts a [Tier] set to the doc-model string set stored in
+/// `CanvasNode.hiddenOn` (e.g. `{Tier.mobile}` → `{'mobile'}`).
+Set<String> hiddenOnStringsFromTiers(Set<Tier> tiers) =>
+    {for (final tier in tiers) tier.name};
+
+/// Converts a doc-model `hiddenOn` string set back to [Tier]s.
+///
+/// Unknown names throw [FormatException] (fail fast), mirroring
+/// `CanvasNode.fromJson`'s validation against [kResponsiveTiers].
+Set<Tier> tiersFromHiddenOnStrings(Set<String> hiddenOn) {
+  for (final name in hiddenOn) {
+    if (!kResponsiveTiers.contains(name)) {
+      throw FormatException('Unknown responsive tier: $name');
+    }
+  }
+  return {for (final name in hiddenOn) Tier.values.byName(name)};
+}
+
+/// Resolves whether a node with doc-model `hiddenOn` strings is hidden at
+/// layout width [width]: the width maps to a tier via [tierForWidth] and
+/// the tier name is looked up in [hiddenOn].
+///
+/// Unknown strings never match a tier (they are rejected at parse time by
+/// `CanvasNode.fromJson`), so they are treated as inert here.
+bool isNodeHiddenOnWidth(double width, Set<String> hiddenOn) =>
+    hiddenOn.contains(tierForWidth(width).name);
 
 /// Builder exposed by [ResponsiveBuilder]: context, resolved tier, width.
 typedef ResponsiveBuild =

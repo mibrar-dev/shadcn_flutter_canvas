@@ -362,18 +362,46 @@ void main() {
 
       await tester.tap(find.text('reset'));
       await tester.pump();
-      expect(props()['label'], 'Button');
-      expect(find.text('modified'), findsNothing);
-      // DOCUMENTED LIMITATION: patchItem merges props and offers no
-      // key-deletion path, so reset writes the default value back instead of
-      // removing the key (true sparse delete needs a store clear-path).
+      // Sparse delete: the override key is removed and the resolved value
+      // falls back to the default.
+      expect(props().containsKey('label'), isFalse);
       expect(
-        props().containsKey('label'),
-        isTrue,
-        reason:
-            'sparse-delete compromise: key remains with the default value; '
-            'see inspector_panel.dart library docs',
+        resolveProp(
+          'button',
+          'label',
+          props(),
+          findEntry('button')?.defaults,
+        ),
+        'Button',
       );
+      expect(find.text('modified'), findsNothing);
+    });
+
+    test('clearItemProps with a non-overridden key is a no-op', () {
+      final (store, nodeId, itemId) = _storeWithButton();
+      Map<String, dynamic> props() => store.doc.nodes
+          .singleWhere((n) => n.id == nodeId)
+          .items
+          .singleWhere((i) => i.id == itemId)
+          .props;
+      final before = Map<String, dynamic>.from(props());
+
+      // Key never overridden: no crash, no history pollution.
+      store.clearItemProps(nodeId, itemId, {'nope'});
+      expect(props(), equals(before));
+
+      // Unknown node/item ids are likewise a no-op.
+      store.clearItemProps('missing-node', itemId, {'label'});
+      store.clearItemProps(nodeId, 'missing-item', {'label'});
+      store.clearItemProps(nodeId, itemId, <String>{});
+      expect(props(), equals(before));
+
+      // Setup pushed exactly one history entry (addNode); the no-op clears
+      // above must not have pushed more, so a single undo reverts the
+      // addNode itself.
+      expect(store.undo(), isTrue);
+      expect(store.doc.nodes, isEmpty);
+      expect(store.canUndo, isFalse);
     });
   });
 
