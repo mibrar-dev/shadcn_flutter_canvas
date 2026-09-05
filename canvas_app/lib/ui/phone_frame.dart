@@ -21,6 +21,72 @@ import 'package:canvas_core/canvas_core.dart';
 /// the screen's far edges (content clips at the frame instead of exploding).
 const double _kMinNodeExtent = 48.0;
 
+/// Snap threshold for drag aids, in logical px in pre-zoom screen space: a
+/// palette-drag pointer within this distance of a guide axis shows the guide
+/// and, on drop, lands snapped onto the axis. X and Y resolve independently.
+const double kSnapThreshold = 8.0;
+
+/// Finders for the live alignment guides (used by drag-aids tests).
+const ValueKey<String> kDragGuideVerticalKey =
+    ValueKey<String>('drag-guide-vertical');
+const ValueKey<String> kDragGuideHorizontalKey =
+    ValueKey<String>('drag-guide-horizontal');
+
+/// Sentinel listenable for a [ScreenSurface] with no [ScreenSurface.dropPointer].
+final ValueNotifier<Offset?> _kNoPointer = ValueNotifier<Offset?>(null);
+
+/// Active alignment-guide axes for a drag pointer, in screen-local logical
+/// px. Each axis is `null` when no axis is within [kSnapThreshold].
+class DragGuides {
+  final double? x;
+  final double? y;
+  const DragGuides({this.x, this.y});
+}
+
+double? _snapAxis(double pointer, List<double> nodeAxes, double centerAxis) {
+  double? best;
+  var bestDist = double.infinity;
+  for (final axis in nodeAxes) {
+    final dist = (pointer - axis).abs();
+    if (dist <= kSnapThreshold && dist < bestDist) {
+      best = axis;
+      bestDist = dist;
+    }
+  }
+  // Node edges/centers win over the screen center; the center only applies
+  // when no node axis is near enough.
+  if (best != null) return best;
+  return (pointer - centerAxis).abs() <= kSnapThreshold ? centerAxis : null;
+}
+
+/// Guide axes near [pointer] (screen-local logical px): the screen center H/V
+/// axes plus every node's center + edge axes. Nodes are stored as top-left
+/// origins with intrinsic (unmeasured) sizes, so each node's origin doubles
+/// as its edge/center anchor. X and Y resolve independently.
+DragGuides guidesForPointer(Offset pointer, List<CanvasNode> nodes) {
+  return DragGuides(
+    x: _snapAxis(
+      pointer.dx,
+      [for (final node in nodes) node.x],
+      EditorMetrics.phoneInnerWidth / 2,
+    ),
+    y: _snapAxis(
+      pointer.dy,
+      [for (final node in nodes) node.y],
+      EditorMetrics.phoneInnerHeight / 2,
+    ),
+  );
+}
+
+/// Snaps [pointer] (screen-local logical px) onto the nearest guide axes from
+/// [guidesForPointer]. Used ONLY for pointer drops in
+/// [ScreenSurface]'s accept path; [DesignCanvas.onAccept] stays
+/// verbatim/unsnapped so programmatic callers keep exact coords.
+Offset snapDropPosition(Offset pointer, List<CanvasNode> nodes) {
+  final guides = guidesForPointer(pointer, nodes);
+  return Offset(guides.x ?? pointer.dx, guides.y ?? pointer.dy);
+}
+
 /// The bezel + screen body. Clips [child] to the inner screen radius.
 class PhoneFrame extends StatelessWidget {
   /// Fill behind [child], i.e. the screen's own background.
@@ -41,13 +107,11 @@ class PhoneFrame extends StatelessWidget {
       height: EditorMetrics.phoneOuterHeight,
       decoration: BoxDecoration(
         color: colors.bezel,
-        borderRadius:
-            BorderRadius.circular(EditorMetrics.phoneOuterRadius),
+        borderRadius: BorderRadius.circular(EditorMetrics.phoneOuterRadius),
       ),
       padding: const EdgeInsets.all(EditorMetrics.phoneBezel),
       child: ClipRRect(
-        borderRadius:
-            BorderRadius.circular(EditorMetrics.phoneInnerRadius),
+        borderRadius: BorderRadius.circular(EditorMetrics.phoneInnerRadius),
         child: ColoredBox(color: screenColor, child: child),
       ),
     );
@@ -186,86 +250,135 @@ class ScreenSurface extends StatelessWidget {
           // double-correct and land the node at ~half the intended point.
           // [zoom] is therefore kept as a parameter for future-proofing but
           // intentionally unused in this conversion.
+          final position = Offset(
+            local.dx - EditorMetrics.phoneBezel,
+            local.dy - EditorMetrics.phoneBezel,
+          );
+          // Magnetic snap applies to pointer drops only — `onAccept` itself
+          // stays verbatim/unsnapped for programmatic callers, so the snapped
+          // point is computed here and forwarded through `onDropKind`.
           onDropKind?.call(
             details.data,
-            Offset(
-              local.dx - EditorMetrics.phoneBezel,
-              local.dy - EditorMetrics.phoneBezel,
-            ),
+            snapDropPosition(position, nodes),
           );
         },
-        builder: (context, candidate, rejected) {
-          return Stack(
-            children: [
-              if (candidate.isNotEmpty)
-                Positioned.fill(
-                  child: ColoredBox(
-                    color: colors.railActive.withValues(alpha: 0.25),
-                  ),
-                ),
-              if (nodes.isEmpty && candidate.isEmpty)
-                Positioned.fill(
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(32),
-                      child: Text(
-                        'Drag a part here to start',
-                        textAlign: TextAlign.center,
-                        style: EditorType.field
-                            .copyWith(color: colors.onSurfaceVariant),
+        builder: (_, candidate, rejected) {
+          // Live guides driven by the enclosing canvas's pointer tracking
+          // (the same `dropPointer` plumbing the accept path uses), so the
+          // lines follow the hover and vanish with `candidate` on
+          // drop/cancel/leave.
+          return ValueListenableBuilder<Offset?>(
+            valueListenable: dropPointer ?? _kNoPointer,
+            builder: (guideContext, global, _) {
+              var guides = const DragGuides();
+              if (candidate.isNotEmpty && global != null) {
+                final box = context.findRenderObject() as RenderBox?;
+                if (box != null) {
+                  final local = box.globalToLocal(global);
+                  guides = guidesForPointer(
+                    Offset(
+                      local.dx - EditorMetrics.phoneBezel,
+                      local.dy - EditorMetrics.phoneBezel,
+                    ),
+                    nodes,
+                  );
+                }
+              }
+              return Stack(
+                children: [
+                  if (candidate.isNotEmpty)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: colors.railActive.withValues(alpha: 0.25),
                       ),
                     ),
-                  ),
-                ),
-              for (final node in nodes)
-                Positioned(
-                  left: node.x,
-                  top: node.y,
-                  child: GestureDetector(
-                    onTap: () => onSelectNode?.call(node.id),
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: node.id == selectedNodeId
-                          ? BoxDecoration(
-                              border: Border.all(
-                                color: colors.toolbarActive,
-                                width: 2,
+                  if (nodes.isEmpty && candidate.isEmpty)
+                    Positioned.fill(
+                      child: Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(32),
+                          child: Text(
+                            'Drag a part here to start',
+                            textAlign: TextAlign.center,
+                            style: EditorType.field
+                                .copyWith(color: colors.onSurfaceVariant),
+                          ),
+                        ),
+                      ),
+                    ),
+                  for (final node in nodes)
+                    Positioned(
+                      left: node.x,
+                      top: node.y,
+                      child: GestureDetector(
+                        onTap: () => onSelectNode?.call(node.id),
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          decoration: node.id == selectedNodeId
+                              ? BoxDecoration(
+                                  border: Border.all(
+                                    color: colors.toolbarActive,
+                                    width: 2,
+                                  ),
+                                  borderRadius: BorderRadius.circular(8),
+                                )
+                              : null,
+                          // Positioned children get UNBOUNDED constraints from the
+                          // Stack, which detonates kit widgets with internal
+                          // Expanded rows (e.g. TextField's input row throws
+                          // "flex but unbounded width" and renders nothing).
+                          // Clamp to the remaining inner-screen room so every
+                          // catalog widget gets the finite box it needs.
+                          // Intrinsically-sized widgets (button/card/badge) are
+                          // unaffected — only the maximum shrinks.
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth: math.max(
+                                _kMinNodeExtent,
+                                EditorMetrics.phoneInnerWidth - node.x,
                               ),
-                              borderRadius: BorderRadius.circular(8),
-                            )
-                          : null,
-                      // Positioned children get UNBOUNDED constraints from the
-                      // Stack, which detonates kit widgets with internal
-                      // Expanded rows (e.g. TextField's input row throws
-                      // "flex but unbounded width" and renders nothing).
-                      // Clamp to the remaining inner-screen room so every
-                      // catalog widget gets the finite box it needs.
-                      // Intrinsically-sized widgets (button/card/badge) are
-                      // unaffected — only the maximum shrinks.
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: math.max(
-                            _kMinNodeExtent,
-                            EditorMetrics.phoneInnerWidth - node.x,
+                              maxHeight: math.max(
+                                _kMinNodeExtent,
+                                EditorMetrics.phoneInnerHeight - node.y,
+                              ),
+                            ),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                for (final item in node.items)
+                                  buildCatalogItem(item.kind, item.props),
+                              ],
+                            ),
                           ),
-                          maxHeight: math.max(
-                            _kMinNodeExtent,
-                            EditorMetrics.phoneInnerHeight - node.y,
-                          ),
-                        ),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            for (final item in node.items)
-                              buildCatalogItem(item.kind, item.props),
-                          ],
                         ),
                       ),
                     ),
-                  ),
-                ),
-            ],
+                  if (guides.x != null)
+                    Positioned(
+                      key: kDragGuideVerticalKey,
+                      left: guides.x,
+                      top: 0,
+                      bottom: 0,
+                      child: Container(
+                        width: 1,
+                        color: colors.toolbarActive.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  if (guides.y != null)
+                    Positioned(
+                      key: kDragGuideHorizontalKey,
+                      top: guides.y,
+                      left: 0,
+                      right: 0,
+                      child: Container(
+                        height: 1,
+                        color: colors.toolbarActive.withValues(alpha: 0.5),
+                      ),
+                    ),
+                ],
+              );
+            },
           );
         },
       ),

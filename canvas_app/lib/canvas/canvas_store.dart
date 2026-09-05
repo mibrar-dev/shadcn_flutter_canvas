@@ -288,6 +288,42 @@ class CanvasStore extends ChangeNotifier {
     ));
   }
 
+  /// Moves the node with [nodeId] within its own screen's z-order to
+  /// [newIndex] (position among that screen's nodes in doc order; later =
+  /// more frontmost). [newIndex] is clamped into the screen's node list.
+  /// Cross-screen moves are refused: the node's `screenId` never changes and
+  /// other screens' nodes keep their exact positions. Throws [StateError]
+  /// when [nodeId] is unknown (before committing, so history stays clean).
+  /// Undoable and autosaved like every other mutation.
+  void reorderNode(String nodeId, int newIndex) {
+    final current = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (current < 0) throw StateError('Unknown node: $nodeId');
+    final screenId = _doc.nodes[current].screenId;
+    final group = [
+      for (final n in _doc.nodes)
+        if (n.screenId == screenId) n,
+    ];
+    final from = group.indexWhere((n) => n.id == nodeId);
+    final to = newIndex.clamp(0, group.length - 1);
+    if (from == to) return;
+    final node = group.removeAt(from);
+    group.insert(to, node);
+    final spots = <int>[
+      for (var i = 0; i < _doc.nodes.length; i++)
+        if (_doc.nodes[i].screenId == screenId) i,
+    ];
+    final next = List.of(_doc.nodes);
+    for (var k = 0; k < spots.length; k++) {
+      next[spots[k]] = group[k];
+    }
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: next,
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+  }
+
   /// Replaces the whole doc (undoable import path for the Open dialog).
   /// Commits verbatim.
   void replaceDoc(ScreenDoc doc) {

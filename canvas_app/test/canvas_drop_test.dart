@@ -7,9 +7,11 @@ import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// Capitalized kind id, matching the palette tile labels.
-String _tileLabel(String kind) =>
-    kind.isEmpty ? kind : kind[0].toUpperCase() + kind.substring(1);
+/// Human label, matching the palette tile labels (`radio_group` → `Radio Group`).
+String _tileLabel(String kind) => kind
+    .split('_')
+    .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
+    .join(' ');
 
 void main() {
   /// Reference viewport (HANDOFF §2): the phone frame is 343x725 and

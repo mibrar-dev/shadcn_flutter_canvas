@@ -1,7 +1,7 @@
 /// Clean-folders bundle exporter (P2c): screens + shadcn bodies + manifest + zip.
 ///
 /// Pure Dart (CLI-reusable): builds the installable `screen add` bundle from
-/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 10 catalog
+/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 15 catalog
 /// kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
 library;
 
@@ -38,10 +38,14 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 10 catalog kinds (snapshotted from the pinned kit's
+// Exact metadata for the 15 catalog kinds (snapshotted from the pinned kit's
 // `components.json`: destination prefix from `files[].destination`,
 // alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
 // unknown dep ids warn at export time, same as the seed kinds' `text_field`).
+// NOTE: `select`'s `dependsOn` (`async`, `chip`, `command`, `dialog`,
+// `hover`, `menu`, `text_field`) names component ids with no `_KindSpec`
+// here — they warn at export time (transitively pulled bodies are out of
+// scope for this batch; the ids are kept verbatim, never invented).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -73,6 +77,21 @@ const _kinds = <String, _KindSpec>{
   'tabs': _KindSpec('{installPath}/components/navigation/tabs/',
       ['border_utils', 'component_schema', 'constants', 'fade_scroll', 'geometry_extensions', 'outlined_container', 'style_value', 'theme', 'util'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['sortable', 'text', 'button']),
+  'accordion': _KindSpec('{installPath}/components/layout/accordion/',
+      ['component_schema', 'constants', 'style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'select': _KindSpec('{installPath}/components/form/select/',
+      ['clickable', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'icon_extensions', 'lucide_icons', 'overlay', 'radix_icons', 'style_value', 'subfocus', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['async', 'button', 'chip', 'command', 'dialog', 'hover', 'menu', 'text_field']),
+  'radio_group': _KindSpec('{installPath}/components/form/radio_group/',
+      ['color_extensions', 'component_schema', 'constants', 'focus_outline', 'form_control', 'form_value_supplier', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['card']),
+  'skeleton': _KindSpec('{installPath}/components/display/skeleton/',
+      ['color_extensions', 'component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1', 'skeletonizer': '^2.1.0+1'}, ['avatar']),
+  'breadcrumb': _KindSpec('{installPath}/components/navigation/breadcrumb/',
+      ['basic_layout', 'radix_icons', 'style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
 };
 
 const _installPath = '{installPath}/';

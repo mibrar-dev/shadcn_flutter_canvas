@@ -7,9 +7,20 @@ void main() {
   test('catalog seeds five entries with labels and defaults', () {
     expect(
       kCatalog.map((e) => e.kind),
-      containsAll(['button', 'card', 'input', 'badge', 'switch']),
+      containsAll([
+        'button',
+        'card',
+        'input',
+        'badge',
+        'switch',
+        'accordion',
+        'select',
+        'radio_group',
+        'skeleton',
+        'breadcrumb',
+      ]),
     );
-    expect(kCatalog, hasLength(10));
+    expect(kCatalog, hasLength(15));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -253,14 +264,14 @@ void main() {
   });
 }
 
-/// Compact copy of the canvas blocks' `propsSchema` for the ten catalog
+/// Compact copy of the canvas blocks' `propsSchema` for the fifteen catalog
 /// kinds, transcribed from
 /// `shadcn_flutter_kit/flutter_shadcn_kit/lib/registry/manifests/components.json`
 /// (`components[].canvas.propsSchema`).
 ///
 /// Tests cannot read kit files (the kit package is not a dependency of
 /// canvas_app), so this copy is hard-coded — re-transcribe it if
-/// `components.json` changes. The five newer kinds have no canvas block in
+/// `components.json` changes. The ten newer kinds have no canvas block in
 /// the pinned kit rev; their copies mirror the invented catalog defaults
 /// (marked inline) until real blocks land.
 const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
@@ -326,5 +337,32 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'tab1', 'type': 'string', 'default': 'Tab 1'},
     {'name': 'tab2', 'type': 'string', 'default': 'Tab 2'},
     {'name': 'index', 'type': 'int', 'default': 0},
+  ],
+  // No canvas blocks exist for these five kinds either (same pinned-kit
+  // scan — no `canvas` key on any of the 134 components), so these copies
+  // likewise mirror the invented catalog defaults until real blocks land.
+  'accordion': [
+    {'name': 'title', 'type': 'string', 'default': 'Section 1'},
+    {'name': 'content', 'type': 'string', 'default': 'Content 1'},
+    {'name': 'expanded', 'type': 'bool', 'default': false},
+  ],
+  'select': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select an option'},
+    {'name': 'option1', 'type': 'string', 'default': 'Option 1'},
+    {'name': 'option2', 'type': 'string', 'default': 'Option 2'},
+    {'name': 'value', 'type': 'string', 'default': ''},
+  ],
+  'radio_group': [
+    {'name': 'option1', 'type': 'string', 'default': 'Option 1'},
+    {'name': 'option2', 'type': 'string', 'default': 'Option 2'},
+    {'name': 'value', 'type': 'string', 'default': 'Option 1'},
+  ],
+  'skeleton': [
+    {'name': 'label', 'type': 'string', 'default': 'Loading'},
+    {'name': 'enabled', 'type': 'bool', 'default': true},
+  ],
+  'breadcrumb': [
+    {'name': 'home', 'type': 'string', 'default': 'Home'},
+    {'name': 'current', 'type': 'string', 'default': 'Page'},
   ],
 };

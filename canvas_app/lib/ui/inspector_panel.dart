@@ -114,6 +114,30 @@ const kInspectorSchemas = <String, List<PropDef>>{
     PropDef(name: 'tab1', type: 'string', group: 'content'),
     PropDef(name: 'tab2', type: 'string', group: 'content'),
   ],
+  'accordion': [
+    PropDef(name: 'title', type: 'string', group: 'content'),
+    PropDef(name: 'content', type: 'string', group: 'content'),
+    PropDef(name: 'expanded', type: 'bool', group: 'state'),
+  ],
+  'select': [
+    PropDef(name: 'placeholder', type: 'string', group: 'content'),
+    PropDef(name: 'option1', type: 'string', group: 'content'),
+    PropDef(name: 'option2', type: 'string', group: 'content'),
+    PropDef(name: 'value', type: 'string', group: 'state'),
+  ],
+  'radio_group': [
+    PropDef(name: 'option1', type: 'string', group: 'content'),
+    PropDef(name: 'option2', type: 'string', group: 'content'),
+    PropDef(name: 'value', type: 'string', group: 'state'),
+  ],
+  'skeleton': [
+    PropDef(name: 'label', type: 'string', group: 'content'),
+    PropDef(name: 'enabled', type: 'bool', group: 'state'),
+  ],
+  'breadcrumb': [
+    PropDef(name: 'home', type: 'string', group: 'content'),
+    PropDef(name: 'current', type: 'string', group: 'content'),
+  ],
 };
 
 /// Forwards pure-Dart store notifications to Flutter listeners.

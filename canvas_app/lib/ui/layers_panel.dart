@@ -1,10 +1,10 @@
 /// Z-order Layers panel replacing the icon rail's `<id> panel` placeholder.
 ///
 /// Groups one row per node under its screen header (HANDOFF P1-4). Doc order
-/// is reversed within a group so the top row is the frontmost node.
-///
-/// NOTE: no reorder controls — the store has no reorder primitive (only
-/// moveNode x/y), so rows are display + select/duplicate/delete only.
+/// is reversed within a group so the top row is the frontmost node. Rows
+/// carry bring-forward/send-backward controls wired to
+/// [CanvasStore.reorderNode], and screen headers carry a rename affordance
+/// wired to [CanvasStore.renameScreen].
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -107,20 +107,66 @@ class _LayersBodyState extends State<_LayersBody> {
           padding: const EdgeInsets.all(EditorMetrics.panelInset),
           children: [
             for (final screen in doc.screens) ...[
-              Text(
-                screen.name,
-                style: EditorType.sectionHeader
-                    .copyWith(color: colors.onSurfaceVariant),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      screen.name,
+                      style: EditorType.sectionHeader
+                          .copyWith(color: colors.onSurfaceVariant),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Rename screen',
+                    onPressed: () => _renameScreen(context, screen),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: _kActionButtonSize,
+                      height: _kActionButtonSize,
+                    ),
+                    iconSize: _kActionIconSize,
+                    color: colors.onSurfaceVariant,
+                    icon: const Icon(Icons.edit),
+                  ),
+                ],
               ),
               const SizedBox(height: EditorMetrics.tileGap),
-              for (final node in _frontmostFirst(doc, screen))
-                _LayerRow(
-                  node: node,
-                  selected: node.id == widget.selectedNodeId,
-                  onTap: () => widget.onSelectNode(node.id),
-                  onDuplicate: () => widget.store.duplicateNode(node.id),
-                  onDelete: () => widget.store.deleteNode(node.id),
-                ),
+              Builder(
+                builder: (_) {
+                  final rows = _frontmostFirst(doc, screen);
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      for (var index = 0; index < rows.length; index++)
+                        _LayerRow(
+                          node: rows[index],
+                          selected: rows[index].id == widget.selectedNodeId,
+                          onTap: () =>
+                              widget.onSelectNode(rows[index].id),
+                          onDuplicate: () =>
+                              widget.store.duplicateNode(rows[index].id),
+                          onDelete: () =>
+                              widget.store.deleteNode(rows[index].id),
+                          // Displayed frontmost-first: screen-local doc index
+                          // of this row is rows.length-1-index; up moves
+                          // toward the front (+1).
+                          onMoveUp: index == 0
+                              ? null
+                              : () => widget.store.reorderNode(
+                                    rows[index].id,
+                                    rows.length - index,
+                                  ),
+                          onMoveDown: index == rows.length - 1
+                              ? null
+                              : () => widget.store.reorderNode(
+                                    rows[index].id,
+                                    rows.length - 2 - index,
+                                  ),
+                        ),
+                    ],
+                  );
+                },
+              ),
               if (!_hasNodes(doc, screen))
                 Text(
                   'Empty',
@@ -129,6 +175,66 @@ class _LayersBodyState extends State<_LayersBody> {
                 ),
               const SizedBox(height: EditorMetrics.tileGap),
             ],
+          ],
+        );
+      },
+    );
+  }
+
+  /// Opens the screen-rename dialog (prefilled; empty Save is a no-op close).
+  void _renameScreen(BuildContext context, CanvasScreen screen) {
+    final controller = TextEditingController(text: screen.name);
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        final colors = EditorTheme.of(dialogContext);
+        void save() {
+          final name = controller.text;
+          Navigator.of(dialogContext).pop();
+          if (name.trim().isEmpty) return;
+          widget.store.renameScreen(screen.id, name);
+        }
+
+        return AlertDialog(
+          backgroundColor: colors.surfaceContainer,
+          title: Text(
+            'Rename screen',
+            style: EditorType.sectionHeader
+                .copyWith(color: colors.onSurface),
+          ),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            style: EditorType.field.copyWith(color: colors.onSurface),
+            decoration: InputDecoration(
+              filled: true,
+              fillColor: colors.surfaceContainerHigh,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(
+                  EditorMetrics.segmentInnerRadius,
+                ),
+                borderSide: BorderSide.none,
+              ),
+            ),
+            onSubmitted: (_) => save(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: Text(
+                'Cancel',
+                style: EditorType.tileLabel
+                    .copyWith(color: colors.onSurfaceVariant),
+              ),
+            ),
+            TextButton(
+              onPressed: save,
+              child: Text(
+                'Save',
+                style:
+                    EditorType.tileLabel.copyWith(color: colors.onSurface),
+              ),
+            ),
           ],
         );
       },
@@ -163,6 +269,8 @@ class _LayerRow extends StatelessWidget {
     required this.onTap,
     required this.onDuplicate,
     required this.onDelete,
+    required this.onMoveUp,
+    required this.onMoveDown,
   });
 
   final CanvasNode node;
@@ -170,6 +278,11 @@ class _LayerRow extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
+
+  /// Null disables (never hides) the button at the z-order edge: [onMoveUp]
+  /// is null on the frontmost row, [onMoveDown] on the backmost.
+  final VoidCallback? onMoveUp;
+  final VoidCallback? onMoveDown;
 
   @override
   Widget build(BuildContext context) {
@@ -202,6 +315,32 @@ class _LayerRow extends StatelessWidget {
                         : colors.onSurfaceVariant,
                   ),
                 ),
+              ),
+              IconButton(
+                tooltip: 'Move up',
+                onPressed: onMoveUp,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: _kActionButtonSize,
+                  height: _kActionButtonSize,
+                ),
+                iconSize: _kActionIconSize,
+                color: colors.onSurfaceVariant,
+                disabledColor: colors.disabled,
+                icon: const Icon(Icons.arrow_upward),
+              ),
+              IconButton(
+                tooltip: 'Move down',
+                onPressed: onMoveDown,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: _kActionButtonSize,
+                  height: _kActionButtonSize,
+                ),
+                iconSize: _kActionIconSize,
+                color: colors.onSurfaceVariant,
+                disabledColor: colors.disabled,
+                icon: const Icon(Icons.arrow_downward),
               ),
               IconButton(
                 tooltip: 'Duplicate',

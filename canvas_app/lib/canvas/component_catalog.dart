@@ -13,7 +13,14 @@
 /// input → `TextField`, badge → `*Badge`, switch → `Switch`,
 /// avatar → `Avatar`, checkbox → `Checkbox` (+ `CheckboxState`),
 /// divider → `Divider`, progress → `Progress`,
-/// tabs → `Tabs` + `TabItem` (concrete `TabChild`).
+/// tabs → `Tabs` + `TabItem` (concrete `TabChild`),
+/// accordion → `Accordion` + `AccordionItem` + `AccordionTrigger`,
+/// select → `Select<T>` + `SelectPopup`/`SelectItemList`/`SelectItemButton`,
+/// radio_group → `RadioGroup<T>` + `RadioItem<T>`,
+/// skeleton → `SkeletonExtension.asSkeleton()` on any widget (the kit ships
+/// no bare `Skeleton` widget — only `ShadcnSkeletonizerConfigLayer` plus the
+/// extension; the catalog wraps a `Text` label),
+/// breadcrumb → `Breadcrumb` (+ `arrowSeparator`/`slashSeparator`).
 ///
 /// Prop defaults mirror the canvas blocks' `propsSchema` in `components.json`
 /// (reconciled 2026-09-04; entry labels mirror `components.json`
@@ -26,11 +33,11 @@
 /// `label` prop but `Switch` takes no label (only `leading`/`trailing`), so
 /// the catalog intentionally omits it.
 /// No canvas blocks (`components[].canvas.propsSchema`) exist for avatar,
-/// checkbox, divider, progress, or tabs in the pinned kit's
-/// `components.json` (verified by scan 2026-09-05 — no `canvas` key on any
-/// of the 134 components), so those five defaults are invented, documented
-/// per builder below, and use only bool/string/num prop types already
-/// established by the seed kinds.
+/// checkbox, divider, progress, tabs, accordion, select, radio_group,
+/// skeleton, or breadcrumb in the pinned kit's `components.json` (verified by
+/// scan 2026-09-05 — no `canvas` key on any of the 134 components), so those
+/// ten defaults are invented, documented per builder below, and use only
+/// bool/string/num prop types already established by the seed kinds.
 library;
 
 import 'package:flutter/material.dart';
@@ -346,6 +353,161 @@ Widget _buildTabs(Map<String, dynamic> props) {
   );
 }
 
+Widget _buildAccordion(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: one trigger
+  // label, one content body, and the initial expanded flag. `AccordionItem`
+  // owns its own expansion state, so no cell is needed (mirrors _buildCard).
+  final title = (props['title'] ?? 'Section 1') as String;
+  final content = (props['content'] ?? 'Content 1') as String;
+  final expanded = (props['expanded'] ?? false) as bool;
+  return shadcn.Accordion(
+    items: [
+      shadcn.AccordionItem(
+        trigger: shadcn.AccordionTrigger(child: Text(title)),
+        content: Text(content),
+        expanded: expanded,
+      ),
+    ],
+  );
+}
+
+/// Local selection state for the catalog select (builders are stateless).
+/// Mirrors `_TabsCell`: two options plus the selected value. A value absent
+/// from the options renders as unselected (placeholder) instead of crashing.
+class _SelectCell extends StatefulWidget {
+  final String placeholder;
+  final String firstOption;
+  final String secondOption;
+  final String initialValue;
+
+  const _SelectCell({
+    required this.placeholder,
+    required this.firstOption,
+    required this.secondOption,
+    required this.initialValue,
+  });
+
+  @override
+  State<_SelectCell> createState() => _SelectCellState();
+}
+
+class _SelectCellState extends State<_SelectCell> {
+  late String? _value = widget.initialValue.isEmpty ? null : widget.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    final options = [widget.firstOption, widget.secondOption];
+    final value = options.contains(_value) ? _value : null;
+    return shadcn.Select<String>(
+      value: value,
+      placeholder: Text(widget.placeholder),
+      itemBuilder: (context, item) => Text(item),
+      onChanged: (v) => setState(() => _value = v),
+      popup: shadcn.SelectPopup(
+        items: shadcn.SelectItemList(
+          children: [
+            for (final option in options)
+              shadcn.SelectItemButton(value: option, child: Text(option)),
+          ],
+        ),
+      ).call,
+    );
+  }
+}
+
+Widget _buildSelect(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a placeholder
+  // plus two options and the selected value (empty = unselected, mirrors the
+  // input builder's empty-label convention).
+  final placeholder = (props['placeholder'] ?? 'Select an option') as String;
+  final first = (props['option1'] ?? 'Option 1') as String;
+  final second = (props['option2'] ?? 'Option 2') as String;
+  final value = (props['value'] ?? '') as String;
+  return _SelectCell(
+    placeholder: placeholder,
+    firstOption: first,
+    secondOption: second,
+    initialValue: value,
+  );
+}
+
+/// Local selection state for the catalog radio group (builders are
+/// stateless). Mirrors `_TabsCell`: two options plus the selected value.
+class _RadioGroupCell extends StatefulWidget {
+  final String firstOption;
+  final String secondOption;
+  final String initialValue;
+
+  const _RadioGroupCell({
+    required this.firstOption,
+    required this.secondOption,
+    required this.initialValue,
+  });
+
+  @override
+  State<_RadioGroupCell> createState() => _RadioGroupCellState();
+}
+
+class _RadioGroupCellState extends State<_RadioGroupCell> {
+  late String? _value = widget.initialValue.isEmpty ? null : widget.initialValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.RadioGroup<String>(
+      value: _value,
+      onChanged: (v) => setState(() => _value = v),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          shadcn.RadioItem<String>(
+            value: widget.firstOption,
+            leading: Text(widget.firstOption),
+          ),
+          const SizedBox(height: 8),
+          shadcn.RadioItem<String>(
+            value: widget.secondOption,
+            leading: Text(widget.secondOption),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _buildRadioGroup(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two options
+  // plus the selected value (first option pre-selected, mirrors the kit's
+  // own preview which starts at `'starter'`).
+  final first = (props['option1'] ?? 'Option 1') as String;
+  final second = (props['option2'] ?? 'Option 2') as String;
+  final value = (props['value'] ?? 'Option 1') as String;
+  return _RadioGroupCell(
+    firstOption: first,
+    secondOption: second,
+    initialValue: value,
+  );
+}
+
+Widget _buildSkeleton(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The kit ships
+  // no bare `Skeleton` widget (only `ShadcnSkeletonizerConfigLayer`, which
+  // needs a `ThemeData`, plus the `SkeletonExtension.asSkeleton()` helper
+  // used by the component's own preview), so the catalog wraps a `Text`
+  // label exactly like the preview does.
+  final label = (props['label'] ?? 'Loading') as String;
+  final enabled = (props['enabled'] ?? true) as bool;
+  return Text(label).asSkeleton(enabled: enabled);
+}
+
+Widget _buildBreadcrumb(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: a parent crumb
+  // and the current page (plain `Text` children; the kit's preview uses
+  // `LinkButton`s, but bare text keeps the canvas node dependency-free).
+  final home = (props['home'] ?? 'Home') as String;
+  final current = (props['current'] ?? 'Page') as String;
+  return shadcn.Breadcrumb(children: [Text(home), Text(current)]);
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -422,6 +584,51 @@ final List<CatalogEntry> kCatalog = [
     label: 'Tabbed navigation primitives with lists and panes.',
     defaults: const {'tab1': 'Tab 1', 'tab2': 'Tab 2', 'index': 0},
     build: _buildTabs,
+  ),
+  CatalogEntry(
+    kind: 'accordion',
+    label: 'Single-expansion accordion with configurable triggers and theming.',
+    defaults: const {
+      'title': 'Section 1',
+      'content': 'Content 1',
+      'expanded': false,
+    },
+    build: _buildAccordion,
+  ),
+  CatalogEntry(
+    kind: 'select',
+    label:
+        'Dropdown/select control with popup menus, grouped items, and keyboard navigation.',
+    defaults: const {
+      'placeholder': 'Select an option',
+      'option1': 'Option 1',
+      'option2': 'Option 2',
+      'value': '',
+    },
+    build: _buildSelect,
+  ),
+  CatalogEntry(
+    kind: 'radio_group',
+    label: 'Exclusive selection group with radio items and cards.',
+    defaults: const {
+      'option1': 'Option 1',
+      'option2': 'Option 2',
+      'value': 'Option 1',
+    },
+    build: _buildRadioGroup,
+  ),
+  CatalogEntry(
+    kind: 'skeleton',
+    label: 'Skeletonizer helpers with theme-aware config and extensions.',
+    defaults: const {'label': 'Loading', 'enabled': true},
+    build: _buildSkeleton,
+  ),
+  CatalogEntry(
+    kind: 'breadcrumb',
+    label:
+        'Horizontal breadcrumb trail with arrow/slash separators and overflow handling.',
+    defaults: const {'home': 'Home', 'current': 'Page'},
+    build: _buildBreadcrumb,
   ),
 ];
 

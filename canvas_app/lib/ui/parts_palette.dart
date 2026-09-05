@@ -22,6 +22,11 @@ const Map<String, List<String>> kPartSections = <String, List<String>>{
     'divider',
     'progress',
     'tabs',
+    'accordion',
+    'select',
+    'radio_group',
+    'skeleton',
+    'breadcrumb',
   ],
 };
 
@@ -47,14 +52,28 @@ IconData _iconFor(String kind) {
       return Icons.linear_scale;
     case 'tabs':
       return Icons.tab;
+    case 'accordion':
+      return Icons.expand_more;
+    case 'select':
+      return Icons.arrow_drop_down_circle;
+    case 'radio_group':
+      return Icons.radio_button_checked;
+    case 'skeleton':
+      return Icons.blur_on;
+    case 'breadcrumb':
+      return Icons.chevron_right;
     default:
       return Icons.widgets;
   }
 }
 
+/// Human label for a kind id: `radio_group` → `Radio Group` (plain kinds
+/// like `button` → `Button` are unchanged).
 String _tileLabel(String kind) {
-  if (kind.isEmpty) return kind;
-  return kind[0].toUpperCase() + kind.substring(1);
+  return kind
+      .split('_')
+      .map((w) => w.isEmpty ? w : w[0].toUpperCase() + w.substring(1))
+      .join(' ');
 }
 
 /// Searchable 2-column tile grid replacing the old flat palette list.
