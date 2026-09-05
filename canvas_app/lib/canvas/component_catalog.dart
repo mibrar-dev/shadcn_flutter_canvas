@@ -337,14 +337,39 @@ Widget _buildDivider(Map<String, dynamic> props) {
   // Track M: `thickness` wires into the nullable `Divider(thickness:)` layout
   // param (parsed via `num`; the 1.0 fallback equals the kit's resolved
   // default, so default rendering is unchanged).
+  // Track T (narrow-width): the kit lays the child label inflexibly between
+  // two `Expanded` rule lines, so a long label overflows 320px viewports. A
+  // `Flexible` label cannot fix it — the kit wraps `child` in text-modifier
+  // ancestors (`WrappedText`, `Padding`), which reject flex parent data. The
+  // label is instead capped at 60% of the available width (single-line
+  // ellipsis): short labels keep their natural width (rendering unchanged),
+  // long ones clamp while the rules keep 40%. `LayoutBuilder` reads the real
+  // node width (row slices included); the unbounded fallback is the viewport
+  // width, defaulting narrow-safe.
   final label = (props['label'] ?? '') as String;
   final thickness = ((props['thickness'] as num?)?.toDouble() ?? 1.0).clamp(
     1.0,
     8.0,
   );
-  return shadcn.Divider(
-    thickness: thickness,
-    child: label.isEmpty ? null : Text(label),
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      if (label.isEmpty) return shadcn.Divider(thickness: thickness);
+      final max = constraints.maxWidth;
+      final available = max.isFinite
+          ? max
+          : (MediaQuery.maybeSizeOf(context)?.width ?? 320.0);
+      return shadcn.Divider(
+        thickness: thickness,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: available * 0.6),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    },
   );
 }
 
@@ -528,6 +553,15 @@ class _RadioGroupCellState extends State<_RadioGroupCell> {
 
   @override
   Widget build(BuildContext context) {
+    // Track T (narrow-width): `RadioItem` lays `leading` inflexibly in its
+    // internal `Row` (radio circle + gaps are fixed), so a long option label
+    // overflows 320px viewports. The label rides a loose `Flexible` with
+    // single-line ellipsis — short labels keep their natural width
+    // (rendering unchanged), long ones clamp instead of overflowing. It is
+    // the row's only flex child, so it simply takes the leftover width.
+    Widget optionLabel(String option) => Flexible(
+      child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
+    );
     return shadcn.RadioGroup<String>(
       value: _value,
       // Track M: `disabled` wires into `RadioGroup(enabled:)` (nullable;
@@ -540,12 +574,12 @@ class _RadioGroupCellState extends State<_RadioGroupCell> {
         children: [
           shadcn.RadioItem<String>(
             value: widget.firstOption,
-            leading: Text(widget.firstOption),
+            leading: optionLabel(widget.firstOption),
           ),
           const SizedBox(height: 8),
           shadcn.RadioItem<String>(
             value: widget.secondOption,
-            leading: Text(widget.secondOption),
+            leading: optionLabel(widget.secondOption),
           ),
         ],
       ),
@@ -1109,11 +1143,21 @@ class _PaginationCellState extends State<_PaginationCell> {
 
   @override
   Widget build(BuildContext context) {
-    return shadcn.Pagination(
-      page: _page,
-      totalPages: widget.totalPages,
-      onPageChanged: (p) =>
-          setState(() => _page = p.clamp(1, widget.totalPages)),
+    // Track T (narrow-width): labeled Previous/Next buttons make even the
+    // 5-page default 554px wide, overflowing 320px phones (and 390px ones).
+    // Icon-only buttons fit better, and the `scaleDown` shell absorbs the
+    // remaining ~47px: page numbers (the canvas-relevant state) render at
+    // full size whenever they fit and shrink slightly only when they must.
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: shadcn.Pagination(
+        page: _page,
+        totalPages: widget.totalPages,
+        showLabel: false,
+        onPageChanged: (p) =>
+            setState(() => _page = p.clamp(1, widget.totalPages)),
+      ),
     );
   }
 }
@@ -1242,24 +1286,36 @@ Widget _buildMenubar(Map<String, dynamic> props) {
   // so canvas shows the desktop bar itself.
   final menu1 = (props['menu1'] ?? 'File') as String;
   final menu2 = (props['menu2'] ?? 'Edit') as String;
-  return shadcn.Menubar(
-    border: true,
-    children: [
-      shadcn.MenuButton(
-        subMenu: const [
-          shadcn.MenuButton(child: Text('New')),
-          shadcn.MenuButton(child: Text('Open')),
+  // Track T (narrow-width): the kit lays bar items inflexibly in an internal
+  // `Row`, so long menu labels overflow 320px viewports. The bar rides a
+  // fixed-height horizontal scroll shell — short labels never scroll
+  // (rendering unchanged); long ones scroll instead of overflowing. Height
+  // 42 is the measured natural bar height (test env); the shell also bounds
+  // the height root canvas columns leave unbounded.
+  return SizedBox(
+    height: 42,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: shadcn.Menubar(
+        border: true,
+        children: [
+          shadcn.MenuButton(
+            subMenu: const [
+              shadcn.MenuButton(child: Text('New')),
+              shadcn.MenuButton(child: Text('Open')),
+            ],
+            child: Text(menu1),
+          ),
+          shadcn.MenuButton(
+            subMenu: const [
+              shadcn.MenuButton(child: Text('Cut')),
+              shadcn.MenuButton(child: Text('Copy')),
+            ],
+            child: Text(menu2),
+          ),
         ],
-        child: Text(menu1),
       ),
-      shadcn.MenuButton(
-        subMenu: const [
-          shadcn.MenuButton(child: Text('Cut')),
-          shadcn.MenuButton(child: Text('Copy')),
-        ],
-        child: Text(menu2),
-      ),
-    ],
+    ),
   );
 }
 
@@ -1343,7 +1399,9 @@ Widget _buildCommand(Map<String, dynamic> props) {
   // search row plus the real `CommandCategory`/`CommandItem` result parts in
   // the shared `MenuPopup` container (all bare-capable; `CommandItem` owns
   // its focus/hover state internally). Debounced stream search, keyboard
-  // navigation, and the footer hints are runtime-only.
+  // navigation, and the footer hints are runtime-only. Track T re-verified at
+  // 320px: the live shell still overflows 526px in a bounded 300px shell, so
+  // no bounded shell can rescue it — static stays.
   final hint = (props['hint'] ?? 'Search commands...') as String;
   final item1 = (props['item1'] ?? 'Calendar') as String;
   final item2 = (props['item2'] ?? 'Settings') as String;
@@ -1437,6 +1495,10 @@ class _TabContainerCellState extends State<_TabContainerCell> {
 
   @override
   Widget build(BuildContext context) {
+    // Track T (narrow-width): the header row below is catalog-owned, so each
+    // tab rides a loose `Flexible` with single-line ellipsis labels — short
+    // labels keep their natural centered widths (rendering unchanged), long
+    // ones share the 320px width instead of overflowing it.
     return shadcn.TabContainer(
       selected: _selected,
       onSelect: (i) =>
@@ -1444,7 +1506,10 @@ class _TabContainerCellState extends State<_TabContainerCell> {
       builder: (context, children) => Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: children),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [for (final child in children) Flexible(child: child)],
+          ),
           const SizedBox(height: 8),
           Text('Selected tab: ${_selected + 1}'),
         ],
@@ -1465,7 +1530,16 @@ class _TabContainerCellState extends State<_TabContainerCell> {
         );
       },
       children: [
-        for (final label in widget.labels) shadcn.TabItem(child: Text(label)),
+        // Track T: single-line ellipsis so long labels clamp inside the
+        // header row's `Flexible` cells (short labels render unchanged).
+        for (final label in widget.labels)
+          shadcn.TabItem(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
       ],
     );
   }
@@ -1508,13 +1582,26 @@ class _TabListCellState extends State<_TabListCell> {
 
   @override
   Widget build(BuildContext context) {
-    return tabs.TabList(
-      index: _index,
-      onChanged: (i) => setState(() => _index = i.clamp(0, 1)),
-      children: [
-        tabs.TabItem(child: Text(widget.firstLabel)),
-        tabs.TabItem(child: Text(widget.secondLabel)),
-      ],
+    // Track T (narrow-width): `tabs.TabList` lays its buttons inflexibly in
+    // an internal `Row`, so long tab labels overflow 320px viewports. The
+    // header rides a fixed-height horizontal scroll shell — short labels
+    // never scroll (rendering unchanged); long ones scroll instead of
+    // overflowing. Height 37 is the measured natural header height (test
+    // env); the shell also bounds the height root canvas columns leave
+    // unbounded.
+    return SizedBox(
+      height: 37,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: tabs.TabList(
+          index: _index,
+          onChanged: (i) => setState(() => _index = i.clamp(0, 1)),
+          children: [
+            tabs.TabItem(child: Text(widget.firstLabel)),
+            tabs.TabItem(child: Text(widget.secondLabel)),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -1623,13 +1710,25 @@ class _StepperCellState extends State<_StepperCell> {
 
   @override
   Widget build(BuildContext context) {
+    // Track T (narrow-width): the vertical variant lays each title
+    // inflexibly in an internal `Row` (indicator + gap + title), so a long
+    // step title overflows 320px viewports. Titles ride a loose `Flexible`
+    // with single-line ellipsis — short titles keep their natural width
+    // (rendering unchanged), long ones clamp instead of overflowing. Each
+    // title is its row's only flex child, so it takes the leftover width.
     return shadcn.Stepper(
       controller: _controller,
       direction: Axis.vertical,
       steps: [
         for (var i = 0; i < widget.steps.length; i++)
           shadcn.Step(
-            title: Text(widget.steps[i]),
+            title: Flexible(
+              child: Text(
+                widget.steps[i],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
             // Required: the circle variant force-unwraps the built content
             // (`child!` in `_step_variant_circle.dart`), so a null
             // contentBuilder crashes even for inactive steps.

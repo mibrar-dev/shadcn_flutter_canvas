@@ -159,6 +159,12 @@ class CanvasStore extends ChangeNotifier {
               crossAxis: n.crossAxis,
               expand: n.expand,
               flex: n.flex,
+              hiddenOn: Set<String>.from(n.hiddenOn),
+              breakpointValues: {
+                for (final entry in n.breakpointValues.entries)
+                  entry.key: Map<String, dynamic>.from(entry.value),
+              },
+              slots: Map<String, String>.from(n.slots),
             )
           : n,
     ));
@@ -186,6 +192,12 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        hiddenOn: Set<String>.from(n.hiddenOn),
+        breakpointValues: {
+          for (final entry in n.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(n.slots),
         items: [
           for (final i in n.items)
             if (i.id == itemId)
@@ -234,6 +246,12 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        hiddenOn: Set<String>.from(n.hiddenOn),
+        breakpointValues: {
+          for (final entry in n.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(n.slots),
         items: [
           for (final i in n.items)
             if (i.id == itemId)
@@ -328,6 +346,12 @@ class CanvasStore extends ChangeNotifier {
           crossAxis: n.crossAxis,
           expand: n.expand,
           flex: n.flex,
+          hiddenOn: Set<String>.from(n.hiddenOn),
+          breakpointValues: {
+            for (final entry in n.breakpointValues.entries)
+              entry.key: Map<String, dynamic>.from(entry.value),
+          },
+          slots: Map<String, String>.from(n.slots),
           items: [
             for (final i in n.items)
               CanvasItem(
@@ -569,6 +593,12 @@ class CanvasStore extends ChangeNotifier {
             crossAxis: crossAxis ?? n.crossAxis,
             expand: expand ?? n.expand,
             flex: flex ?? n.flex,
+            hiddenOn: Set<String>.from(n.hiddenOn),
+            breakpointValues: {
+              for (final entry in n.breakpointValues.entries)
+                entry.key: Map<String, dynamic>.from(entry.value),
+            },
+            slots: Map<String, String>.from(n.slots),
           )
         : n));
   }
