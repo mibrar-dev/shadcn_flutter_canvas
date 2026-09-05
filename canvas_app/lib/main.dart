@@ -145,6 +145,8 @@ class _EditorShellState extends State<EditorShell> {
     return ListenableBuilder(
       listenable: _relay,
       builder: (context, _) {
+        // ignore: avoid_print
+        print("SHELL_BUILD sel=$_selectedNodeId");
         final doc = widget.store.doc;
         final colors =
             doc.theme.dark ? EditorColors.dark : EditorColors.light;
@@ -292,7 +294,9 @@ class _EditorShellState extends State<EditorShell> {
             zoom: _zoom,
             panMode: _panMode,
             selectedNodeId: _selectedNodeId,
-            onSelectNode: (id) => setState(() => _selectedNodeId = id),
+            onSelectNode: (id) {
+            setState(() => _selectedNodeId = id);
+          },
           ),
         ),
         Positioned(

@@ -158,6 +158,10 @@ class EditorMetrics {
   /// Zoom percentage readout width. Measured: 56.
   static const double zoomLabelWidth = 56;
 
+  /// Screen label row height above each frame (phone/desktop segmented pair).
+  /// Measured: 28 — the SizedBox the label row is wrapped in.
+  static const double screenLabelHeight = 28;
+
   /// Phone frame outer box. Measured: 343x725 (bezel included).
   static const double phoneOuterWidth = 343;
   static const double phoneOuterHeight = 725;

@@ -138,6 +138,14 @@ class CanvasScreen {
 /// the nodes with `parentId == id`; `gap` is that row spacing (ignored for
 /// leaves). `x`/`y` are kept as metadata for legacy docs; the flow renderer
 /// ignores them and uses list order instead.
+///
+/// W3 container alignment/flex:
+/// `mainAxis` (`start|center|end|spaceBetween|spaceAround|spaceEvenly`,
+/// null = Flutter default start) and `crossAxis`
+/// (`start|center|end|stretch`, null = default center for rows) live on the
+/// ROW container. `expand` (`none|flex|expanded`, null/none = default) and
+/// `flex` (default 1 when expand is flex/expanded and flex is null) live on
+/// the CHILD node.
 class CanvasNode {
   final String id;
   final String screenId;
@@ -147,6 +155,10 @@ class CanvasNode {
   final String? parentId;
   final bool isRow;
   final double gap;
+  final String? mainAxis;
+  final String? crossAxis;
+  final String? expand;
+  final int? flex;
 
   const CanvasNode({
     required this.id,
@@ -157,6 +169,10 @@ class CanvasNode {
     this.parentId,
     this.isRow = false,
     this.gap = kFlowRowGapDefault,
+    this.mainAxis,
+    this.crossAxis,
+    this.expand,
+    this.flex,
   });
 
   factory CanvasNode.fromJson(Map<String, dynamic> json) => CanvasNode(
@@ -171,6 +187,10 @@ class CanvasNode {
         parentId: json['parentId'] as String?,
         isRow: (json['isRow'] as bool?) ?? false,
         gap: (json['gap'] as num?)?.toDouble() ?? kFlowRowGapDefault,
+        mainAxis: json['mainAxis'] as String?,
+        crossAxis: json['crossAxis'] as String?,
+        expand: json['expand'] as String?,
+        flex: (json['flex'] as num?)?.toInt(),
       );
 
   Map<String, dynamic> toJson() => {
@@ -182,6 +202,10 @@ class CanvasNode {
         'parentId': parentId,
         'isRow': isRow,
         'gap': gap,
+        'mainAxis': mainAxis,
+        'crossAxis': crossAxis,
+        'expand': expand,
+        'flex': flex,
       };
 }
 

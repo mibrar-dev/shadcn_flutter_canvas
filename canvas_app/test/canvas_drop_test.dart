@@ -1,5 +1,6 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/canvas/component_registry.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
@@ -90,7 +91,7 @@ void main() {
     expect(find.text('unknown: mystery'), findsOneWidget);
   });
 
-  testWidgets('parts palette shows one draggable tile per kind + row', (
+  testWidgets('parts palette shows one draggable tile per registry kind', (
     tester,
   ) async {
     useReferenceViewport(tester);
@@ -101,12 +102,11 @@ void main() {
     for (final entry in kCatalog) {
       expect(find.text(_tileLabel(entry.kind)), findsOneWidget);
     }
-    // The Layout section adds the row container tile on top of the catalog.
+    // Full registry: every kit component (+ the row container, already in
+    // kRegistry) gets a tile; non-visual utility kinds are hidden.
+    final expected = kRegistry.length - kHiddenUtilityKinds.length;
     expect(find.text('Row'), findsOneWidget);
-    expect(
-      find.byType(Draggable<String>),
-      findsNWidgets(kCatalog.length + 1),
-    );
+    expect(find.byType(Draggable<String>), findsNWidgets(expected));
   });
 
   testWidgets('palette search filters tiles and reports empty results', (

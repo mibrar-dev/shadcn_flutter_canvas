@@ -184,7 +184,7 @@ class ScreenLabel extends StatelessWidget {
         onTap: onTap,
         child: SizedBox(
           width: 28,
-          height: 28,
+          height: EditorMetrics.screenLabelHeight,
           child: Icon(
             icon,
             size: 16,
@@ -199,6 +199,61 @@ class ScreenLabel extends StatelessWidget {
 /// Finder for the flow insertion index line (used by flow-layout tests).
 const ValueKey<String> kFlowInsertLineKey =
     ValueKey<String>('flow-insert-line');
+
+/// W3 container alignment mapping: row `mainAxis` strings to
+/// [MainAxisAlignment] (`null` → start, unknown → start).
+MainAxisAlignment rowMainAxis(String? value) {
+  switch (value) {
+    case 'center':
+      return MainAxisAlignment.center;
+    case 'end':
+      return MainAxisAlignment.end;
+    case 'spaceBetween':
+      return MainAxisAlignment.spaceBetween;
+    case 'spaceAround':
+      return MainAxisAlignment.spaceAround;
+    case 'spaceEvenly':
+      return MainAxisAlignment.spaceEvenly;
+    case 'start':
+    case null:
+      return MainAxisAlignment.start;
+    default:
+      return MainAxisAlignment.start;
+  }
+}
+
+/// W3 container alignment mapping: row `crossAxis` strings to
+/// [CrossAxisAlignment] (`null` → center, unknown → center).
+CrossAxisAlignment rowCrossAxis(String? value) {
+  switch (value) {
+    case 'start':
+      return CrossAxisAlignment.start;
+    case 'end':
+      return CrossAxisAlignment.end;
+    case 'stretch':
+      return CrossAxisAlignment.stretch;
+    case 'center':
+    case null:
+      return CrossAxisAlignment.center;
+    default:
+      return CrossAxisAlignment.center;
+  }
+}
+
+/// W3 child flex wrapper: `expanded` → [Expanded], `flex` → [Flexible] with
+/// `flex ?? 1` (Flexible defaults to FlexFit.loose), `none`/null/unknown →
+/// the pre-W3 default bare [Flexible] (finite-width share so kit widgets with
+/// internal Expanded rows never see unbounded width).
+Widget wrapRowChild(CanvasNode child, Widget content) {
+  switch (child.expand) {
+    case 'expanded':
+      return Expanded(flex: child.flex ?? 1, child: content);
+    case 'flex':
+      return Flexible(flex: child.flex ?? 1, child: content);
+    default:
+      return Flexible(child: content);
+  }
+}
 
 /// Insertion index for [pointerMain] (pointer position along a container's
 /// main axis, in screen-local logical px) given the container's
@@ -238,12 +293,16 @@ class _FlowHit {
 /// The screen content is `Padding(kFlowScreenPadding)` around a top-left
 /// `Column` of the screen's root nodes (`parentId == null`, doc order,
 /// `kFlowScreenGap` separators). A row container (`isRow`) renders as a
-/// start/center `Row` of its children (doc order, node `gap` separators);
-/// every other node renders today's `ConstrainedBox` leaf (the clamp stays,
-/// and inside rows the incoming flex width additionally bounds `maxWidth`,
-/// so every catalog widget gets the finite box it needs and nothing crashes
-/// on unbounded flex). Empty rows render a dashed drop placeholder (min
-/// height 64, always hit-testable); the empty-screen hint is unchanged.
+/// `Row` of its children (doc order, node `gap` separators) with
+/// `mainAxis` → MainAxisAlignment (null → start) and `crossAxis` →
+/// CrossAxisAlignment (null → center); each child wraps via [wrapRowChild]
+/// (`expanded` → Expanded, `flex` → Flexible, null/none → default Flexible).
+/// Root-column leaves ignore `expand`/`flex`. Every other node renders
+/// today's `ConstrainedBox` leaf (the clamp stays, and inside rows the
+/// incoming flex width additionally bounds `maxWidth`, so every catalog
+/// widget gets the finite box it needs and nothing crashes on unbounded
+/// flex). Empty rows render a dashed drop placeholder (min height 64, always
+/// hit-testable); the empty-screen hint is unchanged.
 ///
 /// `x`/`y` are stored drop metadata and ignored by this renderer (see
 /// [DesignCanvas.onAccept]). Bezel/labels/zoom/selection ring/drop-wash and
@@ -578,6 +637,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   }
 
   /// Screen content: padded top-left column of root nodes (doc order).
+  /// Root leaves ignore `expand`/`flex` (W3): they render unwrapped.
   Widget _buildFlow(EditorColors colors) {
     final roots = [
       for (final node in widget.nodes)
@@ -602,10 +662,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   }
 
   /// One row container: full-width tap target (selects the row for gap
-  /// editing) around a start/center `Row` of its children (doc order, node
-  /// `gap` separators). Children ride `Flexible` so each gets a finite width
-  /// share — kit widgets with internal `Expanded` rows (e.g. `TextField`)
-  /// would detonate on the `Row`'s unbounded width otherwise.
+  /// editing) around a `Row` of its children (doc order, node `gap`
+  /// separators) with W3 alignment (`mainAxis` null → start, `crossAxis`
+  /// null → center). Children ride [wrapRowChild] so each gets a finite
+  /// width share — kit widgets with internal `Expanded` rows (e.g.
+  /// `TextField`) would detonate on the `Row`'s unbounded width otherwise.
+  ///
+  /// `crossAxis == stretch` wraps the Row in [IntrinsicHeight]: a Row with
+  /// stretch inside the screen Column (which measures children with
+  /// unbounded height) asserts without a tight cross-axis height, and
+  /// IntrinsicHeight supplies it from the tallest child.
   Widget _buildRow(CanvasNode node, EditorColors colors) {
     final kids = [
       for (final child in widget.nodes)
@@ -613,6 +679,20 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     ];
     // Clamp defensive: a negative stored gap must never size a separator.
     final gap = math.max(0.0, node.gap);
+    final cross = rowCrossAxis(node.crossAxis);
+    Widget row = Row(
+      mainAxisAlignment: rowMainAxis(node.mainAxis),
+      crossAxisAlignment: cross,
+      children: [
+        for (var i = 0; i < kids.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          wrapRowChild(kids[i], _buildLeaf(kids[i], colors)),
+        ],
+      ],
+    );
+    if (cross == CrossAxisAlignment.stretch && kids.isNotEmpty) {
+      row = IntrinsicHeight(child: row);
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => widget.onSelectNode?.call(node.id),
@@ -629,18 +709,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 borderRadius: BorderRadius.circular(8),
               )
             : null,
-        child: kids.isEmpty
-            ? _EmptyRowPlaceholder(colors: colors)
-            : Row(
-                mainAxisAlignment: MainAxisAlignment.start,
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < kids.length; i++) ...[
-                    if (i > 0) SizedBox(width: gap),
-                    Flexible(child: _buildLeaf(kids[i], colors)),
-                  ],
-                ],
-              ),
+        child: kids.isEmpty ? _EmptyRowPlaceholder(colors: colors) : row,
       ),
     );
   }

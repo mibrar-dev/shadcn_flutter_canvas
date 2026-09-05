@@ -149,7 +149,11 @@ List<String> _nodeRows(ScreenDoc doc, CanvasNode node, int level) {
         '$pad${_itemRow(node, i, positioned: positioned)}',
     ];
   }
-  final lines = <String>['$pad- row (gap ${_num(node.gap)})'];
+  final header = StringBuffer('$pad- row (gap ${_num(node.gap)}');
+  if (node.mainAxis != null) header.write(', main ${node.mainAxis}');
+  if (node.crossAxis != null) header.write(', cross ${node.crossAxis}');
+  header.write(')');
+  final lines = <String>[header.toString()];
   for (final item in node.items) {
     lines.add('  $pad${_itemRow(node, item, positioned: false)}');
   }

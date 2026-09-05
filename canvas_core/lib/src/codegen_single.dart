@@ -100,13 +100,61 @@ List<CanvasNode> _rootNodes(ScreenDoc doc, String screenId) {
   ];
 }
 
+/// W3 alignment names: row `mainAxis` strings to `MainAxisAlignment` const
+/// names (`null`/unknown → start, preserving the pre-W3 default output).
+String _mainAxisName(String? value) {
+  switch (value) {
+    case 'center':
+      return 'MainAxisAlignment.center';
+    case 'end':
+      return 'MainAxisAlignment.end';
+    case 'spaceBetween':
+      return 'MainAxisAlignment.spaceBetween';
+    case 'spaceAround':
+      return 'MainAxisAlignment.spaceAround';
+    case 'spaceEvenly':
+      return 'MainAxisAlignment.spaceEvenly';
+    case 'start':
+    case null:
+      return 'MainAxisAlignment.start';
+    default:
+      return 'MainAxisAlignment.start';
+  }
+}
+
+/// W3 alignment names: row `crossAxis` strings to `CrossAxisAlignment` const
+/// names (`null`/unknown → center, preserving the pre-W3 default output).
+String _crossAxisName(String? value) {
+  switch (value) {
+    case 'start':
+      return 'CrossAxisAlignment.start';
+    case 'end':
+      return 'CrossAxisAlignment.end';
+    case 'stretch':
+      return 'CrossAxisAlignment.stretch';
+    case 'center':
+    case null:
+      return 'CrossAxisAlignment.center';
+    default:
+      return 'CrossAxisAlignment.center';
+  }
+}
+
 /// Writes one root flow child: a leaf's items inline, or a [Row] for a row
 /// container whose children are the row's own items plus each child node's
 /// items (recurses for nested rows), separated by `SizedBox(width: gap)`.
 ///
-/// No Expanded/Flex/Align v1 (deliberate): rows size to their content and
-/// align to the start/center, matching the flow renderer's simple box model.
-/// Added only when wrapping or flexible sizing is specified.
+/// W3: the row emits its `mainAxisAlignment`/`crossAxisAlignment` from the
+/// mapped `mainAxis`/`crossAxis` (null → the pre-W3 start/center defaults, so
+/// old docs generate byte-identical output). Each child node with
+/// `expand == 'expanded'` wraps in `Expanded(flex: n, child: ...)` and
+/// `expand == 'flex'` in `Flexible(flex: n, child: ...)` (`flex ?? 1`);
+/// null/none/unknown emit unwrapped (pre-W3 output). Row-own items are never
+/// wrapped. Deterministic doc order; separators unchanged.
+///
+/// `crossAxis == stretch` wraps the Row in `IntrinsicHeight`: a stretch Row
+/// inside the screen Column (unbounded height) asserts without it, in both
+/// the renderer and the generated app.
 void _writeFlowChild(
   StringBuffer out,
   ScreenDoc doc,
@@ -117,12 +165,16 @@ void _writeFlowChild(
     _writeItemBlock(out, node.items, indent);
     return;
   }
+  final stretch = node.crossAxis == 'stretch';
+  final rowIndent = stretch ? '$indent  ' : indent;
+  final childIndent = '$rowIndent    ';
+  if (stretch) out.writeln('${indent}IntrinsicHeight(');
   out
-    ..writeln('${indent}Row(')
-    ..writeln('$indent  mainAxisAlignment: MainAxisAlignment.start,')
-    ..writeln('$indent  crossAxisAlignment: CrossAxisAlignment.center,')
-    ..writeln('$indent  children: [');
-  final childIndent = '$indent    ';
+    ..writeln('${rowIndent}Row(')
+    ..writeln('$rowIndent  mainAxisAlignment: ${_mainAxisName(node.mainAxis)},')
+    ..writeln(
+        '$rowIndent  crossAxisAlignment: ${_crossAxisName(node.crossAxis)},')
+    ..writeln('$rowIndent  children: [');
   var first = true;
   void separator() {
     if (!first) {
@@ -142,18 +194,70 @@ void _writeFlowChild(
     if (child.parentId != node.id) continue;
     empty = false;
     separator();
-    if (child.isRow) {
-      _writeFlowChild(out, doc, child, childIndent);
-    } else {
-      _writeItemBlock(out, child.items, childIndent);
-    }
+    _writeRowChild(out, doc, child, childIndent);
   }
   if (empty) {
     out.writeln('${childIndent}// (empty row)');
   }
   out
-    ..writeln('$indent  ],')
-    ..writeln('$indent),');
+    ..writeln('$rowIndent  ],')
+    ..writeln('$rowIndent),');
+  if (stretch) out.writeln('$indent),');
+}
+
+/// Writes one row child with W3 flex wrapping: nested rows recurse inside
+/// the wrapper; leaves wrap each item expression (single-item nodes — the
+/// common drop path — yield one wrapper; multi-item nodes wrap each item
+/// with the same flex to stay deterministic without regrouping).
+void _writeRowChild(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode child,
+  String indent,
+) {
+  final expand = child.expand;
+  if (expand != 'expanded' && expand != 'flex') {
+    if (child.isRow) {
+      _writeFlowChild(out, doc, child, indent);
+    } else {
+      _writeItemBlock(out, child.items, indent);
+    }
+    return;
+  }
+  final flex = child.flex ?? 1;
+  final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+  if (child.isRow) {
+    out
+      ..writeln('${indent}$wrapper(')
+      ..writeln('$indent  flex: $flex,')
+      ..writeln('${indent}  child:');
+    final nestedIndent = '$indent    ';
+    final nested = StringBuffer();
+    _writeFlowChild(nested, doc, child, nestedIndent);
+    for (final line in nested.toString().split('\n')) {
+      if (line.isEmpty) continue;
+      out.writeln(line);
+    }
+    out.writeln('$indent),');
+    return;
+  }
+  for (final item in child.items) {
+    if (item.action != null) {
+      out.writeln('$indent// taps -> ${item.action!.to}');
+    }
+    final exprLines = _itemExpression(item).split('\n');
+    out
+      ..writeln('${indent}$wrapper(')
+      ..writeln('$indent  flex: $flex,')
+      ..writeln('${indent}  child: ${exprLines.first}');
+    for (final line in exprLines.skip(1)) {
+      out.writeln('${indent}  $line');
+    }
+    out.writeln('$indent),');
+  }
+  if (child.items.isEmpty) {
+    out.writeln('$indent$wrapper(flex: $flex, child: SizedBox.shrink()),');
+  }
 }
 
 /// Writes item constructor expressions (with tap comments) at [indent].

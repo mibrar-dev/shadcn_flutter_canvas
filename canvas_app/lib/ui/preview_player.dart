@@ -15,9 +15,20 @@
 /// The player takes an immutable [ScreenDoc] snapshot (preview never edits),
 /// themed by [themeOverride] or `doc.theme` via [ThemedCanvas].
 ///
+/// Device frames: the top bar holds a [DevicePicker] (phone 390×844, tablet
+/// 768×1024, desktop fluid 1100, desktop 1440, plus a landscape toggle that
+/// swaps phone/tablet to 844×390 / 1024×768). Mobile/tablet stages render in
+/// a bezel-ish rounded frame from [EditorTokens]; desktop stays frameless
+/// fluid. The stage width IS the responsive breakpoint: it resolves a [Tier]
+/// via [tierForWidth] (shown as a chip under the stage), so the adaptive-nav
+/// demo re-tiers live as the device changes.
+///
 /// Content area is exempt from the chrome dogfooding rule (user content), but
 /// the chrome here (back bar) still uses registry widgets via
-/// `lib/shadcn_ui.dart` — no raw Material or Cupertino widgets in this file.
+/// `lib/shadcn_ui.dart` — no raw Material or Cupertino widgets in this file,
+/// except the adaptive-nav DEMO template below, which is a user-content
+/// screen preset showcasing the canonical Material responsive nav pattern
+/// (NavigationBar/NavigationRail) for later code emission.
 library;
 
 import 'package:flutter/gestures.dart';
@@ -26,21 +37,19 @@ import 'package:flutter/material.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
-import 'package:canvas_app/ui/editor_buttons.dart';
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
+import 'package:canvas_app/ui/responsive.dart';
 import 'package:canvas_app/ui/theme_bar.dart';
 
-/// Max content width in mobile (phone) preview mode. Centers a 390pt stage
-/// on the Scaffold surface.
+/// Phone stage width (mirrors [kPreviewDevicePhone.width]). Kept as a named
+/// const because `preview_devices_test.dart` asserts against it.
 const double kPreviewMobileMaxWidth = 390;
 
-/// Max content width in web (desktop) preview mode. Frameless fluid stage
-/// capped at 1100pt, centered on the Scaffold surface.
+/// Desktop-fluid stage cap (mirrors [kPreviewDeviceDesktopFluid.width]).
+/// Kept as a named const because `preview_devices_test.dart` asserts
+/// against it.
 const double kPreviewWebMaxWidth = 1100;
-
-/// Preview device mode for [PreviewPlayer]. Internal state only — the widget
-/// constructor is unchanged so existing preview tests compile untouched.
-enum PreviewDevice { mobile, web }
 
 /// Preview host over [doc] starting at [startScreenId] (or the first screen).
 class PreviewPlayer extends StatefulWidget {
@@ -71,8 +80,17 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       widget.doc.screens.first.id,
   ];
 
-  /// Device toggle state. Defaults to mobile; internal only (no ctor change).
-  PreviewDevice _device = PreviewDevice.mobile;
+  /// Device picker state. Internal only (no ctor change): index into
+  /// [kPreviewDevices], defaulting to phone.
+  int _deviceIndex = 0;
+
+  /// Landscape toggle: swaps framed phone/tablet dimensions (844×390 /
+  /// 1024×768). Ignored for frameless desktop presets.
+  bool _landscape = false;
+
+  /// Adaptive-nav demo overlay. Behaves like a pushed preview screen: Back
+  /// closes it first, then pops the doc stack.
+  bool _demoOpen = false;
 
   String? get _currentId => _stack.isEmpty ? null : _stack.last;
 
@@ -90,6 +108,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   }
 
   void _onBack() {
+    if (_demoOpen) {
+      setState(() => _demoOpen = false);
+      return;
+    }
     if (_stack.length > 1) {
       setState(() => _stack.removeLast());
     } else {
@@ -101,13 +123,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   Widget build(BuildContext context) {
     final current = _currentId == null ? null : _screen(_currentId!);
     final colors = EditorTheme.of(context);
-    // ONE-TREE RULE: mobile and web render the SAME content tree below (the
-    // keyed stage SizedBox + ListView/empty note). Only the width cap changes
-    // (390 vs 1100). Never branch into two separate content builders — the
-    // toggle must not alter item counts, tap handling, or back-stack behavior.
-    final maxWidth = _device == PreviewDevice.mobile
-        ? kPreviewMobileMaxWidth
-        : kPreviewWebMaxWidth;
+    // ONE-TREE RULE: every device renders the SAME content subtree below
+    // ([_stageContent]). Only the stage dimensions and the bezel frame
+    // change — the picker must not alter item counts, tap handling, or
+    // back-stack behavior.
     return ThemedCanvas(
       theme: widget.themeOverride ?? widget.doc.theme,
       child: Scaffold(
@@ -126,28 +145,28 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        current?.name ?? 'No screens',
+                        _demoOpen
+                            ? 'Responsive demo'
+                            : (current?.name ?? 'No screens'),
                         style: EditorType.screenLabel
                             .copyWith(color: colors.onSurface),
                       ),
                     ),
-                    EditorSegmented(
-                      items: const [
-                        EditorSegmentItem(
-                          icon: Icons.smartphone,
-                          tooltip: 'Mobile 390',
-                        ),
-                        EditorSegmentItem(
-                          icon: Icons.desktop_windows_outlined,
-                          tooltip: 'Web fluid',
-                        ),
-                      ],
-                      selectedIndex: _device == PreviewDevice.mobile ? 0 : 1,
+                    DevicePicker(
+                      selectedIndex: _deviceIndex,
                       onSelect: (index) => setState(() {
-                        _device = index == 0
-                            ? PreviewDevice.mobile
-                            : PreviewDevice.web;
+                        _deviceIndex = index;
                       }),
+                      landscape: _landscape,
+                      onLandscapeChanged: (value) =>
+                          setState(() => _landscape = value),
+                    ),
+                    const SizedBox(width: 4),
+                    shadcn.GhostButton(
+                      onPressed: _demoOpen
+                          ? null
+                          : () => setState(() => _demoOpen = true),
+                      child: const Text('Responsive demo'),
                     ),
                   ],
                 ),
@@ -156,48 +175,114 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
               Expanded(
                 child: LayoutBuilder(
                   builder: (context, constraints) {
-                    // Clamp the stage to the device cap but never exceed the
-                    // available viewport (narrow windows shrink gracefully).
-                    final stageWidth = constraints.maxWidth > maxWidth
-                        ? maxWidth
+                    final spec = resolveDevice(
+                      kPreviewDevices[_deviceIndex],
+                      landscape: _landscape,
+                    );
+                    // Clamp the stage to the device geometry but never exceed
+                    // the available viewport (narrow windows shrink
+                    // gracefully). Framed devices keep their fixed height;
+                    // fluid desktop stages fill the available height.
+                    final stageWidth = constraints.maxWidth > spec.width
+                        ? spec.width
                         : constraints.maxWidth;
-                    return Align(
-                      alignment: Alignment.topCenter,
-                      child: SizedBox(
-                        key: const ValueKey('previewStage'),
-                        width: stageWidth,
-                        height: constraints.maxHeight,
-                        child: current == null
-                            ? Center(
+                    // Stable frame skeleton: the same widget TYPES wrap the
+                    // content on every device (a bare [Container] would
+                    // insert/remove DecoratedBox/Padding internally when its
+                    // decoration toggles, remounting the content below and
+                    // wiping state like the demo's selected tab). Only scalar
+                    // params collapse to zero when frameless, so the content
+                    // subtree keeps its element position on every switch and
+                    // demo selection survives tier changes.
+                    final frame = spec.framed
+                        ? EditorMetrics.phoneBezel
+                        : 0.0;
+                    var innerHeight = spec.height == null
+                        ? constraints.maxHeight
+                        : (spec.height! > constraints.maxHeight
+                              ? constraints.maxHeight
+                              : spec.height!);
+                    // Reserve the bezel inside the available height so the
+                    // frame never overflows short viewports (e.g. the 844pt
+                    // phone in widget-test viewports).
+                    var outerHeight = innerHeight + frame * 2;
+                    if (outerHeight > constraints.maxHeight) {
+                      outerHeight = constraints.maxHeight;
+                    }
+                    innerHeight = outerHeight - frame * 2;
+                    final outerWidth =
+                        stageWidth + frame * 2 > constraints.maxWidth
+                        ? constraints.maxWidth
+                        : stageWidth + frame * 2;
+                    // The canvas IS the breakpoint: preview width resolves
+                    // the tier, shown as a chip under the stage.
+                    final tier = tierForWidth(stageWidth);
+                    final content = _demoOpen
+                        ? buildAdaptiveNavDemo()
+                        : _stageContent(current, colors);
+                    return Stack(
+                      children: [
+                        Align(
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: outerWidth,
+                            height: outerHeight,
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: spec.framed
+                                    ? colors.bezel
+                                    : Colors.transparent,
+                                borderRadius: BorderRadius.circular(
+                                  spec.framed
+                                      ? EditorMetrics.phoneOuterRadius
+                                      : 0,
+                                ),
+                              ),
+                              child: Padding(
+                                padding: EdgeInsets.all(frame),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(
+                                    spec.framed
+                                        ? EditorMetrics.phoneInnerRadius
+                                        : 0,
+                                  ),
+                                  child: SizedBox(
+                                    key: const ValueKey('previewStage'),
+                                    width: stageWidth,
+                                    height: innerHeight,
+                                    child: content,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 8,
+                          child: Center(
+                            child: IgnorePointer(
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.surfaceContainerHigh,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
                                 child: Text(
-                                  'No screens to preview',
+                                  '${tier.name} · ${stageWidth.round()}',
                                   style: EditorType.field.copyWith(
                                     color: colors.onSurfaceVariant,
                                   ),
                                 ),
-                              )
-                            : ListView(
-                                padding: const EdgeInsets.all(16),
-                                children: [
-                                  for (final node in widget.doc.nodes)
-                                    if (node.screenId == current.id)
-                                      Padding(
-                                        padding: const EdgeInsets.only(
-                                          bottom: 12,
-                                        ),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            for (final item in node.items)
-                                              _previewItem(item),
-                                          ],
-                                        ),
-                                      ),
-                                ],
                               ),
-                      ),
+                            ),
+                          ),
+                        ),
+                      ],
                     );
                   },
                 ),
@@ -209,14 +294,38 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     );
   }
 
+  /// The doc content subtree — identical for every device (one-tree rule).
+  Widget _stageContent(CanvasScreen? current, EditorColors colors) {
+    if (current == null) {
+      return Center(
+        child: Text(
+          'No screens to preview',
+          style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
+        ),
+      );
+    }
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        for (final node in widget.doc.nodes)
+          if (node.screenId == current.id)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [for (final item in node.items) _previewItem(item)],
+              ),
+            ),
+      ],
+    );
+  }
+
   /// Action-less items render bare so every gesture reaches the real widget.
   Widget _previewItem(CanvasItem item) {
     final built = buildCatalogItem(item.kind, item.props);
     if (item.action == null) return built;
-    return _TapCatcher(
-      onTap: () => _onItemTap(item),
-      child: built,
-    );
+    return _TapCatcher(onTap: () => _onItemTap(item), child: built);
   }
 }
 
@@ -242,13 +351,94 @@ class _TapCatcherState extends State<_TapCatcher> {
       onPointerDown: (event) => _downs[event.pointer] = event.position,
       onPointerUp: (event) {
         final down = _downs.remove(event.pointer);
-        if (down != null &&
-            (event.position - down).distance <= kTouchSlop) {
+        if (down != null && (event.position - down).distance <= kTouchSlop) {
           widget.onTap();
         }
       },
       onPointerCancel: (event) => _downs.remove(event.pointer),
       child: widget.child,
+    );
+  }
+}
+
+/// Builds the adaptive-nav demo screen: the canonical responsive nav pattern
+/// (LayoutBuilder; <600 → [NavigationBar] bottom, ≥600 → [NavigationRail]
+/// side) as a screen preset template for later code emission. Opened from
+/// the preview bar's "Responsive demo" button; it fills the device stage so
+/// switching devices re-tiers it live (phone → bottom bar, tablet/desktop
+/// → side rail).
+Widget buildAdaptiveNavDemo() => const AdaptiveNavDemo();
+
+/// Adaptive nav demo: 3 destinations + a body placeholder.
+///
+/// Selection state ([_index]) lives OUTSIDE the breakpoint branch, so the
+/// active destination survives tier switches (the showcase interaction).
+class AdaptiveNavDemo extends StatefulWidget {
+  const AdaptiveNavDemo({super.key});
+
+  @override
+  State<AdaptiveNavDemo> createState() => _AdaptiveNavDemoState();
+}
+
+class _AdaptiveNavDemoState extends State<AdaptiveNavDemo> {
+  int _index = 0;
+
+  static const _labels = ['Home', 'Search', 'Settings'];
+  static const _icons = [
+    Icons.home_outlined,
+    Icons.search,
+    Icons.settings_outlined,
+  ];
+  static const _activeIcons = [Icons.home, Icons.search, Icons.settings];
+
+  void _select(int index) => setState(() => _index = index);
+
+  @override
+  Widget build(BuildContext context) {
+    // State stays above this branch: only the nav CHROME differs per tier.
+    return ResponsiveBuilder(
+      builder: (context, tier, width) {
+        final body = Center(
+          child: Text('${_labels[_index]} body · ${tier.name}'),
+        );
+        if (tier == Tier.mobile) {
+          return Column(
+            children: [
+              Expanded(child: body),
+              NavigationBar(
+                selectedIndex: _index,
+                onDestinationSelected: _select,
+                destinations: [
+                  for (var i = 0; i < _labels.length; i++)
+                    NavigationDestination(
+                      icon: Icon(_icons[i]),
+                      selectedIcon: Icon(_activeIcons[i]),
+                      label: _labels[i],
+                    ),
+                ],
+              ),
+            ],
+          );
+        }
+        return Row(
+          children: [
+            NavigationRail(
+              selectedIndex: _index,
+              onDestinationSelected: _select,
+              labelType: NavigationRailLabelType.all,
+              destinations: [
+                for (var i = 0; i < _labels.length; i++)
+                  NavigationRailDestination(
+                    icon: Icon(_icons[i]),
+                    selectedIcon: Icon(_activeIcons[i]),
+                    label: Text(_labels[i]),
+                  ),
+              ],
+            ),
+            Expanded(child: body),
+          ],
+        );
+      },
     );
   }
 }

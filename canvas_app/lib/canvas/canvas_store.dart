@@ -108,6 +108,10 @@ class CanvasStore extends ChangeNotifier {
     required double x,
     required double y,
     List<CanvasItem> items = const [],
+    String? mainAxis,
+    String? crossAxis,
+    String? expand,
+    int? flex,
   }) {
     final node = CanvasNode(
       id: uid(),
@@ -115,6 +119,10 @@ class CanvasStore extends ChangeNotifier {
       x: x,
       y: y,
       items: List.of(items),
+      mainAxis: mainAxis,
+      crossAxis: crossAxis,
+      expand: expand,
+      flex: flex,
     );
     _commit(ScreenDoc(
       screens: List.of(_doc.screens),
@@ -137,6 +145,10 @@ class CanvasStore extends ChangeNotifier {
               parentId: n.parentId,
               isRow: n.isRow,
               gap: n.gap,
+              mainAxis: n.mainAxis,
+              crossAxis: n.crossAxis,
+              expand: n.expand,
+              flex: n.flex,
             )
           : n,
     ));
@@ -160,6 +172,10 @@ class CanvasStore extends ChangeNotifier {
         parentId: n.parentId,
         isRow: n.isRow,
         gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
         items: [
           for (final i in n.items)
             if (i.id == itemId)
@@ -253,6 +269,10 @@ class CanvasStore extends ChangeNotifier {
           parentId: n.id == source.id ? n.parentId : idMap[n.parentId],
           isRow: n.isRow,
           gap: n.gap,
+          mainAxis: n.mainAxis,
+          crossAxis: n.crossAxis,
+          expand: n.expand,
+          flex: n.flex,
           items: [
             for (final i in n.items)
               CanvasItem(
@@ -387,9 +407,17 @@ class CanvasStore extends ChangeNotifier {
   /// The container node carries no items (`items` is empty), `isRow` is true,
   /// `gap` is [kFlowRowGapDefault], and `parentId` is null (root-level row).
   /// `x`/`y` are stored as 0 metadata; the flow renderer ignores them and
-  /// uses doc order instead. Returns the id. Undoable and autosaved like
-  /// every other mutation.
-  String addRow({required String screenId}) {
+  /// uses doc order instead. Alignment (`mainAxis`/`crossAxis`) and flex
+  /// (`expand`/`flex`) default to null (Flutter defaults). Returns the id.
+  /// Undoable and autosaved like every other mutation.
+  String addRow({
+    required String screenId,
+    String? mainAxis,
+    String? crossAxis,
+    String? expand,
+    int? flex,
+    double? gap,
+  }) {
     final node = CanvasNode(
       id: uid(),
       screenId: screenId,
@@ -398,7 +426,11 @@ class CanvasStore extends ChangeNotifier {
       items: const [],
       parentId: null,
       isRow: true,
-      gap: kFlowRowGapDefault,
+      gap: gap ?? kFlowRowGapDefault,
+      mainAxis: mainAxis,
+      crossAxis: crossAxis,
+      expand: expand,
+      flex: flex,
     );
     _commit(ScreenDoc(
       screens: List.of(_doc.screens),
@@ -409,14 +441,32 @@ class CanvasStore extends ChangeNotifier {
     return node.id;
   }
 
-  /// Updates a row container's [gap] (horizontal spacing between its
-  /// children in logical px). Throws [StateError] when [nodeId] is unknown
-  /// (before committing, so history stays clean). A null [gap] is a no-op.
+  /// Updates a node's container/flex fields. [gap] is the row spacing;
+  /// [mainAxis] (`start|center|end|spaceBetween|spaceAround|spaceEvenly`,
+  /// null = Flutter default start) and [crossAxis]
+  /// (`start|center|end|stretch`, null = default center for rows) live on the
+  /// row container; [expand] (`none|flex|expanded`, null/none = default) and
+  /// [flex] (default 1 when expand is flex/expanded and flex is null) live on
+  /// the child node. Throws [StateError] when [nodeId] is unknown (before
+  /// committing, so history stays clean). All-null is a no-op.
   /// Undoable and autosaved like every other mutation.
-  void patchNode(String nodeId, {double? gap}) {
+  void patchNode(
+    String nodeId, {
+    double? gap,
+    String? mainAxis,
+    String? crossAxis,
+    String? expand,
+    int? flex,
+  }) {
     final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
     if (index < 0) throw StateError('Unknown node: $nodeId');
-    if (gap == null) return;
+    if (gap == null &&
+        mainAxis == null &&
+        crossAxis == null &&
+        expand == null &&
+        flex == null) {
+      return;
+    }
     _commit(_mapNodes((n) => n.id == nodeId
         ? CanvasNode(
             id: n.id,
@@ -426,7 +476,11 @@ class CanvasStore extends ChangeNotifier {
             items: n.items,
             parentId: n.parentId,
             isRow: n.isRow,
-            gap: gap,
+            gap: gap ?? n.gap,
+            mainAxis: mainAxis ?? n.mainAxis,
+            crossAxis: crossAxis ?? n.crossAxis,
+            expand: expand ?? n.expand,
+            flex: flex ?? n.flex,
           )
         : n));
   }

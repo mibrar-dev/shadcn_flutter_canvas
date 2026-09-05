@@ -1,17 +1,19 @@
 /// Searchable sectioned parts palette, measured from the m3e-canvas reference
 /// (https://lnkiai.github.io/m3e-canvas/) at a 1440x900 viewport.
 /// Uses [EditorMetrics] / [EditorColors] for every size and color.
-/// Tiles source from [kCatalog] and stay draggable by catalog kind.
+/// Tiles source from [kRegistry] (grouped by [kRegistrySectionOrder]) and
+/// stay draggable by kind, so drop/drop-target behavior is unchanged.
 library;
 
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/canvas/component_registry.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 
-/// Section name to catalog kinds. Kinds absent from [kCatalog] are skipped.
-/// Layout containers start their own section: they create structure, not
-/// content. Resolved via [resolvePaletteEntry] (container fallback).
+/// Legacy section map from the 19-kind era (section → kinds). The palette
+/// widget now renders from [kRegistry] via [registrySectionEntries];
+/// retained for API compatibility.
 const Map<String, List<String>> kPartSections = <String, List<String>>{
   'Components': <String>[
     'button',
@@ -38,51 +40,6 @@ const Map<String, List<String>> kPartSections = <String, List<String>>{
     'row',
   ],
 };
-
-IconData _iconFor(String kind) {
-  switch (kind) {
-    case 'button':
-      return Icons.smart_button;
-    case 'card':
-      return Icons.crop_square;
-    case 'input':
-      return Icons.text_fields;
-    case 'badge':
-      return Icons.label;
-    case 'switch':
-      return Icons.toggle_on;
-    case 'avatar':
-      return Icons.account_circle;
-    case 'checkbox':
-      return Icons.check_box;
-    case 'divider':
-      return Icons.horizontal_rule;
-    case 'progress':
-      return Icons.linear_scale;
-    case 'tabs':
-      return Icons.tab;
-    case 'accordion':
-      return Icons.expand_more;
-    case 'select':
-      return Icons.arrow_drop_down_circle;
-    case 'radio_group':
-      return Icons.radio_button_checked;
-    case 'skeleton':
-      return Icons.blur_on;
-    case 'breadcrumb':
-      return Icons.chevron_right;
-    case 'dialog':
-      return Icons.web_asset;
-    case 'tooltip':
-      return Icons.help_outline;
-    case 'toast':
-      return Icons.notifications;
-    case 'drawer':
-      return Icons.menu_open;
-    default:
-      return Icons.widgets;
-  }
-}
 
 /// Resolves a section kind to tile content: [kCatalog] first, else
 /// [kContainerTiles] (a synthetic entry carrying the container label with the
@@ -140,27 +97,19 @@ class _PartsPaletteState extends State<PartsPalette> {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    final q = _query.trim().toLowerCase();
+    final q = _query.trim();
 
-    final visible = <String, List<CatalogEntry>>{};
-    for (final section in kPartSections.entries) {
-      // Container kinds (e.g. 'row' once listed) resolve via the
-      // kContainerTiles fallback; unknown kinds are still skipped.
-      final resolved = <CatalogEntry>[
-        for (final kind in section.value)
-          if (resolvePaletteEntry(kind) case final entry?) entry,
-      ];
+    final visible = <String, List<RegistryEntry>>{};
+    for (final section in kRegistrySectionOrder) {
+      final entries = registrySectionEntries(section);
       if (q.isEmpty) {
-        visible[section.key] = resolved;
+        visible[section] = entries;
       } else {
-        final matches = resolved
-            .where(
-              (e) =>
-                  e.kind.toLowerCase().contains(q) ||
-                  e.label.toLowerCase().contains(q),
-            )
-            .toList();
-        if (matches.isNotEmpty) visible[section.key] = matches;
+        // Word-start matching only ([registryMatchesQuery]): 'row' matches
+        // the Row tile, never Breadcrumb's 'arrow' separator text.
+        final matches =
+            entries.where((e) => registryMatchesQuery(e, q)).toList();
+        if (matches.isNotEmpty) visible[section] = matches;
       }
     }
 
@@ -300,7 +249,7 @@ class _PartsPaletteState extends State<PartsPalette> {
 /// One collapsible section with a 2-column tile grid body.
 class _Section extends StatelessWidget {
   final String name;
-  final List<CatalogEntry> entries;
+  final List<RegistryEntry> entries;
   final bool collapsed;
   final VoidCallback onToggle;
 
@@ -381,7 +330,7 @@ class _Section extends StatelessWidget {
 
 /// Tile with hover lift and press scale per the reference motion spec.
 class _PressableTile extends StatefulWidget {
-  final CatalogEntry entry;
+  final RegistryEntry entry;
 
   const _PressableTile({required this.entry});
 
@@ -432,16 +381,13 @@ class _PressableTileState extends State<_PressableTile> {
 
 /// Fixed 114x72 tile: centered icon over the part label.
 class _TileContent extends StatelessWidget {
-  final CatalogEntry entry;
+  final RegistryEntry entry;
 
   const _TileContent({required this.entry});
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    // Container tiles (kContainerTiles) supply their own icon; catalog kinds
-    // keep the per-kind icon below.
-    final icon = kContainerTiles[entry.kind]?.icon ?? _iconFor(entry.kind);
     return Tooltip(
       message: entry.label,
       child: Container(
@@ -455,7 +401,7 @@ class _TileContent extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              icon,
+              entry.icon,
               size: 20,
               color: colors.onSurfaceVariant,
             ),

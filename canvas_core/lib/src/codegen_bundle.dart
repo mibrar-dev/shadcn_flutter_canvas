@@ -1,8 +1,8 @@
 /// Clean-folders bundle exporter (P2c): screens + shadcn bodies + manifest + zip.
 ///
 /// Pure Dart (CLI-reusable): builds the installable `screen add` bundle from
-/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 19 catalog
-/// kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
+/// a [ScreenDoc]. Kind metadata snapshots `components.json` for the 29
+/// canvas-ready kinds; bodies arrive via [sourcesByDestination]. Unknown kinds warn.
 library;
 
 import 'dart:convert';
@@ -38,17 +38,23 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 19 catalog kinds (snapshotted from the pinned kit's
-// `components.json`: destination prefix from `files[].destination`,
+// Exact metadata for the 29 canvas-ready kinds (19 seed + 10 W1: chip, alert,
+// circular_progress_indicator, linear_progress_indicator, triple_dots,
+// dot_indicator, empty_state, code_snippet, number_ticker, text_area —
+// snapshotted from the pinned kit's `components.json`: destination prefix
+// from `files[].destination` (`{installPath}/components/<category>/<id>/`),
 // alphabetized `shared`, `pubspec.dependencies`, `dependsOn` verbatim —
 // unknown dep ids warn at export time, same as the seed kinds' `text_field`).
-// NOTE: `select`'s `dependsOn` (`async`, `chip`, `command`, `hover`,
+// NOTE: `select`'s `dependsOn` (`async`, `command`, `hover`,
 // `menu`, `text_field`) names component ids with no `_KindSpec` here — they
 // warn at export time (transitively pulled bodies are out of scope for this
-// batch; the ids are kept verbatim, never invented). Its `dialog` dep now
-// resolves (this batch adds it, pulling `card` transitively).
+// batch; the ids are kept verbatim, never invented). Its `chip` and `dialog`
+// deps now resolve (this batch adds `chip`; `dialog` came with the seed
+// batch, pulling `card` transitively).
 // NOTE: `tooltip`'s `dependsOn` (`popover`) likewise names a component id
 // with no `_KindSpec` here — it warns at export time (same verbatim policy).
+// NOTE: `text_area`'s `dependsOn` (`text_field`) warns the same way `input`'s
+// does (verbatim policy).
 const _kinds = <String, _KindSpec>{
   'button': _KindSpec('{installPath}/components/control/button/',
       ['clickable', 'color_extensions', 'component_schema', 'focus_outline', 'form_control', 'form_value_supplier', 'generated_colors', 'geometry_extensions', 'menu_group', 'platform_utils', 'theme'],
@@ -107,6 +113,36 @@ const _kinds = <String, _KindSpec>{
   'drawer': _KindSpec('{installPath}/components/overlay/drawer/',
       ['color_extensions', 'component_schema', 'constants', 'controlled_animation', 'geometry_extensions', 'outlined_container', 'overlay', 'style_value', 'theme', 'util'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['dialog']),
+  'chip': _KindSpec('{installPath}/components/display/chip/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['button']),
+  'alert': _KindSpec('{installPath}/components/layout/alert/',
+      ['basic_layout', 'component_schema', 'outlined_container', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'circular_progress_indicator': _KindSpec('{installPath}/components/display/circular_progress_indicator/',
+      ['animated_value_builder', 'color_extensions', 'component_schema', 'constants', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'linear_progress_indicator': _KindSpec('{installPath}/components/display/linear_progress_indicator/',
+      ['animated_value_builder', 'color_extensions', 'component_schema', 'constants', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'triple_dots': _KindSpec('{installPath}/components/display/triple_dots/',
+      [],
+      {}, []),
+  'dot_indicator': _KindSpec('{installPath}/components/display/dot_indicator/',
+      ['clickable', 'component_schema', 'constants', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'empty_state': _KindSpec('{installPath}/components/display/empty_state/',
+      ['component_schema', 'radix_icons', 'theme'],
+      {'gap': '^3.0.1'}, ['card', 'button']),
+  'code_snippet': _KindSpec('{installPath}/components/display/code_snippet/',
+      ['component_schema', 'style_value', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'number_ticker': _KindSpec('{installPath}/components/display/number_ticker/',
+      ['animated_value_builder', 'component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1', 'intl': '^0.20.2'}, []),
+  'text_area': _KindSpec('{installPath}/components/form/text_area/',
+      ['theme'],
+      {'gap': '^3.0.1'}, ['text_field']),
 };
 
 const _installPath = '{installPath}/';

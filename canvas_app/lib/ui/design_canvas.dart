@@ -10,6 +10,8 @@ library;
 
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/gestures.dart';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
@@ -313,6 +315,18 @@ class _DesignCanvasState extends State<DesignCanvas> {
             ],
           ],
         );
+        // ZOOM VIA LAYOUT, not paint: `Transform.scale` kept the child's
+        // layout box unscaled, so the canvas overflowed its Center and — on
+        // release web builds — the painted frame drifted from the hit-test
+        // region (clicks on the visible frame missed by ~60-100px, moving
+        // with resize history). FittedBox derives paint AND hit-test from
+        // the same layout transform, so they can never diverge. The Center
+        // now sizes the *scaled* box, which also removes the overflow.
+        final contentWidth =
+            doc.screens.length * EditorMetrics.phoneOuterWidth +
+            math.max(0, doc.screens.length - 1) * screenGap;
+        const contentHeight =
+            EditorMetrics.screenLabelHeight + 10 + EditorMetrics.phoneOuterHeight;
         return GestureDetector(
           behavior: HitTestBehavior.translucent,
           onPanUpdate:
@@ -321,12 +335,21 @@ class _DesignCanvasState extends State<DesignCanvas> {
             cursor: widget.panMode
                 ? SystemMouseCursors.grab
                 : SystemMouseCursors.basic,
-            child: Center(
-              child: Transform.translate(
-                offset: _pan,
-                child: Transform.scale(
-                  scale: widget.zoom,
-                  child: surfaces,
+            child: Transform.translate(
+              offset: _pan,
+              child: Center(
+                child: SizedBox(
+                  width: contentWidth * widget.zoom,
+                  height: contentHeight * widget.zoom,
+                  child: FittedBox(
+                    fit: BoxFit.fill,
+                    alignment: Alignment.topLeft,
+                    child: SizedBox(
+                      width: contentWidth,
+                      height: contentHeight,
+                      child: surfaces,
+                    ),
+                  ),
                 ),
               ),
             ),

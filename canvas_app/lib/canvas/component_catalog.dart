@@ -820,6 +820,16 @@ Widget buildCatalogItem(String kind, Map<String, dynamic> props) {
   return entry.build(props);
 }
 
+/// Bridge for the generated palette registry (`component_registry.dart`):
+/// builds [kind] with a copy of its catalog defaults, so registry tiles and
+/// standalone previews render without duplicating builders. Unknown kinds
+/// use [fallbackBuilder], exactly like [buildCatalogItem].
+Widget buildCatalogWithDefaults(String kind) {
+  final entry = findEntry(kind);
+  if (entry == null) return fallbackBuilder(kind);
+  return entry.build(Map<String, dynamic>.of(entry.defaults));
+}
+
 /// Never crash on unknown kinds: placeholder plus the offending kind label.
 Widget fallbackBuilder(String kind) {
   return Column(
