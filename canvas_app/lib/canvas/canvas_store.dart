@@ -530,6 +530,82 @@ class CanvasStore extends ChangeNotifier {
         : n));
   }
 
+  /// Updates a node's responsive fields (`hiddenOn`/`breakpointValues`/`slots`).
+  ///
+  /// Pass a non-null map/set to replace that field, or its `clear*` flag to
+  /// reset it to empty (sparse-delete precedent, mirroring [clearItemProps];
+  /// needed because `null` means "leave unchanged", matching [patchNode]).
+  /// A `clear*` flag wins over its value param when both are given.
+  /// Throws [ArgumentError] on unknown `hiddenOn` tiers (must be a subset of
+  /// [kResponsiveTiers]). Unknown [nodeId] is a no-op without committing
+  /// (matching [deleteNode], so history stays clean), as is calling with no
+  /// values and no clear flags. Undoable and autosaved like every other
+  /// mutation.
+  void setNodeResponsive(
+    String nodeId, {
+    Set<String>? hiddenOn,
+    Map<String, Map<String, dynamic>>? breakpointValues,
+    Map<String, String>? slots,
+    bool clearHiddenOn = false,
+    bool clearBreakpointValues = false,
+    bool clearSlots = false,
+  }) {
+    if (hiddenOn != null) {
+      for (final tier in hiddenOn) {
+        if (!kResponsiveTiers.contains(tier)) {
+          throw ArgumentError('Unknown responsive tier: $tier');
+        }
+      }
+    }
+    if (_doc.nodes.every((n) => n.id != nodeId)) return;
+    if (hiddenOn == null &&
+        breakpointValues == null &&
+        slots == null &&
+        !clearHiddenOn &&
+        !clearBreakpointValues &&
+        !clearSlots) {
+      return;
+    }
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      return CanvasNode(
+        id: n.id,
+        screenId: n.screenId,
+        x: n.x,
+        y: n.y,
+        items: n.items,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
+        hiddenOn: clearHiddenOn
+            ? const {}
+            : (hiddenOn != null
+                ? Set<String>.from(hiddenOn)
+                : Set<String>.from(n.hiddenOn)),
+        breakpointValues: clearBreakpointValues
+            ? const {}
+            : (breakpointValues != null
+                ? {
+                    for (final entry in breakpointValues.entries)
+                      entry.key: Map<String, dynamic>.from(entry.value),
+                  }
+                : {
+                    for (final entry in n.breakpointValues.entries)
+                      entry.key: Map<String, dynamic>.from(entry.value),
+                  }),
+        slots: clearSlots
+            ? const {}
+            : (slots != null
+                ? Map<String, String>.from(slots)
+                : Map<String, String>.from(n.slots)),
+      );
+    }));
+  }
+
   /// Replaces the whole doc (undoable import path for the Open dialog).
   /// Commits verbatim.
   void replaceDoc(ScreenDoc doc) {

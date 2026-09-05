@@ -204,6 +204,97 @@ class _InspectorPanelState extends State<InspectorPanel> {
     return null;
   }
 
+  /// Any node matching [InspectorPanel.nodeId], or null. Drives the
+  /// node-level Visibility section (shown for leaves and rows alike).
+  CanvasNode? _selectedNode(ScreenDoc doc) {
+    final nodeId = widget.nodeId;
+    if (nodeId == null) return null;
+    for (final node in doc.nodes) {
+      if (node.id == nodeId) return node;
+    }
+    return null;
+  }
+
+  /// Toggles one tier in the node's `hiddenOn` set through the undoable
+  /// `store.setNodeResponsive` path. [visible] is the post-toggle switch
+  /// value (true = shown on that tier). Clearing the last hidden tier uses
+  /// the `clearHiddenOn` sparse-delete path so the field resets to empty.
+  void _toggleVisibility(CanvasNode node, String tier, bool visible) {
+    final next = Set<String>.from(node.hiddenOn);
+    if (visible) {
+      next.remove(tier);
+    } else {
+      next.add(tier);
+    }
+    if (next.isEmpty) {
+      widget.store.setNodeResponsive(node.id, clearHiddenOn: true);
+    } else {
+      widget.store.setNodeResponsive(node.id, hiddenOn: next);
+    }
+  }
+
+  /// Node-level Visibility section: one visible-vs-hidden toggle per
+  /// responsive tier plus a small `hidden on: …` summary. Reads
+  /// `node.hiddenOn` and writes through [setNodeResponsive] (see
+  /// [_toggleVisibility]), so undo/redo keep working.
+  ///
+  /// Toggles are registry buttons (not [shadcn.Switch]) so the leaf prop
+  /// editors keep their exact widget counts (`inspector_test.dart` pins the
+  /// single bool [shadcn.Switch] for the selected item).
+  Widget _visibilityCard(CanvasNode node) {
+    final hidden = node.hiddenOn;
+    final sorted = hidden.toList()..sort();
+    final summary = hidden.isEmpty
+        ? 'hidden on: none (always visible)'
+        : 'hidden on: ${sorted.join(', ')}';
+    return shadcn.Card(
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Visibility', style: EditorType.sectionHeader),
+          const SizedBox(height: 8),
+          for (final tier in const ['mobile', 'tablet', 'desktop'])
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tier[0].toUpperCase() + tier.substring(1),
+                      style: EditorType.tileLabel,
+                    ),
+                  ),
+                  _visibilityToggle(node, tier, !hidden.contains(tier)),
+                ],
+              ),
+            ),
+          Text(summary, style: EditorType.tileLabel),
+        ],
+      ),
+    );
+  }
+
+  /// One tier toggle: filled while visible, outlined while hidden. Tapping
+  /// flips the tier through [_toggleVisibility].
+  Widget _visibilityToggle(CanvasNode node, String tier, bool visible) {
+    final label = visible ? 'Visible' : 'Hidden';
+    if (visible) {
+      return shadcn.PrimaryButton(
+        key: ValueKey('visibility-$tier'),
+        size: shadcn.ButtonSize.small,
+        onPressed: () => _toggleVisibility(node, tier, false),
+        child: Text(label),
+      );
+    }
+    return shadcn.OutlineButton(
+      key: ValueKey('visibility-$tier'),
+      size: shadcn.ButtonSize.small,
+      onPressed: () => _toggleVisibility(node, tier, true),
+      child: Text(label),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -220,6 +311,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           return Center(child: Text('No editable props for kind ${item.kind}'));
         }
         final kindDefaults = findEntry(item.kind)?.defaults;
+        final node = _selectedNode(widget.store.doc);
         return ListView(
           padding: const EdgeInsets.all(12),
           shrinkWrap: true,
@@ -241,6 +333,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 ],
               ),
             ),
+            if (node != null) ...[
+              const SizedBox(height: 12),
+              _visibilityCard(node),
+            ],
           ],
         );
       },
@@ -357,6 +453,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
+        _visibilityCard(node),
       ],
     );
   }
