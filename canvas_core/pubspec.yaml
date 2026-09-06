@@ -5,6 +5,10 @@ environment:
   sdk: '>=3.3.0 <4.0.0'
 dependencies:
   archive: ^4.0.0
+  # Track G codegen rewrite (§8.3): AST construction + formatting for the
+  # G2 emitter migration. Pure Dart — canvas_core stays Flutter-free.
+  code_builder: ^4.10.0
+  dart_style: ^2.3.6
 dev_dependencies:
   lints: ^5.0.0
   test: ^1.24.0
