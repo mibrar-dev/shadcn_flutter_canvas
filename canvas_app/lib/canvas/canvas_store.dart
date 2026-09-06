@@ -40,6 +40,14 @@ class ChangeNotifier {
 }
 
 /// Undoable editor state over an immutable [ScreenDoc] snapshot stack.
+///
+/// Track R1 (app state): the doc's [ScreenDoc.states] flow through every
+/// mutation below (each new [ScreenDoc] copies them — dropping them would
+/// wipe all vars on the next edit). Var CRUD ([addVar]/[renameVar]/
+  /// [deleteVar]) is undoable like every doc mutation; session values
+/// ([setStateValue]) are preview-runtime only: they [notifyListeners] but
+/// never commit, never touch history, and never persist (see [_saveNow] —
+/// only [_doc] serializes).
 class CanvasStore extends ChangeNotifier {
   static const String docKey = 'canvas:doc';
   static const int historyCap = 100;
@@ -81,6 +89,50 @@ class CanvasStore extends ChangeNotifier {
   ScreenDoc get doc => _doc;
   bool get canUndo => _undo.isNotEmpty;
   bool get canRedo => _redo.isNotEmpty;
+
+  /// Session-only state values (preview-runtime overrides over the var
+  /// defaults). A copy — mutating it does nothing; write via
+  /// [setStateValue].
+  Map<String, dynamic> get sessionValues => Map<String, dynamic>.of(_session);
+  final Map<String, dynamic> _session = {};
+
+  /// Effective value of state var [name]: the session override when set,
+  /// else the var default. Null when the var is unknown.
+  Object? stateValue(String name) {
+    if (_session.containsKey(name)) return _session[name];
+    for (final v in _doc.states) {
+      if (v.name == name) return v.defaultValue;
+    }
+    return null;
+  }
+
+  /// Sets a session-only state value (preview runtime). Unknown vars are a
+  /// no-op without notifying; setting the current effective value is a
+  /// no-op too. Never commits (no history), never persists — the doc (and
+  /// its autosave) only carries var *declarations*.
+  void setStateValue(String name, Object? value) {
+    if (!_doc.states.any((v) => v.name == name)) return;
+    if (_session.containsKey(name)) {
+      if (_session[name] == value) return;
+    } else {
+      Object? def;
+      for (final v in _doc.states) {
+        if (v.name == name) def = v.defaultValue;
+      }
+      // No override yet and the default already equals [value]: storing a
+      // redundant override would only pollute the session map.
+      if (def == value) return;
+    }
+    _session[name] = value;
+    notifyListeners();
+  }
+
+  /// Clears all session overrides (back to var defaults). Notifies.
+  void resetSessionValues() {
+    if (_session.isEmpty) return;
+    _session.clear();
+    notifyListeners();
+  }
 
   /// Restores the last autosaved doc, if any. Keeps current on bad data.
   /// Persisted docs predate flow layout, so every load runs the one-shot
@@ -139,6 +191,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: [..._doc.nodes, node],
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
     return node.id;
   }
@@ -215,6 +268,243 @@ class CanvasStore extends ChangeNotifier {
   void setItemAction(String nodeId, String itemId, NodeAction? action) =>
       patchItem(nodeId, itemId, action: () => action);
 
+  /// Adds a state var. Throws [ArgumentError] when the var is invalid (bad
+  /// identifier, unknown type, mistyped default) or a duplicate — before
+  /// committing, so history stays clean. Undoable and autosaved like every
+  /// doc mutation.
+  void addVar(AppStateVar v) {
+    final problems = validateAppStateVars([..._doc.states, v]);
+    if (problems.isNotEmpty) {
+      throw ArgumentError('Invalid state var: ${problems.join('; ')}');
+    }
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: List.of(_doc.nodes),
+      theme: _doc.theme,
+      meta: _doc.meta,
+      states: [..._doc.states, v],
+    ));
+  }
+
+  /// Renames a state var, rewriting every `=old` binding in ONE undoable
+  /// commit: exact `=old` item props become `=next`, and step `variable`
+  /// refs plus `=old` value/message refs follow (see
+  /// [ActionStep.withVariableRenamed]).
+  ///
+  /// Throws [StateError] on unknown [old] (mirroring [renameScreen]) and
+  /// [ArgumentError] on an invalid or taken [next] — both before committing.
+  /// A same-name rename is a no-op without committing. Type and default ride
+  /// along unchanged (rename never migrates values: change those via delete
+  /// + re-add).
+  void renameVar(String old, String next) {
+    final index = _doc.states.indexWhere((v) => v.name == old);
+    if (index < 0) throw StateError('Unknown state var: $old');
+    if (old == next) return;
+    final candidate = List.of(_doc.states)
+      ..[index] = _doc.states[index].renamed(next);
+    final problems = validateAppStateVars(candidate);
+    if (problems.isNotEmpty) {
+      throw ArgumentError('Invalid state var: ${problems.join('; ')}');
+    }
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: [for (final n in _doc.nodes) _renameNodeRefs(n, old, next)],
+      theme: _doc.theme,
+      meta: _doc.meta,
+      states: candidate,
+    ));
+  }
+
+  /// Deletes a state var (undoable). Exact `=name` item props are cleared to
+  /// the raw literal (`=count` → `count`); `=name` refs in step
+  /// values/messages clear the same way (see [ActionStep.withBindingCleared]).
+  /// Step `variable` refs are left intact — the executor skips unknown vars
+  /// (documented in `app_state.dart`), so deleting a var never silently
+  /// drops steps. Unknown [name] is a no-op without committing.
+  void deleteVar(String name) {
+    if (_doc.states.every((v) => v.name != name)) return;
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: [for (final n in _doc.nodes) _clearNodeRefs(n, name)],
+      theme: _doc.theme,
+      meta: _doc.meta,
+      states: [for (final v in _doc.states) if (v.name != name) v],
+    ));
+  }
+
+  /// Replaces an item's action steps (undoable; the inspector's step editor
+  /// writes through here).
+  ///
+  /// The legacy `to`/`transition` stay synced to the last navigate step when
+  /// one exists (old readers keep working); with no navigate step they keep
+  /// their previous values and are ignored at runtime (steps are
+  /// authoritative — see `effectiveActionSteps`). Clearing to `[]` restores
+  /// pure legacy behavior. Unknown node/item ids, and writes equal to the
+  /// current action, are no-ops without committing.
+  void setItemSteps(String nodeId, String itemId, List<ActionStep> steps) {
+    CanvasItem? target;
+    for (final n in _doc.nodes) {
+      if (n.id != nodeId) continue;
+      for (final i in n.items) {
+        if (i.id == itemId) target = i;
+      }
+    }
+    if (target == null) return;
+    if (target.action == null && steps.isEmpty) return;
+    final next = _actionWithSteps(target.action, steps);
+    if (target.action != null && _actionsEqual(target.action!, next)) return;
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      return _nodeWithItems(n, [
+        for (final i in n.items)
+          if (i.id == itemId) i.copyWith(action: () => next) else i,
+      ]);
+    }));
+  }
+
+  /// Rebuilds [node] with [items] (deep-copy precedent: responsive fields
+  /// are copied, never aliased — mirrors [patchItem]).
+  CanvasNode _nodeWithItems(CanvasNode n, List<CanvasItem> items) =>
+      CanvasNode(
+        id: n.id,
+        screenId: n.screenId,
+        x: n.x,
+        y: n.y,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
+        hiddenOn: Set<String>.from(n.hiddenOn),
+        breakpointValues: {
+          for (final entry in n.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(n.slots),
+        items: items,
+      );
+
+  /// Rebuilds [node] with `=old` bindings renamed to `=next` (or returns it
+  /// untouched when nothing references [old]).
+  CanvasNode _renameNodeRefs(CanvasNode node, String old, String next) {
+    var changed = false;
+    final items = <CanvasItem>[];
+    for (final i in node.items) {
+      var props = i.props;
+      final rewritten = <String, dynamic>{};
+      for (final entry in i.props.entries) {
+        if (entry.value == '=$old') {
+          rewritten[entry.key] = '=$next';
+          changed = true;
+        } else {
+          rewritten[entry.key] = entry.value;
+        }
+      }
+      if (changed) props = rewritten;
+      var action = i.action;
+      if (action != null && action.steps.isNotEmpty) {
+        final steps = [
+          for (final s in action.steps) s.withVariableRenamed(old, next),
+        ];
+        if (!_stepsEqual(action.steps, steps)) {
+          action = NodeAction(
+            to: action.to,
+            transition: action.transition,
+            steps: steps,
+          );
+          changed = true;
+        }
+      }
+      // Per-item change tracking would need a second flag; rebuilding an
+      // untouched item is value-identical (props map is fresh but equal),
+      // so only the node-level flag gates the rebuild.
+      items.add(
+        changed && identical(props, i.props) && identical(action, i.action)
+            ? i
+            : CanvasItem(id: i.id, kind: i.kind, props: props, action: action),
+      );
+    }
+    // [changed] is node-wide: when false every item above is identical and
+    // the rebuild below is still value-identical (harmless — rename commits
+    // once per call by design, since the states list itself changed).
+    return _nodeWithItems(node, items);
+  }
+
+  /// Rebuilds [node] with `=name` bindings cleared to raw (see [deleteVar]).
+  CanvasNode _clearNodeRefs(CanvasNode node, String name) {
+    final items = <CanvasItem>[];
+    for (final i in node.items) {
+      var props = i.props;
+      if (i.props.values.any((v) => v == '=$name')) {
+        props = {
+          for (final entry in i.props.entries)
+            entry.key: entry.value == '=$name' ? name : entry.value,
+        };
+      }
+      var action = i.action;
+      if (action != null && action.steps.isNotEmpty) {
+        final steps = [
+          for (final s in action.steps) s.withBindingCleared(name),
+        ];
+        action = NodeAction(
+          to: action.to,
+          transition: action.transition,
+          steps: steps,
+        );
+      }
+      items.add(CanvasItem(id: i.id, kind: i.kind, props: props, action: action));
+    }
+    return _nodeWithItems(node, items);
+  }
+
+  /// Builds the stored action for [steps]: empty steps restore the pure
+  /// legacy action; non-empty steps sync `to`/`transition` to the last
+  /// navigate step (falling back to [current], then the first screen, so
+  /// `to` is never left meaninglessly empty for old readers).
+  NodeAction _actionWithSteps(NodeAction? current, List<ActionStep> steps) {
+    if (steps.isEmpty) {
+      final c = current!;
+      return NodeAction(to: c.to, transition: c.transition);
+    }
+    final navs = navigateTargetsOf(steps);
+    var to = navs.isEmpty ? '' : navs.last;
+    var transition = _lastNavigateTransition(steps);
+    if (to.isEmpty) {
+      to = current?.to ?? (_doc.screens.isEmpty ? '' : _doc.screens.first.id);
+      transition = current?.transition ?? 'slide';
+    }
+    return NodeAction(to: to, transition: transition, steps: List.of(steps));
+  }
+
+  /// Transition of the last navigate step (recursing into conditions).
+  String _lastNavigateTransition(List<ActionStep> steps) {
+    var transition = 'slide';
+    void walk(List<ActionStep> list) {
+      for (final s in list) {
+        if (s.kind == 'navigate') transition = s.transition;
+        if (s.kind == 'condition') walk(s.thenSteps);
+      }
+    }
+
+    walk(steps);
+    return transition;
+  }
+
+  bool _actionsEqual(NodeAction a, NodeAction b) =>
+      a.to == b.to &&
+      a.transition == b.transition &&
+      _stepsEqual(a.steps, b.steps);
+
+  bool _stepsEqual(List<ActionStep> a, List<ActionStep> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return false;
+    }
+    return true;
+  }
+
   /// Removes [keys] from the item's sparse props override map (true sparse
   /// delete: the keys resolve back to their schema/catalog defaults).
   /// Unknown node/item ids, an empty [keys] set, or none of the keys present
@@ -289,6 +579,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: [for (final n in _doc.nodes) if (!doomed.contains(n.id)) n],
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -299,6 +590,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: List.of(_doc.nodes),
       theme: theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -361,7 +653,10 @@ class CanvasStore extends ChangeNotifier {
                 action: i.action == null
                     ? null
                     : NodeAction(
-                        to: i.action!.to, transition: i.action!.transition),
+                        to: i.action!.to,
+                        transition: i.action!.transition,
+                        steps: List.of(i.action!.steps),
+                      ),
               ),
           ],
         ),
@@ -371,6 +666,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: [..._doc.nodes, ...clones],
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
     return clones.first.id;
   }
@@ -390,6 +686,7 @@ class CanvasStore extends ChangeNotifier {
       ],
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     );
     final dangling = candidate.validateRefs();
     if (dangling.isNotEmpty) return dangling;
@@ -412,6 +709,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: List.of(_doc.nodes),
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
     return screen.id;
   }
@@ -437,6 +735,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: List.of(_doc.nodes),
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -468,6 +767,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: List.of(_doc.nodes),
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -511,6 +811,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: next,
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -549,6 +850,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: [..._doc.nodes, node],
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
     return node.id;
   }
@@ -772,6 +1074,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: rest,
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
   }
 
@@ -866,6 +1169,7 @@ class CanvasStore extends ChangeNotifier {
       nodes: rest,
       theme: _doc.theme,
       meta: _doc.meta,
+      states: List.of(_doc.states),
     ));
     return row.id;
   }
@@ -918,6 +1222,7 @@ class CanvasStore extends ChangeNotifier {
         nodes: [for (final n in _doc.nodes) map(n)],
         theme: _doc.theme,
         meta: _doc.meta,
+        states: List.of(_doc.states),
       );
 
   /// Deep copy via JSON so history snapshots stay immutable.

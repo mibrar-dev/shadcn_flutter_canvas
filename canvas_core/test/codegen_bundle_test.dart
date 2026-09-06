@@ -1483,6 +1483,74 @@ void main() {
       );
     });
 
+    test('stateful screen holds fields, binding, and a 3-step action', () {
+      final doc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'button',
+                'label': '=count',
+                'action': {
+                  'to': 's2',
+                  'transition': 'slide',
+                  'steps': [
+                    {'kind': 'setState', 'variable': 'count', 'value': '1'},
+                    {'kind': 'showSnackBar', 'message': 'Saved'},
+                    {'kind': 'navigate', 'to': 's2', 'transition': 'slide'},
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        'states': [
+          {'name': 'count', 'type': 'number', 'default': 0},
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Stateful', 'brief': ''},
+      });
+      final screen = buildCleanBundle(doc, kTestSources)
+          .files['lib/ui/screens/home_screen.dart']!;
+      expect(screen, contains('num _count = 0;'));
+      expect(screen, contains("Text('\${_count}')"));
+      expect(screen, contains('void _onTap_i1(BuildContext context) {'));
+      expect(screen, contains('_count = 1;'));
+      expect(screen, contains('showSnackBar'));
+      expect(screen, contains("pushNamed('/done')"));
+      expect(screen, contains('onTap: () => _onTap_i1(context),'));
+      expect(
+        screen,
+        contains(
+          "// button '=count' — 3 action steps "
+          '(setState count, snackBar, navigate s2).',
+        ),
+      );
+      // SnackBar steps pull the material import even for button-only docs.
+      expect(screen, contains("import 'package:flutter/material.dart'"));
+    });
+
+    test('legacy bundle screens keep widgets-only headers', () {
+      final screen = buildCleanBundle(buildTwoScreenDoc(), kTestSources)
+          .files['lib/ui/screens/pay_screen.dart']!;
+      expect(screen, contains("import 'package:flutter/widgets.dart';"));
+      expect(screen.contains('_onTap'), isFalse);
+    });
+
     test('responsive branch carries the nested subtree', () {
       final screen = _c3bScreen(_c3bDoc([
         {

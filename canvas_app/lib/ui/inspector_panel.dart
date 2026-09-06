@@ -33,6 +33,22 @@
 ///
 /// Dogfooding rule: chrome uses registry widgets via `lib/shadcn_ui.dart` —
 /// no raw Material or Cupertino widgets in here.
+///
+/// TRACK R1 (app state + action flows):
+/// * [_stateCard] manages the doc's [AppStateVar]s (add with sane defaults,
+///   rename with `=old` binding rewrites, delete with raw-clearing) — the
+///   only var UI this track; it lives on the item inspector so bindings are
+///   made where vars are visible. The add affordance is a single button
+///   (zero extra editors when the doc has no vars, so legacy widget counts
+///   hold); rename rides a per-row text field.
+/// * String prop rows gain a binding affordance ([_bindingRow]): pick a var
+///   to write `=name`, or unlink back to the literal. Unbound rows with no
+///   vars render nothing extra.
+/// * [_actionCard] keeps the Track K single-nav editors verbatim for legacy
+///   actions (same keys/behavior) and grows a step-list editor: the legacy
+///   nav materializes as step 1 on first edit, all writes go through the
+///   undoable `store.setItemSteps`, and clearing all steps restores legacy.
+///   Navigation-last execution is documented in `app_state.dart`.
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -43,6 +59,7 @@ import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/canvas/props_schema.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/property_editors.dart';
+import 'package:canvas_app/ui/state_scope.dart';
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 
@@ -217,8 +234,7 @@ final Map<String, List<PropDef>> kInspectorSchemas = {
 
 /// Forwards pure-Dart store notifications to Flutter listeners.
 /// Same sanctioned `Listenable` adapter pattern as `design_canvas.dart`.
-class _StoreRelay extends foundation.ChangeNotifier {
-  _StoreRelay(this._store) {
+class _StoreRelay extends foundation.ChangeNotifier {  _StoreRelay(this._store) {
     _store.addListener(_forward);
   }
 
@@ -383,87 +399,78 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
-  /// Per-item "On tap" action editor: a screen picker (dropdown listing every
-  /// doc screen by name; the value is the action target id, or null when the
-  /// item has no action or points at a missing screen) plus a transition
-  /// select (legal values from [_kActionTransitions], never invented) and a
-  /// Clear action button. Every write goes through the undoable
-  /// `store.setItemAction` path (clearing passes null, i.e. the
-  /// `action: () => null` clear). A fresh pick defaults the transition to
-  /// `'slide'` while keeping an existing transition untouched; the
-  /// transition select stays disabled until a target is picked. Deleting a
-  /// screen needs no handling here: `store.deleteScreen` already refuses
-  /// while an action points at it (the shell surfaces the dangling list),
-  /// so a target can never dangle through the UI — a stale `to` from an
-  /// imported doc shows a missing-target note instead of a value.
+  /// Per-item "On tap" action editor: legacy single-nav pickers plus the
+  /// Track R1 step-list editor.
+  ///
+  /// LEGACY (unchanged Track K behavior, same keys): a screen picker
+  /// (`action-target`; fresh picks default the transition to `'slide'`
+  /// while keeping an existing one), a transition select
+  /// (`action-transition`, disabled until a target exists), and a Clear
+  /// button (`action-clear`). Every write goes through the undoable
+  /// `store.setItemAction` path. Deleting a screen needs no handling here:
+  /// `store.deleteScreen` already refuses while an action points at it, so a
+  /// target can never dangle through the UI — a stale `to` from an imported
+  /// doc shows a missing-target note instead of a value.
+  ///
+  /// STEPS (Track R1): the `step-add-*` buttons append a step of that kind;
+  /// the first append materializes the legacy nav (when any) as step 1, so
+  /// no behavior is lost. Steps render in order with per-step editors and
+  /// up/down/delete controls; conditions nest one full editor level per
+  /// `then` branch. All step writes go through the undoable
+  /// `store.setItemSteps` (equal writes are no-ops, so history stays
+  /// clean); deleting every step restores pure legacy behavior. While steps
+  /// exist the legacy pickers hide (they would desync — `setItemAction`
+  /// replaces the whole action); the navigate steps carry their own target
+  /// pickers instead.
   Widget _actionCard(CanvasItem item) {
-    final screens = widget.store.doc.screens;
+    final doc = widget.store.doc;
+    final screens = doc.screens;
     final action = item.action;
-    final targetValue =
-        (action != null && screens.any((s) => s.id == action.to))
-            ? action.to
-            : null;
-    final hasTarget = action != null && targetValue != null;
-    final transitionValue =
-        action != null && _kActionTransitions.contains(action.transition)
-            ? action.transition
-            : null;
-
-    String screenName(String id) {
-      for (final s in screens) {
-        if (s.id == id) return s.name;
-      }
-      return id;
-    }
+    final stepped = action != null && action.steps.isNotEmpty;
+    final steps = stepped ? action.steps : const <ActionStep>[];
 
     return shadcn.Card(
       padding: const EdgeInsets.all(EditorMetrics.panelInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('On tap', style: EditorType.sectionHeader),
-          const SizedBox(height: _kInspectorGap),
-          shadcn.Select<String>(
-            key: const ValueKey('action-target'),
-            value: targetValue,
-            placeholder: const Text('No action'),
-            itemBuilder: (context, option) => Text(screenName(option)),
-            onChanged: (to) {
-              if (to == null) return;
-              widget.store.setItemAction(
-                widget.nodeId!,
-                widget.itemId!,
-                NodeAction(to: to, transition: action?.transition ?? 'slide'),
-              );
-            },
-            popup: shadcn.SelectPopup(
-              items: shadcn.SelectItemList(
-                children: [
-                  for (final s in screens)
-                    shadcn.SelectItemButton(
-                      value: s.id,
-                      child: Text(s.name),
-                    ),
-                ],
-              ),
-            ).call,
+          Row(
+            children: [
+              const Text('On tap', style: EditorType.sectionHeader),
+              if (stepped) ...[
+                const SizedBox(width: _kInspectorGap),
+                Text(
+                  '${steps.length} step(s)',
+                  style: EditorType.tileLabel,
+                ),
+              ],
+            ],
           ),
           const SizedBox(height: _kInspectorGap),
-          PropSelectEditor(
-            key: const ValueKey('action-transition'),
-            value: transitionValue,
-            options: _kActionTransitions,
-            placeholderLabel: 'Pick transition',
-            enabled: action != null,
-            onChanged: (v) {
-              if (v != null && action != null) {
-                widget.store.setItemAction(
+          if (!stepped) ..._legacyActionRows(item, screens, action),
+          if (stepped) ...[
+            for (var i = 0; i < steps.length; i++) ...[
+              if (i > 0) const SizedBox(height: _kInspectorGap),
+              _stepCard(
+                steps,
+                i,
+                'step',
+                (next) => widget.store.setItemSteps(
                   widget.nodeId!,
                   widget.itemId!,
-                  NodeAction(to: action.to, transition: v),
-                );
-              }
-            },
+                  next,
+                ),
+              ),
+            ],
+            const SizedBox(height: _kInspectorGap),
+          ],
+          _addStepRow(
+            (step) => widget.store.setItemSteps(
+              widget.nodeId!,
+              widget.itemId!,
+              [...effectiveActionSteps(action), step],
+            ),
+            'step-add',
           ),
           const SizedBox(height: _kInspectorGap),
           shadcn.OutlineButton(
@@ -478,16 +485,588 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     ),
             child: const Text('Clear action'),
           ),
-          if (action != null && !hasTarget) ...[
+          if (!stepped &&
+              action != null &&
+              !screens.any((s) => s.id == action.to)) ...[
             const SizedBox(height: _kInspectorGap),
             Text(
               'Target screen “${action.to}” is missing.',
               style: EditorType.tileLabel,
             ),
           ],
+          if (stepped)
+            for (final note in _missingStepTargets(doc, steps, ''))
+              Padding(
+                padding: const EdgeInsets.only(top: _kInspectorGap),
+                child: Text(note, style: EditorType.tileLabel),
+              ),
         ],
       ),
     );
+  }
+
+  /// The verbatim Track K legacy rows (screen picker + transition select),
+  /// shown only while the item has no steps.
+  List<Widget> _legacyActionRows(
+    CanvasItem item,
+    List<CanvasScreen> screens,
+    NodeAction? action,
+  ) {
+    final targetValue =
+        (action != null && screens.any((s) => s.id == action.to))
+            ? action.to
+            : null;
+    final transitionValue =
+        action != null && _kActionTransitions.contains(action.transition)
+            ? action.transition
+            : null;
+
+    String screenName(String id) {
+      for (final s in screens) {
+        if (s.id == id) return s.name;
+      }
+      return id;
+    }
+
+    return [
+      shadcn.Select<String>(
+        key: const ValueKey('action-target'),
+        value: targetValue,
+        placeholder: const Text('No action'),
+        itemBuilder: (context, option) => Text(screenName(option)),
+        onChanged: (to) {
+          if (to == null) return;
+          widget.store.setItemAction(
+            widget.nodeId!,
+            widget.itemId!,
+            NodeAction(to: to, transition: action?.transition ?? 'slide'),
+          );
+        },
+        popup: shadcn.SelectPopup(
+          items: shadcn.SelectItemList(
+            children: [
+              for (final s in screens)
+                shadcn.SelectItemButton(
+                  value: s.id,
+                  child: Text(s.name),
+                ),
+            ],
+          ),
+        ).call,
+      ),
+      const SizedBox(height: _kInspectorGap),
+      PropSelectEditor(
+        key: const ValueKey('action-transition'),
+        value: transitionValue,
+        options: _kActionTransitions,
+        placeholderLabel: 'Pick transition',
+        enabled: action != null,
+        onChanged: (v) {
+          if (v != null && action != null) {
+            widget.store.setItemAction(
+              widget.nodeId!,
+              widget.itemId!,
+              NodeAction(to: action.to, transition: v),
+            );
+          }
+        },
+      ),
+      const SizedBox(height: _kInspectorGap),
+    ];
+  }
+
+  /// One step row: order label + up/down/delete plus the per-kind editor;
+  /// conditions additionally nest a full editor for their `then` branch.
+  /// [commit] replaces the whole edited list (top-level or nested).
+  Widget _stepCard(
+    List<ActionStep> steps,
+    int index,
+    String prefix,
+    ValueChanged<List<ActionStep>> commit,
+  ) {
+    final doc = widget.store.doc;
+    final step = steps[index];
+
+    void update(ActionStep next) {
+      final copy = List.of(steps)..[index] = next;
+      commit(copy);
+    }
+
+    void move(int delta) {
+      final other = index + delta;
+      if (other < 0 || other >= steps.length) return;
+      final copy = List.of(steps);
+      final tmp = copy[index];
+      copy[index] = copy[other];
+      copy[other] = tmp;
+      commit(copy);
+    }
+
+    void remove() {
+      final copy = List.of(steps)..removeAt(index);
+      commit(copy);
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${index + 1}. ${_stepTitle(step, doc)}',
+                key: ValueKey('$prefix-$index-title'),
+                style: EditorType.tileLabel,
+              ),
+            ),
+            shadcn.OutlineButton(
+              key: ValueKey('$prefix-up-$index'),
+              size: shadcn.ButtonSize.small,
+              onPressed: index > 0 ? () => move(-1) : null,
+              child: const Text('↑'),
+            ),
+            const SizedBox(width: _kInspectorGap),
+            shadcn.OutlineButton(
+              key: ValueKey('$prefix-down-$index'),
+              size: shadcn.ButtonSize.small,
+              onPressed:
+                  index < steps.length - 1 ? () => move(1) : null,
+              child: const Text('↓'),
+            ),
+            const SizedBox(width: _kInspectorGap),
+            shadcn.OutlineButton(
+              key: ValueKey('$prefix-delete-$index'),
+              size: shadcn.ButtonSize.small,
+              onPressed: remove,
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+        const SizedBox(height: _kInspectorGap),
+        _stepEditor(step, doc, prefix, index, update),
+        if (step.kind == 'condition') ...[
+          const SizedBox(height: _kInspectorGap),
+          const Text('Then', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          for (var j = 0; j < step.thenSteps.length; j++) ...[
+            if (j > 0) const SizedBox(height: _kInspectorGap),
+            _stepCard(
+              step.thenSteps,
+              j,
+              '$prefix-$index-then',
+              (next) => update(
+                ActionStep.condition(
+                  variable: step.variable,
+                  equals: step.equals,
+                  then: next,
+                ),
+              ),
+            ),
+          ],
+          if (step.thenSteps.isNotEmpty)
+            const SizedBox(height: _kInspectorGap),
+          _addStepRow(
+            (added) => update(
+              ActionStep.condition(
+                variable: step.variable,
+                equals: step.equals,
+                then: [...step.thenSteps, added],
+              ),
+            ),
+            '$prefix-$index-then-add',
+          ),
+        ],
+      ],
+    );
+  }
+
+  /// Short step summary for the order label.
+  String _stepTitle(ActionStep step, ScreenDoc doc) {
+    switch (step.kind) {
+      case 'navigate':
+        return 'Navigate to ${_screenName(doc, step.to)}';
+      case 'setState':
+        final value = step.value.isEmpty ? '(empty)' : step.value;
+        return 'Set ${step.variable.isEmpty ? '(pick var)' : step.variable} = $value';
+      case 'showSnackBar':
+        return 'Snackbar';
+      case 'showDialog':
+        return 'Dialog';
+      case 'condition':
+        return 'If ${step.variable} == ${step.equals}';
+    }
+    return step.kind;
+  }
+
+  /// Per-kind step editor. Keys are `$prefix-$index-<field>` (nested `then`
+  /// editors extend the prefix), so tests can drive every field.
+  Widget _stepEditor(
+    ActionStep step,
+    ScreenDoc doc,
+    String prefix,
+    int index,
+    ValueChanged<ActionStep> update,
+  ) {
+    final screens = doc.screens;
+    final vars = doc.states;
+    switch (step.kind) {
+      case 'navigate':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            shadcn.Select<String>(
+              key: ValueKey('$prefix-$index-target'),
+              value: screens.any((s) => s.id == step.to) ? step.to : null,
+              placeholder: const Text('Pick screen'),
+              itemBuilder: (context, option) =>
+                  Text(_screenName(doc, option)),
+              onChanged: (to) {
+                if (to == null) return;
+                update(
+                  ActionStep.navigate(
+                    to: to,
+                    transition: step.transition,
+                  ),
+                );
+              },
+              popup: shadcn.SelectPopup(
+                items: shadcn.SelectItemList(
+                  children: [
+                    for (final s in screens)
+                      shadcn.SelectItemButton(
+                        value: s.id,
+                        child: Text(s.name),
+                      ),
+                  ],
+                ),
+              ).call,
+            ),
+            const SizedBox(height: _kInspectorGap),
+            PropSelectEditor(
+              key: ValueKey('$prefix-$index-transition'),
+              value: _kActionTransitions.contains(step.transition)
+                  ? step.transition
+                  : null,
+              options: _kActionTransitions,
+              placeholderLabel: 'Pick transition',
+              onChanged: (v) {
+                if (v != null) {
+                  update(
+                    ActionStep.navigate(to: step.to, transition: v),
+                  );
+                }
+              },
+            ),
+          ],
+        );
+      case 'setState':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _varPicker(
+              key: ValueKey('$prefix-$index-var'),
+              value: step.variable,
+              placeholder:
+                  vars.isEmpty ? 'No state vars' : 'Pick variable',
+              onChanged: (v) => update(
+                ActionStep.setState(variable: v, value: step.value),
+              ),
+            ),
+            const SizedBox(height: _kInspectorGap),
+            PropTextEditor(
+              key: ValueKey('$prefix-$index-value'),
+              initial: step.value,
+              placeholderLabel: 'value or =other',
+              onChanged: (s) => update(
+                ActionStep.setState(variable: step.variable, value: s),
+              ),
+            ),
+          ],
+        );
+      case 'showSnackBar':
+        return PropTextEditor(
+          key: ValueKey('$prefix-$index-message'),
+          initial: step.message,
+          placeholderLabel: 'message',
+          onChanged: (s) =>
+              update(ActionStep.snackBar(message: s)),
+        );
+      case 'showDialog':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            PropTextEditor(
+              key: ValueKey('$prefix-$index-title'),
+              initial: step.title,
+              placeholderLabel: 'title',
+              onChanged: (s) => update(
+                ActionStep.dialog(title: s, message: step.message),
+              ),
+            ),
+            const SizedBox(height: _kInspectorGap),
+            PropTextEditor(
+              key: ValueKey('$prefix-$index-message'),
+              initial: step.message,
+              placeholderLabel: 'message',
+              onChanged: (s) => update(
+                ActionStep.dialog(title: step.title, message: s),
+              ),
+            ),
+          ],
+        );
+      case 'condition':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _varPicker(
+              key: ValueKey('$prefix-$index-var'),
+              value: step.variable,
+              placeholder:
+                  vars.isEmpty ? 'No state vars' : 'Pick variable',
+              onChanged: (v) => update(
+                ActionStep.condition(
+                  variable: v,
+                  equals: step.equals,
+                  then: step.thenSteps,
+                ),
+              ),
+            ),
+            const SizedBox(height: _kInspectorGap),
+            PropTextEditor(
+              key: ValueKey('$prefix-$index-equals'),
+              initial: step.equals,
+              placeholderLabel: 'equals (compared as text)',
+              onChanged: (s) => update(
+                ActionStep.condition(
+                  variable: step.variable,
+                  equals: s,
+                  then: step.thenSteps,
+                ),
+              ),
+            ),
+          ],
+        );
+    }
+    return Text('Unknown step: ${step.kind}');
+  }
+
+  /// State-var picker shared by the setState/condition editors: a plain
+  /// dropdown over the doc's var names (no scope read — the executor skips
+  /// unknown vars, so a stale value degrades to the placeholder).
+  Widget _varPicker({
+    required Key key,
+    required String value,
+    required String placeholder,
+    required ValueChanged<String> onChanged,
+  }) {
+    final names = [for (final v in widget.store.doc.states) v.name];
+    return shadcn.Select<String>(
+      key: key,
+      value: names.contains(value) ? value : null,
+      placeholder: Text(placeholder),
+      itemBuilder: (context, option) => Text(option),
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+      popup: shadcn.SelectPopup(
+        items: shadcn.SelectItemList(
+          children: [for (final name in names) shadcn.SelectItemButton(value: name, child: Text(name))],
+        ),
+      ).call,
+    );
+  }
+
+  /// One small add button per step kind. [onAdd] receives the fresh default
+  /// step (navigate targets the first screen; setState/condition reference
+  /// the first var, or `''` when the doc has no vars — the executor skips
+  /// unknown vars, so adding before declaring is safe).
+  Widget _addStepRow(ValueChanged<ActionStep> onAdd, String prefix) {
+    final doc = widget.store.doc;
+    final firstScreen = doc.screens.isEmpty ? '' : doc.screens.first.id;
+    final firstVar = doc.states.isEmpty ? '' : doc.states.first.name;
+    return Wrap(
+      spacing: _kInspectorGap,
+      runSpacing: _kInspectorGap,
+      children: [
+        _addStepButton(
+          prefix,
+          'navigate',
+          'Navigate',
+          ActionStep.navigate(to: firstScreen),
+          onAdd,
+        ),
+        _addStepButton(
+          prefix,
+          'setState',
+          'Set state',
+          ActionStep.setState(variable: firstVar, value: ''),
+          onAdd,
+        ),
+        _addStepButton(
+          prefix,
+          'showSnackBar',
+          'Snackbar',
+          const ActionStep.snackBar(message: 'Saved'),
+          onAdd,
+        ),
+        _addStepButton(
+          prefix,
+          'showDialog',
+          'Dialog',
+          const ActionStep.dialog(title: 'Title', message: 'Message'),
+          onAdd,
+        ),
+        _addStepButton(
+          prefix,
+          'condition',
+          'Condition',
+          ActionStep.condition(variable: firstVar, equals: ''),
+          onAdd,
+        ),
+      ],
+    );
+  }
+
+  Widget _addStepButton(
+    String prefix,
+    String kind,
+    String label,
+    ActionStep step,
+    ValueChanged<ActionStep> onAdd,
+  ) {
+    return shadcn.OutlineButton(
+      key: ValueKey('$prefix-$kind'),
+      size: shadcn.ButtonSize.small,
+      onPressed: () => onAdd(step),
+      child: Text(label),
+    );
+  }
+
+  /// Missing-target notes for stepped flows (top-level and nested),
+  /// mirroring the legacy missing note below.
+  List<String> _missingStepTargets(
+    ScreenDoc doc,
+    List<ActionStep> steps,
+    String path,
+  ) {
+    final out = <String>[];
+    for (var i = 0; i < steps.length; i++) {
+      final step = steps[i];
+      final label = path.isEmpty ? 'Step ${i + 1}' : '$path.${i + 1}';
+      if (step.kind == 'navigate' &&
+          !doc.screens.any((s) => s.id == step.to)) {
+        out.add('$label target screen “${step.to}” is missing.');
+      }
+      if (step.kind == 'condition') {
+        out.addAll(_missingStepTargets(doc, step.thenSteps, label));
+      }
+    }
+    return out;
+  }
+
+  /// App-state management card (Track R1): lists the doc's vars with rename
+  /// + delete, plus a one-tap add (next free `varN`, string type, `''`
+  /// default — zero extra editors while the doc has no vars, so legacy
+  /// widget counts hold).
+  ///
+  /// Rename commits per valid change through `store.renameVar`, gated on
+  /// identifier syntax + uniqueness so intermediate keystrokes never throw
+  /// (mirroring how prop text editors commit per keystroke). Type and
+  /// default are immutable after creation — delete + re-add to change them —
+  /// so no default migration is ever needed.
+  Widget _stateCard(ScreenDoc doc) {
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'App state${doc.states.isEmpty ? '' : ' (${doc.states.length})'}',
+            style: EditorType.sectionHeader,
+          ),
+          const SizedBox(height: _kInspectorGap),
+          if (doc.states.isEmpty)
+            const Text(
+              'No state vars yet. Add one, then bind text props as =name.',
+              style: EditorType.tileLabel,
+            ),
+          for (final v in doc.states) ...[
+            _varRow(v),
+            const SizedBox(height: _kInspectorGap),
+          ],
+          shadcn.OutlineButton(
+            key: const ValueKey('state-add'),
+            size: shadcn.ButtonSize.small,
+            onPressed: _addVar,
+            child: const Text('Add variable'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One var row: rename field + immutable type + default readout + delete.
+  Widget _varRow(AppStateVar v) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: PropTextEditor(
+                key: ValueKey('state-name-${v.name}'),
+                initial: v.name,
+                placeholderLabel: 'name',
+                onChanged: (s) => _renameVar(v.name, s),
+              ),
+            ),
+            const SizedBox(width: _kInspectorGap),
+            Text(v.type, style: EditorType.tileLabel),
+            const SizedBox(width: _kInspectorGap),
+            shadcn.OutlineButton(
+              key: ValueKey('state-delete-${v.name}'),
+              size: shadcn.ButtonSize.small,
+              onPressed: () => widget.store.deleteVar(v.name),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+        const SizedBox(height: _kInspectorGap),
+        Text(
+          'default: ${v.defaultValue ?? '—'}',
+          style: EditorType.tileLabel,
+        ),
+      ],
+    );
+  }
+
+  /// Adds the next free `varN` (string, `''`): always valid, never throws.
+  void _addVar() {
+    final taken = {for (final v in widget.store.doc.states) v.name};
+    var i = widget.store.doc.states.length + 1;
+    var name = 'var$i';
+    while (taken.contains(name)) {
+      i++;
+      name = 'var$i';
+    }
+    widget.store.addVar(AppStateVar(name: name, type: 'string', defaultValue: ''));
+  }
+
+  /// Gated rename: only identifier-shaped, non-taken names reach the store
+  /// (same-name and intermediate keystrokes are quiet no-ops).
+  void _renameVar(String old, String next) {
+    final trimmed = next.trim();
+    if (trimmed == old) return;
+    if (!kAppStateName.hasMatch(trimmed)) return;
+    final names = {for (final v in widget.store.doc.states) v.name};
+    if (names.contains(trimmed)) return;
+    try {
+      widget.store.renameVar(old, trimmed);
+    } on ArgumentError {
+      // Gate above already validated; belt-and-braces for races.
+    } on StateError {
+      // Same — the var vanished under us (e.g. undo raced a keystroke).
+    }
   }
 
   /// Shared empty state: centered icon + title + hint. Used for the
@@ -544,82 +1123,119 @@ class _InspectorPanelState extends State<InspectorPanel> {
         final schema = kPropSchemas[item.kind];
         if (schema == null || schema.isEmpty) {
           final node = _selectedNode(widget.store.doc);
-          return ListView(
-            padding: const EdgeInsets.all(EditorMetrics.panelInset),
-            shrinkWrap: true,
-            children: [
-              shadcn.Card(
-                padding: const EdgeInsets.all(EditorMetrics.panelInset),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        shadcn.PrimaryBadge(child: Text(item.kind)),
-                        const SizedBox(width: _kInspectorGap),
-                        Expanded(child: Text(item.id)),
-                      ],
-                    ),
-                    const SizedBox(height: _kInspectorGap),
-                    Text(
-                      'No editable properties',
-                      style: EditorType.sectionHeader.copyWith(
-                        color: EditorTheme.of(context).onSurface,
+          return StateScope(
+            // Editor scope: defaults (no session overrides in the editor —
+            // see `state_scope.dart`; preview provides live values).
+            values: StateScope.defaultsFor(widget.store.doc.states),
+            // Eager layout like the schema branch below (never unmounts
+            // cards while scrolling).
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(EditorMetrics.panelInset),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                shadcn.Card(
+                  padding: const EdgeInsets.all(EditorMetrics.panelInset),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          shadcn.PrimaryBadge(child: Text(item.kind)),
+                          const SizedBox(width: _kInspectorGap),
+                          Expanded(child: Text(item.id)),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: _kInspectorGap),
-                    Text(
-                      'Kind “${item.kind}” has no editable props yet.',
-                      style: EditorType.tileLabel.copyWith(
-                        color: EditorTheme.of(context).onSurfaceVariant,
+                      const SizedBox(height: _kInspectorGap),
+                      Text(
+                        'No editable properties',
+                        style: EditorType.sectionHeader.copyWith(
+                          color: EditorTheme.of(context).onSurface,
+                        ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: _kInspectorGap),
+                      Text(
+                        'Kind “${item.kind}” has no editable props yet.',
+                        style: EditorType.tileLabel.copyWith(
+                          color: EditorTheme.of(context).onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-              ),
+                if (node != null) ...[
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _actionCard(item),
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _stateCard(widget.store.doc),
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _visibilityCard(node),
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _nestingCard(node),
+                ],
+              ],
+            ),
+          ),
+        );
+        }
+        final kindDefaults = findEntry(item.kind)?.defaults;
+        final node = _selectedNode(widget.store.doc);
+        return StateScope(
+          // Editor scope: defaults (no session overrides in the editor —
+          // see `state_scope.dart`; preview provides live values).
+          values: StateScope.defaultsFor(widget.store.doc.states),
+          // Eager layout (a scroll view over a Column, not a lazy
+          // ListView): every card builds up front and is never unmounted
+          // by scrolling, so editors keep their in-flight state and every
+          // finder sees the whole panel (see the NOTE on the schema
+          // branch below for why laziness had to go).
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(EditorMetrics.panelInset),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+              // NOTE: eager layout (not a lazy ListView): the Track R1
+              // state/action cards lengthen this panel past the sliver
+              // cache, so deep scrolls would unmount scrolled-away editors
+              // and drop their in-flight state (see `responsive_inspector_
+              // test.dart`, which asserts the leaf Switch after revealing
+              // `On tap`). The panel holds a handful of cards, so eager
+              // building costs nothing; the host (`right_aside.dart`)
+              // bounds the height, so the scroll view never overflows.
+              shadcn.Card(
+                  padding: const EdgeInsets.all(EditorMetrics.panelInset),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          shadcn.PrimaryBadge(child: Text(item.kind)),
+                          const SizedBox(width: _kInspectorGap),
+                          Expanded(child: Text(item.id)),
+                        ],
+                      ),
+                      const SizedBox(height: _kInspectorGap),
+                      ..._rows(item, schema, kindDefaults),
+                    ],
+                  ),
+                ),
+              const SizedBox(height: EditorMetrics.panelInset),
+              _actionCard(item),
+              const SizedBox(height: EditorMetrics.panelInset),
+              // App-state card rides BELOW the action card, preserving the
+              // legacy card order (props → action → visibility → nesting).
+              _stateCard(widget.store.doc),
               if (node != null) ...[
-                const SizedBox(height: EditorMetrics.panelInset),
-                _actionCard(item),
                 const SizedBox(height: EditorMetrics.panelInset),
                 _visibilityCard(node),
                 const SizedBox(height: EditorMetrics.panelInset),
                 _nestingCard(node),
               ],
             ],
-          );
-        }
-        final kindDefaults = findEntry(item.kind)?.defaults;
-        final node = _selectedNode(widget.store.doc);
-        return ListView(
-          padding: const EdgeInsets.all(EditorMetrics.panelInset),
-          shrinkWrap: true,
-          children: [
-            shadcn.Card(
-              padding: const EdgeInsets.all(EditorMetrics.panelInset),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      shadcn.PrimaryBadge(child: Text(item.kind)),
-                      const SizedBox(width: _kInspectorGap),
-                      Expanded(child: Text(item.id)),
-                    ],
-                  ),
-                  const SizedBox(height: _kInspectorGap),
-                  ..._rows(item, schema, kindDefaults),
-                ],
-              ),
-            ),
-            const SizedBox(height: EditorMetrics.panelInset),
-            _actionCard(item),
-            if (node != null) ...[
-              const SizedBox(height: EditorMetrics.panelInset),
-              _visibilityCard(node),
-              const SizedBox(height: EditorMetrics.panelInset),
-              _nestingCard(node),
-            ],
-          ],
+          ),
+          ),
         );
       },
     );
@@ -959,8 +1575,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           initial: (resolved as String?) ?? '',
           placeholderLabel: spec.name,
           onChanged: (v) => _patch(spec.name, v),
-        );
-      case 'bool':
+        );      case 'bool':
         editor = PropSwitchEditor(
           value: (resolved as bool?) ?? false,
           onChanged: (v) => _patch(spec.name, v),
@@ -1011,11 +1626,74 @@ class _InspectorPanelState extends State<InspectorPanel> {
         // Unknown spec types render read-only instead of crashing.
         editor = Text('${spec.name}: $resolved');
     }
+    // Track R1: string props gain the binding affordance below the text
+    // editor (other types never bind — documented in `app_state.dart`).
+    Widget body = editor;
+    if (spec.type == 'string') {
+      final binding = _bindingRow(item, spec);
+      if (binding != null) {
+        body = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [editor, binding],
+        );
+      }
+    }
     return PropShell(
       name: spec.name,
       overridden: overridden,
       onReset: reset,
-      child: editor,
+      child: body,
+    );
+  }
+
+  /// Binding affordance for a string prop (Track R1): null while the doc
+  /// has no vars (zero extra widgets for legacy docs); a var picker writing
+  /// `=name` when unbound; a resolved hint plus Unlink (back to the literal)
+  /// when bound. Resolution reads the nearest [StateScope], falling back to
+  /// the doc defaults — the same rule preview uses with live values.
+  Widget? _bindingRow(CanvasItem item, PropSpec spec) {
+    final vars = widget.store.doc.states;
+    if (vars.isEmpty) return null;
+    final raw = item.props[spec.name];
+    final name = bindingNameOf(raw);
+    if (name == null) {
+      return Padding(
+        padding: const EdgeInsets.only(top: _kInspectorGap),
+        child: PropSelectEditor(
+          key: ValueKey('bind-${item.id}-${spec.name}'),
+          value: null,
+          options: [for (final v in vars) v.name],
+          placeholderLabel: 'Bind to state…',
+          onChanged: (v) {
+            if (v != null) _patch(spec.name, '=$v');
+          },
+        ),
+      );
+    }
+    final scope =
+        StateScope.maybeOf(context) ?? StateScope.defaultsFor(vars);
+    final resolved = resolveBoundProp(item.kind, spec.name, raw, scope);
+    final known = vars.any((v) => v.name == name);
+    return Padding(
+      padding: const EdgeInsets.only(top: _kInspectorGap),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              '→ =$name = $resolved${known ? '' : ' (missing var)'}',
+              key: ValueKey('bind-hint-${item.id}-${spec.name}'),
+              style: EditorType.tileLabel,
+            ),
+          ),
+          const SizedBox(width: _kInspectorGap),
+          shadcn.OutlineButton(
+            key: ValueKey('bind-unlink-${item.id}-${spec.name}'),
+            size: shadcn.ButtonSize.small,
+            onPressed: () => _patch(spec.name, known ? '$resolved' : name),
+            child: const Text('Unlink'),
+          ),
+        ],
+      ),
     );
   }
 }

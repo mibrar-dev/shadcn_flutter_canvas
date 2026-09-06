@@ -57,6 +57,11 @@ class CanvasToolbar extends StatelessWidget {
   /// Open a design.
   final VoidCallback onOpen;
 
+  /// Open the export dialog (ZIP / single-file / copy / project file).
+  /// Null renders the disabled state (same idiom as [onUndo]/[onRedo]; test
+  /// harnesses that don't wire export leave it null).
+  final VoidCallback? onExport;
+
   const CanvasToolbar({
     super.key,
     required this.panMode,
@@ -68,6 +73,7 @@ class CanvasToolbar extends StatelessWidget {
     required this.onDelete,
     required this.hasSelection,
     required this.onOpen,
+    this.onExport,
     this.canGroup = false,
     this.onGroup,
     this.canUngroup = false,
@@ -139,6 +145,12 @@ class CanvasToolbar extends StatelessWidget {
           icon: Icons.folder_open,
           onPressed: onOpen,
           tooltip: 'Open',
+        ),
+        const SizedBox(width: EditorMetrics.toolbarButtonGap),
+        EditorIconButton(
+          icon: Icons.ios_share,
+          onPressed: onExport,
+          tooltip: 'Export',
         ),
       ],
     );

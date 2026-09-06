@@ -2009,6 +2009,125 @@ typedef AliasFn = Widget Function(BuildContext context);
       );
     });
 
+    test('legacy docs stay stateless (no StatefulWidget, no tap methods)', () {
+      final out = buildSingleFile(buildTwoScreenDoc(), kTestSources);
+      expect(out, contains('extends StatelessWidget'));
+      expect(out, contains("import 'package:flutter/widgets.dart';"));
+      expect(out.contains('StatefulWidget'), isFalse);
+      expect(out.contains('_onTap'), isFalse);
+    });
+
+    test('stateful screen holds fields, binding, and a 3-step action', () {
+      final doc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 16.0,
+            'y': 96.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'button',
+                'label': '=count',
+                'action': {
+                  'to': 's2',
+                  'transition': 'slide',
+                  'steps': [
+                    {'kind': 'setState', 'variable': 'count', 'value': '1'},
+                    {'kind': 'showSnackBar', 'message': 'Saved'},
+                    {'kind': 'navigate', 'to': 's2', 'transition': 'slide'},
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        'states': [
+          {'name': 'count', 'type': 'number', 'default': 0},
+          {'name': 'who', 'type': 'string', 'default': 'Ada'},
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Stateful', 'brief': ''},
+      });
+      final out = buildSingleFile(doc, kTestSources);
+
+      // Stateful shape with one field per var.
+      expect(out, contains('class CanvasScreen_Home extends StatefulWidget'));
+      expect(out, contains('num _count = 0;'));
+      expect(out, contains("String _who = 'Ada';"));
+
+      // Binding reads the field via interpolation.
+      expect(out, contains("Text('\${_count}')"));
+
+      // The 3-step flow becomes one method: state, feedback, navigation.
+      expect(out, contains('void _onTap_i1(BuildContext context) {'));
+      expect(out, contains('setState(() {'));
+      expect(out, contains('_count = 1;'));
+      expect(out, contains('showSnackBar'));
+      expect(out, contains("pushNamed('/done')"));
+      expect(out, contains('onTap: () => _onTap_i1(context),'));
+      expect(out, contains('// steps (3): setState count, snackBar, navigate s2'));
+
+      // SnackBar needs material (a widgets superset), so the header swaps.
+      expect(out, contains("import 'package:flutter/material.dart';"));
+      expect(out.contains("import 'package:flutter/widgets.dart';"), isFalse);
+
+      // Deterministic.
+      expect(buildSingleFile(doc, kTestSources), out);
+    });
+
+    test('steps without vars make only their screen stateful', () {
+      final doc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 16.0,
+            'y': 96.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'button',
+                'label': 'Go',
+                'action': {
+                  'to': 's2',
+                  'transition': 'slide',
+                  'steps': [
+                    {'kind': 'navigate', 'to': 's2', 'transition': 'slide'},
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Steps only', 'brief': ''},
+      });
+      final out = buildSingleFile(doc, kTestSources);
+      expect(out, contains('class CanvasScreen_Home extends StatefulWidget'));
+      expect(out, contains('class CanvasScreen_Done extends StatelessWidget'));
+      expect(out, contains("import 'package:flutter/widgets.dart';"));
+    });
+
     test('nested export golden: card slots + 3-deep + row-in-card', () {
       final doc = _nestedExportDoc();
       final out = buildSingleFile(doc, kTestSources);

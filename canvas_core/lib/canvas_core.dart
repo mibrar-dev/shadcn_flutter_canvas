@@ -5,6 +5,7 @@
 library;
 
 export 'src/screen_doc.dart';
+export 'src/app_state.dart';
 export 'src/prompt_builder.dart';
 export 'src/share_codec.dart';
 export 'src/codegen_single.dart';

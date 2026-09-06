@@ -14,6 +14,7 @@ import 'package:canvas_app/canvas/persistence.dart';
 import 'package:canvas_core/canvas_core.dart';import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
+import 'package:canvas_app/ui/export_panel.dart';
 import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/keyboard_shortcuts.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
@@ -382,6 +383,17 @@ class _EditorShellState extends State<EditorShell> {
                             store: widget.store,
                             nodeId: _primaryNodeId(),
                             itemId: _selectedItemId(),
+                            onSelectNode: (id) => setState(() {
+                              _selectedScreenId = null;
+                              _selectedNodeIds.clear();
+                              if (id != null) _selectedNodeIds.add(id);
+                              _selectionAnchorId = id;
+                            }),
+                            onSelectScreen: (id) => setState(() {
+                              _selectedScreenId = id;
+                              _selectedNodeIds.clear();
+                              _selectionAnchorId = null;
+                            }),
                           ),
                         ),
                       ],
@@ -557,6 +569,7 @@ class _EditorShellState extends State<EditorShell> {
                   _selectedScreenId != null,
               onDelete: _deleteSelection,
               onOpen: () => showOpenDialog(context, widget.store),
+              onExport: () => showExportDialog(context, widget.store),
               canGroup: canGroupNodes(doc, _selectedNodeIds),
               onGroup:
                   canGroupNodes(doc, _selectedNodeIds) ? _groupSelection : null,

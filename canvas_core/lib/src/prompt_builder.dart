@@ -2,6 +2,7 @@
 ///
 /// Pure Dart: no Flutter imports, so the CLI can reuse it.
 import 'screen_doc.dart';
+import 'app_state.dart';
 
 /// Builds the paste-into-AI prompt for [doc].
 ///
@@ -194,16 +195,52 @@ String _responsiveNote(CanvasNode node) {
 String _behaviorSection(ScreenDoc doc) {
   final routes = {for (final s in doc.screens) s.id: _routeOf(s.name)};
   final lines = <String>[];
+  var flowCount = 0;
   for (final node in doc.nodes) {
     for (final item in node.items) {
-      final to = item.action?.to;
-      if (to != null) {
-        lines.add('- Tapping ${_labelOf(item)} pushes ${routes[to] ?? '/$to'}.');
+      final action = item.action;
+      if (action == null) continue;
+      // Multi-step flows are summarized once (their navigate steps still get
+      // the per-tap line when they target a known screen — see below).
+      if (action.steps.isNotEmpty) {
+        flowCount++;
+        for (final to in navigateTargetsOf(action.steps)) {
+          if (routes.containsKey(to)) {
+            lines.add(
+              '- Tapping ${_labelOf(item)} pushes ${routes[to]} '
+              '(as part of a ${action.steps.length}-step flow).',
+            );
+          }
+        }
+        continue;
       }
+      final to = action.to;
+      lines.add('- Tapping ${_labelOf(item)} pushes ${routes[to] ?? '/$to'}.');
     }
+  }
+  // Track R1: app state + flows ride the behavior section, one line each,
+  // only when the doc uses them (legacy docs keep byte-identical prompts).
+  if (doc.states.isNotEmpty) {
+    lines.add(
+      '- App state: ${doc.states.map((v) => '${v.name} (${v.type}, default ${_stateDefaultOf(v)})').join(', ')}.',
+    );
+  }
+  if (flowCount > 0) {
+    lines.add(
+      '- $flowCount item(s) run multi-step action flows (set state, '
+      'feedback, then navigation).',
+    );
   }
   return 'Behavior:\n'
       '${lines.isEmpty ? '- No navigation actions.' : lines.join('\n')}';
+}
+
+/// Prompt rendering of a state default (`'Ada'`, `0`, `false`, `?`).
+String _stateDefaultOf(AppStateVar v) {
+  final def = v.defaultValue;
+  if (def == null) return '?';
+  if (def is String) return "'$def'";
+  return '$def';
 }
 
 String _styleNotesSection(ScreenDoc doc) {

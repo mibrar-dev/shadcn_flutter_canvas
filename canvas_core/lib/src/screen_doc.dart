@@ -5,6 +5,8 @@
 /// numbers and `as double` would crash on those.
 library;
 
+import 'app_state.dart';
+
 /// Flow layout spacing (single source of truth; canvas_app imports these,
 /// canvas_core stays Flutter-free so the CLI can share it).
 ///
@@ -49,6 +51,7 @@ ScreenDoc migrateToFlow(ScreenDoc doc) {
     nodes: [...roots, ...children],
     theme: doc.theme,
     meta: doc.meta,
+    states: List<AppStateVar>.of(doc.states),
   );
 }
 
@@ -151,17 +154,24 @@ List<String> validateNesting(ScreenDoc doc) {
 }
 
 /// Top-level canvas document.
+///
+/// [states] holds the typed app-state variables (Track R1 — see
+/// `app_state.dart`): a missing JSON key parses to `[]` (old docs stay
+/// static), while [toJson] always emits the key (even empty) so the shape
+/// is stable for readers.
 class ScreenDoc {
   final List<CanvasScreen> screens;
   final List<CanvasNode> nodes;
   final CanvasTheme theme;
   final DocMeta meta;
+  final List<AppStateVar> states;
 
   const ScreenDoc({
     required this.screens,
     required this.nodes,
     required this.theme,
     required this.meta,
+    this.states = const [],
   });
 
   factory ScreenDoc.fromJson(Map<String, dynamic> json) {
@@ -179,6 +189,11 @@ class ScreenDoc {
           .toList(),
       theme: CanvasTheme.fromJson(json['theme'] as Map<String, dynamic>),
       meta: DocMeta.fromJson(json['meta'] as Map<String, dynamic>),
+      // Backward compatible: old docs lack this key.
+      states: (json['states'] as List?)
+              ?.map((s) => AppStateVar.fromJson(s as Map<String, dynamic>))
+              .toList() ??
+          const [],
     );
   }
 
@@ -187,17 +202,33 @@ class ScreenDoc {
         'nodes': nodes.map((n) => n.toJson()).toList(),
         'theme': theme.toJson(),
         'meta': meta.toJson(),
+        'states': [for (final v in states) v.toJson()],
       };
 
-  /// Pure ref-integrity check: every `action.to` must match a screen id.
+  /// Pure ref-integrity check: every navigation must match a screen id.
+  ///
+  /// Items with multi-step actions check their navigate steps (recursing
+  /// into conditions); legacy single-nav items check `action.to`. A legacy
+  /// `to` alongside non-empty steps is ignored (the steps are authoritative
+  /// — the store keeps `to` synced to the last navigate step for old
+  /// readers, but integrity follows what the runtime executes).
   List<String> validateRefs() {
     final ids = {for (final s in screens) s.id};
     final dangling = <String>[];
     for (final node in nodes) {
       for (final item in node.items) {
-        final to = item.action?.to;
-        if (to != null && !ids.contains(to)) {
-          dangling.add('dangling action ${item.id} -> missing screen $to');
+        final action = item.action;
+        if (action == null) continue;
+        if (action.steps.isNotEmpty) {
+          for (final to in navigateTargetsOf(action.steps)) {
+            if (!ids.contains(to)) {
+              dangling.add('dangling action ${item.id} -> missing screen $to');
+            }
+          }
+        } else if (!ids.contains(action.to)) {
+          dangling.add(
+            'dangling action ${item.id} -> missing screen ${action.to}',
+          );
         }
       }
     }
@@ -442,19 +473,48 @@ class CanvasItem {
       );
 }
 
-/// Tap behavior: navigate to another screen.
+/// Tap behavior: navigate to another screen, optionally via an ordered
+/// multi-step action flow (Track R1 — see `app_state.dart`).
+///
+/// [steps] is empty for legacy single-nav actions (a missing JSON key parses
+/// to `[]`, and [toJson] omits the key when empty, so legacy docs keep
+/// byte-identical JSON). When non-empty the steps are authoritative and the
+/// legacy [to]/[transition] are ignored at runtime (the store keeps them
+/// synced to the last navigate step for old readers).
 class NodeAction {
   final String to;
   final String transition;
+  final List<ActionStep> steps;
 
-  const NodeAction({required this.to, required this.transition});
+  const NodeAction({
+    required this.to,
+    required this.transition,
+    this.steps = const [],
+  });
 
   factory NodeAction.fromJson(Map<String, dynamic> json) => NodeAction(
         to: json['to'] as String,
         transition: json['transition'] as String,
+        steps: (json['steps'] as List?)
+                ?.map((s) => ActionStep.fromJson(s as Map<String, dynamic>))
+                .toList() ??
+            const [],
       );
 
-  Map<String, dynamic> toJson() => {'to': to, 'transition': transition};
+  Map<String, dynamic> toJson() => {
+        'to': to,
+        'transition': transition,
+        if (steps.isNotEmpty) 'steps': [for (final s in steps) s.toJson()],
+      };
+}
+
+/// The steps an item tap executes: [action.steps] when non-empty (the
+/// authoritative flow), else the legacy single navigate, else nothing.
+/// Shared by preview, codegen, and the inspector's step editor.
+List<ActionStep> effectiveActionSteps(NodeAction? action) {
+  if (action == null) return const [];
+  if (action.steps.isNotEmpty) return action.steps;
+  return [ActionStep.navigate(to: action.to, transition: action.transition)];
 }
 
 /// Canvas-wide theme selection.

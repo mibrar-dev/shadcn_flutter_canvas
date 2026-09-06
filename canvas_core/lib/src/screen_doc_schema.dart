@@ -11,6 +11,8 @@ library;
 
 import 'dart:convert';
 
+import 'app_state.dart';
+
 /// Allowed `action.transition` values in AI-emitted ScreenDocs.
 const Set<String> kAiAllowedTransitions = {
   'slide',
@@ -146,6 +148,32 @@ List<String> checkContract(Map<String, dynamic> json) {
     }
   }
 
+  // Track R1: `states` is OPTIONAL (old docs omit it). When present it must
+  // be an array of valid app-state vars.
+  final states = json['states'];
+  if (states != null) {
+    if (states is! List) {
+      problems.add('"states" must be an array');
+    } else {
+      final vars = <AppStateVar>[];
+      for (var i = 0; i < states.length; i++) {
+        final entry = states[i];
+        if (entry is! Map) {
+          problems.add('states[$i] must be an object');
+          continue;
+        }
+        try {
+          vars.add(
+            AppStateVar.fromJson(Map<String, dynamic>.from(entry)),
+          );
+        } catch (e) {
+          problems.add('states[$i] is invalid: $e');
+        }
+      }
+      problems.addAll(validateAppStateVars(vars));
+    }
+  }
+
   try {
     final bytes = utf8.encode(jsonEncode(json)).length;
     if (bytes > kAiMaxRawBytes) {
@@ -215,6 +243,28 @@ List<String> _checkItem(Object? item, int nodeIndex, int itemIndex) {
           '$ctx.action.transition "$transition" is not one of: '
           '${kAiAllowedTransitions.join(', ')}',
         );
+      }
+      // Track R1: `action.steps` is OPTIONAL. When present each entry must
+      // be an object with a known step kind (deep shape is validated by
+      // `validateActionSteps`, not the AI contract).
+      final steps = action['steps'];
+      if (steps != null) {
+        if (steps is! List) {
+          problems.add('$ctx.action.steps must be an array');
+        } else {
+          for (var k = 0; k < steps.length; k++) {
+            final step = steps[k];
+            if (step is! Map) {
+              problems.add('$ctx.action.steps[$k] must be an object');
+            } else if (step['kind'] is! String ||
+                !kActionStepKinds.contains(step['kind'])) {
+              problems.add(
+                '$ctx.action.steps[$k].kind "${step['kind']}" is not one of: '
+                '${kActionStepKinds.join(', ')}',
+              );
+            }
+          }
+        }
       }
     }
   }

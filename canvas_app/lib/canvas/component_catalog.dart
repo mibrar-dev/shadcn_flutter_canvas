@@ -52,6 +52,19 @@
 /// any of the 134 components), so those fourteen defaults are invented,
 /// documented per builder below, and use only bool/string/num prop types
 /// already established by the seed kinds.
+///
+/// STATE BINDINGS (Track R1): a string prop value starting with `=` names an
+/// app-state var (`=cartCount`) instead of a literal. [buildCatalogItem]
+/// resolves such props through its optional [scope] map (var name → live
+/// value) via [resolveBoundProp], per the prop's [PropSpec] type so resolved
+/// values keep the builder's expected runtime type (strings stringify,
+/// numbers/bools coerce; uncoercible values and unknown vars fall back to
+/// the RAW `=name` string, never a crash). Props of schema-less kinds are
+/// left raw (no spec → no safe type). Only `scope`-carrying call sites
+/// resolve: preview passes its session values (live bindings); the editor
+/// canvas (`phone_frame.dart`, frozen this track) passes no scope, so bound
+/// props there render the raw `=name` text — the inspector shows the
+/// resolved value beside the editor instead (see `inspector_panel.dart`).
 library;
 
 import 'dart:async';
@@ -59,8 +72,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:canvas_app/canvas/props_schema.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
-import 'package:canvas_core/canvas_core.dart' show kFlowScreenGap;
+import 'package:canvas_core/canvas_core.dart'
+    show bindingNameOf, kFlowScreenGap, stringifyStateValue;
 // Direct component-library import: the barrel exports `TabItem`/`TabChild`
 // from three navigation libraries (`tabs`, `tab_container`, `tab_list`), so
 // the prefixed barrel names do not resolve to the `Tabs`-compatible ones.
@@ -3328,23 +3343,86 @@ CatalogEntry? findEntry(String kind) {
 /// (spliced into their spec slot); every other builder keeps its 1-arg
 /// shape and never sees them (their nodes' children render via the
 /// renderers' below-fallback, never inside chrome).
+///
+/// [scope] (Track R1) carries live state values (var name → value); bound
+/// props (`=name`) resolve through [resolveBoundProps] before the builder
+/// runs. Null (the default) renders bindings raw — see the library docs.
 Widget buildCatalogItem(
   String kind,
   Map<String, dynamic> props, [
   List<Widget> children = const [],
-]) {
-  final entry = findEntry(kind);
+  Map<String, dynamic>? scope,
+]) {  final entry = findEntry(kind);
   if (entry == null) return fallbackBuilder(kind);
+  final effective = scope == null ? props : resolveBoundProps(kind, props, scope);
   if (children.isNotEmpty) {
     final build = entry.build;
     // Recovers the migrated 2-arg shape (see the [NodeBuilder] variance
     // note): true exactly for migrated container builders, so a future
     // 11th migration Just Works and unmigrated builders stay unreachable
     // with children.
-    if (build is NodeBuilder) return build(props, children);
+    if (build is NodeBuilder) return build(effective, children);
   }
-  return entry.build(props);
+  return entry.build(effective);
 }
+
+/// Resolves one bound prop: a `=var` [raw] value becomes the scope value
+/// coerced to the prop's [PropSpec] type (`string`/`enum`/`color`/`slot`
+/// stringify, `number`/`bool` coerce-or-raw); anything else (non-bindings,
+/// unknown vars, schema-less kinds) returns [raw] untouched — never a throw.
+Object? resolveBoundProp(
+  String kind,
+  String name,
+  Object? raw,
+  Map<String, dynamic> scope,
+) {
+  final ref = bindingNameOf(raw);
+  if (ref == null || !scope.containsKey(ref)) return raw;
+  final value = scope[ref];
+  final spec = findSpec(kind, name);
+  switch (spec?.type) {
+    case 'string':
+    case 'enum':
+    case 'color':
+    case 'slot':
+      return stringifyStateValue(value);
+    case 'number':
+      if (value is num) return value;
+      return num.tryParse('$value') ?? raw;
+    case 'bool':
+      if (value is bool) return value;
+      final text = '$value';
+      if (text == 'true') return true;
+      if (text == 'false') return false;
+      return raw;
+    default:
+      // Schema-less kinds: no safe type, leave the raw binding.
+      return raw;
+  }
+}
+
+/// Resolves every bound prop in [props] for [kind] (see [resolveBoundProp]).
+/// Returns [props] itself when nothing is bound (no copy, no rebuild).
+Map<String, dynamic> resolveBoundProps(
+  String kind,
+  Map<String, dynamic> props,
+  Map<String, dynamic> scope,
+) {
+  Map<String, dynamic>? out;
+  props.forEach((key, raw) {
+    if (!isStateBinding(raw)) return;
+    final resolved = resolveBoundProp(kind, key, raw, scope);
+    if (identical(resolved, raw)) return;
+    out ??= Map<String, dynamic>.of(props);
+    out![key] = resolved;
+  });
+  return out ?? props;
+}
+
+/// Whether [raw] is a state binding (`=varName`). Re-exported here so
+/// inspector/preview share the catalog's binding vocabulary.
+bool isStateBinding(Object? raw) =>
+    bindingNameOf(raw) != null;
 
 /// Bridge for the generated palette registry (`component_registry.dart`):
 /// builds [kind] with a copy of its catalog defaults, so registry tiles and

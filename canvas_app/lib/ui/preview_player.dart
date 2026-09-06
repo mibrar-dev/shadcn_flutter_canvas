@@ -12,6 +12,17 @@
 /// to the editor). Unknown action targets are ignored; unknown kinds render
 /// the catalog fallback.
 ///
+/// TRACK R1 (app state + action flows): the stage subtree sits under a
+/// [StateScope] carrying the preview session (var name → live value,
+/// initialized from var defaults and owned by this player — the snapshot
+/// [doc] is never mutated). Bound text props (`=var`) resolve through the
+/// session at every catalog call site (unknown vars render the raw `=name`
+/// string). Taps run [effectiveActionSteps] with navigation-last semantics
+/// (see `app_state.dart`: state writes + feedback first, in order, with
+/// dialogs awaited; navigations after, in order). Steps touching unknown
+/// vars are skipped, never a crash — so deleting a var can never break a
+/// running preview.
+///
 /// The player takes an immutable [ScreenDoc] snapshot (preview never edits),
 /// themed by [themeOverride] or `doc.theme` via [ThemedCanvas].
 ///
@@ -35,6 +46,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/ui/state_scope.dart';
 import 'package:canvas_app/ui/phone_frame.dart'
     show rowCrossAxis, rowMainAxis, wrapRowChild;
 import 'package:canvas_core/canvas_core.dart';
@@ -94,6 +106,12 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// closes it first, then pops the doc stack.
   bool _demoOpen = false;
 
+  /// Preview session: var name → live value, initialized from the var
+  /// defaults (see [StateScope] — session-only, the snapshot doc is never
+  /// mutated and nothing persists).
+  late Map<String, dynamic> _session =
+      StateScope.defaultsFor(widget.doc.states);
+
   String? get _currentId => _stack.isEmpty ? null : _stack.last;
 
   CanvasScreen? _screen(String id) {
@@ -104,9 +122,62 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   }
 
   void _onItemTap(CanvasItem item) {
-    final to = item.action?.to;
-    if (to == null || _screen(to) == null) return;
-    setState(() => _stack.add(to));
+    _runItemAction(item);
+  }
+
+  /// Executes an item tap as an ordered action flow (Track R1):
+  /// [effectiveActionSteps] partitioned navigation-last (see
+  /// `partitionSteps` in canvas_core). `setState` resolves its value
+  /// against the live session ([resolveActionValue] — unresolvable values
+  /// keep the current value); `showSnackBar`/`showDialog` resolve
+  /// whole-value `=var` bindings in their text; conditions evaluate against
+  /// the live session (unknown vars are false); navigations push known
+  /// screens in order (unknown targets are skipped). Legacy single-nav
+  /// actions flow through the same path as a one-navigate plan, so old
+  /// behavior is unchanged.
+  Future<void> _runItemAction(CanvasItem item) async {
+    final steps = effectiveActionSteps(item.action);
+    if (steps.isEmpty) return;
+    final knownVars = {for (final v in widget.doc.states) v.name};
+    final varsByName = {for (final v in widget.doc.states) v.name: v};
+    final plan = partitionSteps(steps, _session, knownVars: knownVars);
+    for (final step in plan.immediate) {
+      if (!mounted) return;
+      switch (step.kind) {
+        case 'setState':
+          final target = varsByName[step.variable];
+          if (target == null) continue;
+          final next = resolveActionValue(
+            raw: step.value,
+            target: target,
+            values: _session,
+          );
+          if (next == null) continue;
+          setState(() => _session[step.variable] = next);
+        case 'showSnackBar':
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(resolveStepText(step.message, _session)),
+            ),
+          );
+        case 'showDialog':
+          await showDialog<void>(
+            context: context,
+            builder: (_) => AlertDialog(
+              title: Text(resolveStepText(step.title, _session)),
+              content: Text(resolveStepText(step.message, _session)),
+            ),
+          );
+        case 'navigate':
+        case 'condition':
+          break; // Partitioned away — unreachable.
+      }
+    }
+    for (final nav in plan.navigate) {
+      if (!mounted) return;
+      if (_screen(nav.to) == null) continue;
+      setState(() => _stack.add(nav.to));
+    }
   }
 
   void _onBack() {
@@ -222,6 +293,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     final content = _demoOpen
                         ? buildAdaptiveNavDemo()
                         : _stageContent(current, colors, stageWidth);
+                    // Track R1: the stage subtree reads live session values
+                    // through this scope (bindings resolve live; catalog
+                    // call sites below also take the map explicitly, since
+                    // `buildCatalogItem` itself has no BuildContext).
+                    final scoped = StateScope(
+                      values: _session,
+                      child: content,
+                    );
                     return Stack(
                       children: [
                         Align(
@@ -252,7 +331,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                                     key: const ValueKey('previewStage'),
                                     width: stageWidth,
                                     height: innerHeight,
-                                    child: content,
+                                    child: scoped,
                                   ),
                                 ),
                               ),
@@ -439,11 +518,18 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     ];
     if (_isPreviewContainer(node, items)) {
       final first = items.first;
+      // Track R1: container chrome resolves bindings through the session.
+      final built = buildCatalogItem(
+        first.kind,
+        first.props,
+        builtKids,
+        _session,
+      );
       final container = first.action == null
-          ? buildCatalogItem(first.kind, first.props, builtKids)
+          ? built
           : _TapCatcher(
               onTap: () => _onItemTap(first),
-              child: buildCatalogItem(first.kind, first.props, builtKids),
+              child: built,
             );
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -529,8 +615,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   }
 
   /// Action-less items render bare so every gesture reaches the real widget.
+  /// Track R1: bound props resolve through the preview session.
   Widget _previewItem(CanvasItem item) {
-    final built = buildCatalogItem(item.kind, item.props);
+    final built = buildCatalogItem(
+      item.kind,
+      item.props,
+      const [],
+      _session,
+    );
     if (item.action == null) return built;
     return _TapCatcher(onTap: () => _onItemTap(item), child: built);
   }

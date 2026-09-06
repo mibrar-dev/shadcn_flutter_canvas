@@ -4,6 +4,7 @@
 /// Callers pass the source map: web passes `kEmbeddedSources` from
 /// `../_impl/embedded_sources.dart`, the CLI reads bodies from disk.
 import 'screen_doc.dart';
+import 'app_state.dart';
 
 /// Builds a single-file Dart program for [doc], inlining the registry
 /// sources of every used component [kind] found in [sourcesByDestination].
@@ -81,6 +82,22 @@ import 'screen_doc.dart';
 /// a `// transition:` comment since `pushNamed` carries none). Unknown
 /// targets keep the `// taps -> ...` comment with the bare expression —
 /// never a crash.
+///
+/// TRACK R1 (app state + action flows): docs using state vars or multi-step
+/// actions emit stateful screens instead (see [_screenIsStateful]):
+/// * every screen holds one field per var ([stateFieldDecl], initialized
+///   from the default), so app state is app-wide like FlutterFlow's;
+/// * text props bound as `=var` read their field via interpolation
+///   (`'${_count}'` — see [_str]), falling back to the raw literal for
+///   unknown vars, exactly like preview;
+/// * items with steps get `onTap: () => _onTap<id>(context)` methods built
+///   by [emitStepStatements] (state writes via `setState`, feedback, then
+///   navigation — the partitionSteps order). Steps needing material-only
+///   APIs (`showSnackBar`/`showDialog`) switch the header from
+///   `widgets.dart` to `material.dart` (a widgets superset), conditional so
+///   legacy docs keep byte-identical headers.
+/// Screens in docs with NO vars/bindings/actions emit exactly the historical
+/// stateless output.
 String buildSingleFile(
   ScreenDoc doc,
   Map<String, String> sourcesByDestination, {
@@ -92,6 +109,12 @@ String buildSingleFile(
   final deps = _mergedDeps(kinds);
   final closure =
       sharedSources != null || extraImports != null || partOf != null;
+  // Track R1: per-emission state tables for binding interpolation ([_str])
+  // and action methods. Reset on every call (empty for legacy docs, so the
+  // helpers below behave exactly as before).
+  _stateFields = _hasAppState(doc) ? stateFieldsFor(doc.states) : const {};
+  _stateVars = {for (final v in doc.states) v.name: v};
+  final needsMaterialSteps = _docNeedsMaterialSteps(doc);
   // Resolved before the header: closure imports are written up front.
   final _ClosureModel? model = closure
       ? _resolveClosure(
@@ -111,7 +134,14 @@ String buildSingleFile(
     )
     ..writeln();
   if (!closure) {
-    out.writeln("import 'package:flutter/widgets.dart';");
+    // Track R1: material (a widgets superset) replaces the widgets import
+    // only when an action step needs material-only APIs — legacy docs keep
+    // the exact old header.
+    out.writeln(
+      needsMaterialSteps
+          ? "import 'package:flutter/material.dart';"
+          : "import 'package:flutter/widgets.dart';",
+    );
 
     // `keyboard_shortcut` keys need `LogicalKeyboardKey`
     // (`package:flutter/services.dart`, not exported by `widgets.dart`):
@@ -167,7 +197,12 @@ String buildSingleFile(
       ..writeln('// ignore_for_file: ${_kClosureIgnores.join(', ')}');
   }
 
+  final taps = _tapTargets(doc);
   for (final screen in doc.screens) {
+    if (_screenIsStateful(doc, screen)) {
+      _writeStatefulScreen(out, doc, screen, taps);
+      continue;
+    }
     out
       ..writeln()
       ..writeln('class ${_classNameFor(screen.name)} extends StatelessWidget {')
@@ -4517,11 +4552,10 @@ List<String> _ownItemUnits(ScreenDoc doc, List<CanvasItem> items) {
   final units = <String>[];
   for (final item in items) {
     final lines = <String>[];
-    if (item.action != null) lines.add('// taps -> ${item.action!.to}');
-    var expr = _itemExpression(item);
-    final route = taps.routeFor(item);
-    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
-    lines.addAll(expr.split('\n'));
+    final comment = _tapCommentLine(item);
+    if (comment != null) lines.add(comment);
+    final expr = _itemExpression(item);
+    lines.addAll((_tapWrapStatement(expr, item, taps) ?? expr).split('\n'));
     units.add(lines.join('\n'));
   }
   return units;
@@ -4628,10 +4662,14 @@ String _nodeContentExpr(ScreenDoc doc, CanvasNode node, Set<String> visited) {
     if (kids.isEmpty) {
       if (node.items.length == 1) {
         final item = node.items.single;
-        final route = _tapTargets(doc).routeFor(item);
         final expr = _itemExpression(item);
+        final action = item.action;
+        if (action != null && action.steps.isNotEmpty) {
+          return _wrapMethodTapExpr(expr, item);
+        }
+        final route = _tapTargets(doc).routeFor(item);
         if (route == null) return _stripTrailingComma(expr);
-        return _wrapTapExpr(expr, item.action!, route);
+        return _wrapTapExpr(expr, action!, route);
       }
       if (node.items.isEmpty) return 'SizedBox.shrink()';
       final buf = StringBuffer()
@@ -4702,7 +4740,7 @@ void _writeBranch(
       node.items.length == 1 &&
       node.items.single.action != null &&
       childrenOf(doc, node.id).isEmpty) {
-    out.writeln('$indent// taps -> ${node.items.single.action!.to}');
+    out.writeln('$indent${_tapCommentLine(node.items.single)}');
   }
   _writeReturn(
     out,
@@ -4987,14 +5025,14 @@ void _writeRowChildCore(
     return;
   }
   for (final item in child.items) {
-    if (item.action != null) {
-      out.writeln('$indent// taps -> ${item.action!.to}');
+    final comment = _tapCommentLine(item);
+    if (comment != null) {
+      out.writeln('$indent$comment');
     }
-    // Known-target taps navigate like the bundle exporter (see [_wrapTapExpr]);
-    // the flex wrapper stays outside so the layout role is tap-independent.
+    // Tap wraps stay inside the flex wrapper so the layout role is
+    // tap-independent (see [_wrapTapExpr]/[_wrapMethodTapExpr]).
     var expr = _itemExpression(item);
-    final route = _tapTargets(doc).routeFor(item);
-    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+    expr = _tapWrapStatement(expr, item, _tapTargets(doc)) ?? expr;
     final exprLines = expr.split('\n');
     out
       ..writeln('${indent}$wrapper(')
@@ -5064,12 +5102,12 @@ void _writeContainerNode(
   Set<String> visited,
 ) {
   final taps = _tapTargets(doc);
-  if (item.action != null) {
-    out.writeln('$indent// taps -> ${item.action!.to}');
+  final comment = _tapCommentLine(item);
+  if (comment != null) {
+    out.writeln('$indent$comment');
   }
   var expr = _itemExpression(item, _childUnits(doc, kids, visited));
-  final route = taps.routeFor(item);
-  if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+  expr = _tapWrapStatement(expr, item, taps) ?? expr;
   for (final line in expr.split('\n')) {
     out.writeln('$indent$line');
   }
@@ -5158,8 +5196,7 @@ String _tapRouteOf(String name) {
 /// as a comment — `pushNamed` carries none. Returns the wrapped expression
 /// with NO trailing comma (mirrors [_nodeContentExpr]); statement contexts
 /// add their own comma.
-String _wrapTapExpr(String expr, NodeAction action, String route) {
-  final lines = _stripTrailingComma(expr).split('\n');
+String _wrapTapExpr(String expr, NodeAction action, String route) {  final lines = _stripTrailingComma(expr).split('\n');
   // Restore the inner trailing comma (statement style is comma-terminated,
   // whatever the input had); the outer close below stays comma-free for
   // expression contexts, statement callers add their own comma.
@@ -5176,6 +5213,197 @@ String _wrapTapExpr(String expr, NodeAction action, String route) {
   }
   buf.write(')');
   return buf.toString();
+}
+
+/// Track R1 per-emission state tables (set by [buildSingleFile]; empty for
+/// legacy docs so [_str] and the tap helpers behave exactly as before).
+///
+/// [_stateFields] maps var name → state field (`count` → `_count`);
+/// [_stateVars] maps var name → its declaration (types/defaults).
+Map<String, String> _stateFields = const {};
+Map<String, AppStateVar> _stateVars = const {};
+
+/// Whether [doc] uses app state at all (vars declared or steps present).
+bool _hasAppState(ScreenDoc doc) {
+  if (doc.states.isNotEmpty) return true;
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      if (item.action != null && item.action!.steps.isNotEmpty) return true;
+    }
+  }
+  return false;
+}
+
+/// Whether [screen] emits stateful: the doc declares vars (app-wide state
+/// lives on every screen) or one of its items carries action steps (the
+/// tap methods need a `State`). All other screens keep the historical
+/// stateless output byte-identically.
+bool _screenIsStateful(ScreenDoc doc, CanvasScreen screen) {
+  if (doc.states.isNotEmpty) return true;
+  for (final node in doc.nodes) {
+    if (node.screenId != screen.id) continue;
+    for (final item in node.items) {
+      if (item.action != null && item.action!.steps.isNotEmpty) return true;
+    }
+  }
+  return false;
+}
+
+/// Whether any step in [doc] needs material-only APIs (see
+/// [stepsNeedMaterial]): those docs import material instead of widgets.
+bool _docNeedsMaterialSteps(ScreenDoc doc) {
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      final steps = item.action?.steps;
+      if (steps != null &&
+          steps.isNotEmpty &&
+          stepsNeedMaterial(steps)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Comment line for [item]'s tap behavior, or null when action-less:
+/// the legacy `// taps -> <to>` or the R1 `// steps (N): ...` summary.
+/// Shared by every emission site so comments stay consistent.
+String? _tapCommentLine(CanvasItem item) {
+  final action = item.action;
+  if (action == null) return null;
+  if (action.steps.isNotEmpty) {
+    final summary = action.steps.map(stepSummary).join(', ');
+    return '// steps (${action.steps.length}): $summary';
+  }
+  return '// taps -> ${action.to}';
+}
+
+/// Wraps [expr] (an unindented [_itemExpression] WITH trailing comma) per
+/// [item]'s tap semantics, or null when no wrap applies: legacy known-target
+/// actions use the bundle-equivalent navigation ([_wrapTapExpr]); R1 step
+/// flows call their generated method ([_wrapMethodTapExpr]). Unknown legacy
+/// targets and action-less items render the bare expression.
+String? _tapWrapStatement(
+  String expr,
+  CanvasItem item,
+  _TapTargets taps,
+) {
+  final action = item.action;
+  if (action == null) return null;
+  if (action.steps.isNotEmpty) {
+    return '${_wrapMethodTapExpr(expr, item)},';
+  }
+  final route = taps.routeFor(item);
+  if (route == null) return null;
+  return '${_wrapTapExpr(expr, action, route)},';
+}
+
+/// Wraps [expr] (an unindented [_itemExpression] with trailing comma) in a
+/// `GestureDetector` calling the item's generated action method (see
+/// [_writeActionMethods]). Mirrors [_wrapTapExpr]'s comma contract: returns
+/// the wrapped expression with NO trailing comma.
+String _wrapMethodTapExpr(String expr, CanvasItem item) {
+  final method = methodNameFor('_onTap', item.id);
+  final lines = _stripTrailingComma(expr).split('\n');
+  lines[lines.length - 1] = '${lines.last},';
+  final buf = StringBuffer()
+    ..writeln('GestureDetector(')
+    ..writeln('  onTap: () => $method(context),')
+    ..writeln('  child: ${lines.first}');
+  for (final line in lines.skip(1)) {
+    buf.writeln('  $line');
+  }
+  buf.write(')');
+  return buf.toString();
+}
+
+/// Writes a stateful screen: the same flow body as the stateless path, but
+/// as a `StatefulWidget` holding one field per state var plus one tap
+/// method per stepped item on this screen (see [_writeActionMethods]).
+void _writeStatefulScreen(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasScreen screen,
+  _TapTargets taps,
+) {
+  final cls = _classNameFor(screen.name);
+  out
+    ..writeln()
+    ..writeln('class $cls extends StatefulWidget {')
+    ..writeln('  const $cls({super.key});')
+    ..writeln()
+    ..writeln('  @override')
+    ..writeln('  State<$cls> createState() => _${cls}State();')
+    ..writeln('}')
+    ..writeln()
+    ..writeln('class _${cls}State extends State<$cls> {');
+  for (final v in doc.states) {
+    out.writeln('  ${stateFieldDecl(v)}');
+  }
+  _writeActionMethods(out, doc, screen, taps);
+  out
+    ..writeln('  @override')
+    ..writeln('  Widget build(BuildContext context) {')
+    // Same flow root as the stateless path (padding/column/gap literals
+    // track kFlowScreenGap/kFlowScreenPadding there too).
+    ..writeln('    return Padding(')
+    ..writeln(
+        '      padding: const EdgeInsets.all(${_flowNum(kFlowScreenPadding)}),')
+    ..writeln('      child: Column(')
+    ..writeln('        crossAxisAlignment: CrossAxisAlignment.start,')
+    ..writeln('        children: [');
+  final roots = _rootNodes(doc, screen.id);
+  if (roots.isEmpty) {
+    out.writeln('          // (empty screen)');
+  }
+  var first = true;
+  for (final root in roots) {
+    if (!first) {
+      out.writeln(
+          '          const SizedBox(height: ${_flowNum(kFlowScreenGap)}),');
+    }
+    first = false;
+    _writeFlowChild(out, doc, root, '          ', <String>{});
+  }
+  out
+    ..writeln('        ],')
+    ..writeln('      ),')
+    ..writeln('    );')
+    ..writeln('  }')
+    ..writeln('}');
+}
+
+/// Writes one `void _onTap<id>(BuildContext context)` method per stepped
+/// item on [screen] (doc order; method names derive from item ids, unique
+/// doc-wide). Bodies come from [emitStepStatements] with routes resolved
+/// against [taps] (unknown targets become comments, never a crash).
+void _writeActionMethods(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasScreen screen,
+  _TapTargets taps,
+) {
+  final seen = <String>{};
+  for (final node in doc.nodes) {
+    if (node.screenId != screen.id) continue;
+    for (final item in node.items) {
+      final steps = item.action?.steps;
+      if (steps == null || steps.isEmpty) continue;
+      final name = methodNameFor('_onTap', item.id);
+      if (!seen.add(name)) continue;
+      out.writeln();
+      out.writeln('  void $name(BuildContext context) {');
+      for (final line in emitStepStatements(
+        steps: steps,
+        vars: _stateVars,
+        fields: _stateFields,
+        routeOf: (to) => taps.ids.contains(to) ? taps.routes[to] : null,
+      )) {
+        out.writeln('  $line');
+      }
+      out.writeln('  }');
+    }
+  }
 }
 
 /// Flow number literal: whole values print without `.0` to match the
@@ -5323,7 +5551,19 @@ String _classNameFor(String name) {
 }
 
 /// Dart single-quoted string literal for [value]; never crashes on input.
+///
+/// Track R1: a `=var` binding to a known state var emits a field
+/// interpolation (`'${_count}'`, always String-typed) instead of the quoted
+/// literal — text props read live state. Unknown vars (and legacy docs,
+/// whose [_stateFields] is empty) keep the historical quoted literal,
+/// exactly like preview's raw fallback.
 String _str(Object? value) {
+  if (value is String) {
+    final name = bindingNameOf(value);
+    if (name != null && _stateFields.containsKey(name)) {
+      return boundTextExpr(_stateFields[name]!);
+    }
+  }
   final escaped = '$value'
       .replaceAll(r'\', r'\\')
       .replaceAll("'", r"\'")

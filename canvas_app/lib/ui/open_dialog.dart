@@ -1,27 +1,49 @@
-/// Import-by-paste Open dialog (HANDOFF P1-7).
+/// Import-by-paste Open dialog (HANDOFF P1-7), extended by Track R2 with
+/// project-file affordances: save-to-file, load-from-file (web), and
+/// "New from template" starters.
 ///
-/// The toolbar `folder_open` action is inert and there is deliberately no
-/// file-picker dependency: a design is imported by pasting either a full
-/// share link (any text containing [kShareFragmentPrefix]) or raw doc JSON.
-/// Every size and color comes from [EditorMetrics]/[EditorColors].
+/// The toolbar `folder_open` action opens this dialog. A design is imported
+/// by pasting either a full share link (any text containing
+/// [kShareFragmentPrefix]) or raw doc JSON; on web builds a `.json` file can
+/// be picked instead (the file text flows through the SAME [_parseImport]
+/// path — extended, not forked). Every size and color comes from
+/// [EditorMetrics]/[EditorColors].
 library;
 
 import 'dart:convert';
 
 import 'package:canvas_core/canvas_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
+import 'package:canvas_app/ui/export_panel.dart';
 
 /// Shows the Open dialog; on successful import calls store.replaceDoc and
 /// closes. Never throws.
-Future<void> showOpenDialog(BuildContext context, CanvasStore store) async {
+///
+/// The R2 sinks are injectable for tests (defaults: web Blob download /
+/// web file picker); [onConfirmReplace] defaults to [confirmReplaceDoc].
+Future<void> showOpenDialog(
+  BuildContext context,
+  CanvasStore store, {
+  DownloadSink? onDownload,
+  PickFileSink? onPickFile,
+  ConfirmReplace? onConfirmReplace,
+  bool? isWebOverride,
+}) async {
   try {
     await shadcn.showDialog<void>(
       context: context,
-      builder: (_) => _OpenDialog(store: store),
+      builder: (_) => OpenDialog(
+        store: store,
+        onDownload: onDownload,
+        onPickFile: onPickFile,
+        onConfirmReplace: onConfirmReplace,
+        isWebOverride: isWebOverride,
+      ),
     );
   } catch (_) {
     // Dialog presentation must never throw to the toolbar caller.
@@ -42,18 +64,40 @@ ScreenDoc _parseImport(String text) {
   return ScreenDoc.fromJson(jsonDecode(trimmed) as Map<String, dynamic>);
 }
 
-class _OpenDialog extends StatefulWidget {
+class OpenDialog extends StatefulWidget {
   final CanvasStore store;
 
-  const _OpenDialog({required this.store});
+  /// Download sink for save-to-file; same default/guard as [ExportDialog].
+  final DownloadSink? onDownload;
+
+  /// File-picker sink for load-from-file; defaults to [pickTextFile].
+  final PickFileSink? onPickFile;
+
+  /// Destructive-replace confirmation; defaults to [confirmReplaceDoc].
+  final ConfirmReplace? onConfirmReplace;
+
+  /// Overrides [kIsWeb] (tests run on the VM, where web is always false).
+  final bool? isWebOverride;
+
+  const OpenDialog({
+    super.key,
+    required this.store,
+    this.onDownload,
+    this.onPickFile,
+    this.onConfirmReplace,
+    this.isWebOverride,
+  });
 
   @override
-  State<_OpenDialog> createState() => _OpenDialogState();
+  State<OpenDialog> createState() => _OpenDialogState();
 }
 
-class _OpenDialogState extends State<_OpenDialog> {
+class _OpenDialogState extends State<OpenDialog> {
   final TextEditingController _controller = TextEditingController();
   String? _error;
+  String? _notice;
+
+  bool get _isWeb => widget.isWebOverride ?? kIsWeb;
 
   @override
   void dispose() {
@@ -63,16 +107,105 @@ class _OpenDialogState extends State<_OpenDialog> {
 
   void _import() {
     if (_controller.text.trim().isEmpty) {
-      setState(() => _error = 'Paste a share link or doc JSON first.');
+      setState(() {
+        _error = 'Paste a share link or doc JSON first.';
+        _notice = null;
+      });
       return;
     }
     try {
       widget.store.replaceDoc(_parseImport(_controller.text));
     } catch (e) {
-      setState(() => _error = 'Could not open that input: $e');
+      setState(() {
+        _error = 'Could not open that input: $e';
+        _notice = null;
+      });
       return;
     }
     if (mounted) Navigator.of(context).pop();
+  }
+
+  /// Shared import tail for picked files: same [_parseImport] as paste.
+  void _importText(String text) {
+    try {
+      widget.store.replaceDoc(_parseImport(text));
+    } catch (e) {
+      setState(() {
+        _error = 'Could not open that file: $e';
+        _notice = null;
+      });
+      return;
+    }
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  Future<void> _loadFromFile() async {
+    if (!_isWeb) {
+      setState(() {
+        _error = null;
+        _notice = kNonWebDownloadMessage;
+      });
+      return;
+    }
+    late final String? text;
+    try {
+      text = await (widget.onPickFile ?? pickTextFile)();
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not read that file: $e';
+          _notice = null;
+        });
+      }
+      return;
+    }
+    if (text == null) return; // Picker cancelled — stay open, stay silent.
+    if (mounted) _importText(text);
+  }
+
+  Future<void> _saveToFile() async {
+    if (!_isWeb) {
+      setState(() {
+        _error = null;
+        _notice = kNonWebDownloadMessage;
+      });
+      return;
+    }
+    final doc = widget.store.doc;
+    final filename = exportFileName(title: doc.meta.title, extension: 'json');
+    try {
+      await (widget.onDownload ?? downloadBytes)(
+        utf8.encode(docJsonText(doc)),
+        filename,
+        kTextMimeType,
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Could not save that file: $e';
+          _notice = null;
+        });
+      }
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _error = null;
+        _notice = 'Saved $filename';
+      });
+    }
+  }
+
+  Future<void> _newFromTemplate(String name) async {
+    final confirmed = await (widget.onConfirmReplace ?? confirmReplaceDoc)(
+      context,
+      name,
+    );
+    if (!confirmed) return; // Denied or dismissed — stay open, stay silent.
+    if (mounted) {
+      widget.store.replaceDoc(templateBuilders[name]!());
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -116,6 +249,40 @@ class _OpenDialogState extends State<_OpenDialog> {
               ),
             ),
           ],
+          if (_notice != null) ...[
+            const SizedBox(height: EditorMetrics.tileGap),
+            Text(
+              _notice!,
+              style:
+                  EditorType.field.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
+          const SizedBox(height: EditorMetrics.tileGap),
+          Row(
+            children: [
+              shadcn.TextButton(
+                onPressed: _loadFromFile,
+                child: const Text('Load from file…'),
+              ),
+              shadcn.TextButton(
+                onPressed: _saveToFile,
+                child: const Text('Save to file'),
+              ),
+            ],
+          ),
+          const SizedBox(height: EditorMetrics.tileGap),
+          Text(
+            'New from template (replaces the current design).',
+            style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
+          ),
+          for (final name in templateBuilders.keys)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: shadcn.TextButton(
+                onPressed: () => _newFromTemplate(name),
+                child: Text(name),
+              ),
+            ),
         ],
       ),
       actions: [
