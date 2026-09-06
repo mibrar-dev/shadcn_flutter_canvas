@@ -679,6 +679,102 @@ class CanvasStore extends ChangeNotifier {
     }));
   }
 
+  /// Moves the node with [nodeId] under a new parent ([newParentId], null =
+  /// the screen root) in one undoable commit. Layout follows the new parent's
+  /// kind (row children lay out horizontally, container children stack inside
+  /// the parent chrome, leaf children stack below — see COMPOSITION.md §1);
+  /// this method only re-points the `parentId` edge. The moved node lands at
+  /// the end of its new group in doc order (use [reorderNode] afterwards to
+  /// place it elsewhere within the group).
+  ///
+  /// Validation (all before committing, so history stays clean):
+  /// unknown [nodeId] or [newParentId] is a no-op without committing
+  /// (matching [deleteNode]); a cross-screen parent throws [StateError]
+  /// (`screenId` never changes on move, matching [reorderNode]); a self
+  /// parent or a descendant parent throws [StateError] (via [isAncestorOf],
+  /// so the doc can never cycle through the UI); an unchanged `parentId`
+  /// (same-position) is a no-op without committing. Message strings mirror
+  /// [validateNesting] (`self-parent <id>`, `cross-screen parent <pid> for
+  /// node <id>`, `cycle: node <id> is its own ancestor`).
+  ///
+  /// Every other field is preserved with the [setNodeResponsive] deep-copy
+  /// precedent (`hiddenOn`/`breakpointValues`/`slots` are copied, never
+  /// aliased; `items` rides along untouched).
+  void reparentNode(String nodeId, String? newParentId) {
+    final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (index < 0) return;
+    final node = _doc.nodes[index];
+    if (newParentId != null) {
+      final parentIndex = _doc.nodes.indexWhere((n) => n.id == newParentId);
+      if (parentIndex < 0) return;
+      final parent = _doc.nodes[parentIndex];
+      if (parent.screenId != node.screenId) {
+        throw StateError(
+          'cross-screen parent $newParentId for node $nodeId',
+        );
+      }
+      if (newParentId == nodeId) {
+        throw StateError('self-parent $nodeId');
+      }
+      if (isAncestorOf(_doc, nodeId, newParentId)) {
+        throw StateError('cycle: node $nodeId is its own ancestor');
+      }
+    }
+    if (node.parentId == newParentId) return;
+    final moved = CanvasNode(
+      id: node.id,
+      screenId: node.screenId,
+      x: node.x,
+      y: node.y,
+      items: node.items,
+      parentId: newParentId,
+      isRow: node.isRow,
+      gap: node.gap,
+      mainAxis: node.mainAxis,
+      crossAxis: node.crossAxis,
+      expand: node.expand,
+      flex: node.flex,
+      hiddenOn: Set<String>.from(node.hiddenOn),
+      breakpointValues: {
+        for (final entry in node.breakpointValues.entries)
+          entry.key: Map<String, dynamic>.from(entry.value),
+      },
+      slots: Map<String, String>.from(node.slots),
+    );
+    final rest = List.of(_doc.nodes)..removeAt(index);
+    // Land at the end of the new group in doc order: after its last member,
+    // else anchored right after the parent itself (child groups) or after
+    // the screen's last node (roots) — the `_docIndexForGroupIndex` rule in
+    // `design_canvas.dart` for drops.
+    var at = rest.length;
+    for (var i = rest.length - 1; i >= 0; i--) {
+      if (rest[i].screenId == node.screenId &&
+          rest[i].parentId == newParentId) {
+        at = i + 1;
+        break;
+      }
+    }
+    if (at == rest.length) {
+      if (newParentId != null) {
+        final parentAt = rest.indexWhere((n) => n.id == newParentId);
+        if (parentAt >= 0) at = parentAt + 1;
+      } else {
+        var last = -1;
+        for (var i = 0; i < rest.length; i++) {
+          if (rest[i].screenId == node.screenId) last = i;
+        }
+        at = last + 1;
+      }
+    }
+    rest.insert(at, moved);
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: rest,
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+  }
+
   /// Replaces the whole doc (undoable import path for the Open dialog).
   /// Commits verbatim.
   void replaceDoc(ScreenDoc doc) {

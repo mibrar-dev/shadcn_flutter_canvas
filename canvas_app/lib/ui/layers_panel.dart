@@ -1,13 +1,13 @@
 /// Z-order Layers panel replacing the icon rail's `<id> panel` placeholder.
 ///
 /// Groups one row per node under its screen header (HANDOFF P1-4). Doc order
-/// is reversed within a group so the top row is the frontmost node. Row
-/// containers render as a header with their children indented one level
-/// beneath (frontmost-first within the row); the row header itself is
-/// selectable for gap editing. Rows carry bring-forward/send-backward
-/// controls wired to [CanvasStore.reorderNode] within their visual group,
-/// and screen headers carry a rename affordance wired to
-/// [CanvasStore.renameScreen].
+/// is reversed within a group so the top row is the frontmost node. Any node
+/// with children renders as a header with its subtree nested beneath
+/// (frontmost-first within each group, one indent level per depth); headers
+/// carry an expand/collapse toggle, and every row stays selectable for gap
+/// editing. All rows carry bring-forward/send-backward controls wired to
+/// [CanvasStore.reorderNode] within their own visual group, and screen
+/// headers carry a rename affordance wired to [CanvasStore.renameScreen].
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -85,6 +85,10 @@ class _LayersBody extends StatefulWidget {
 class _LayersBodyState extends State<_LayersBody> {
   late final _StoreRelay _relay = _StoreRelay(widget.store);
 
+  /// Ids whose subtree renders collapsed (header only). Default expanded, so
+  /// the full tree shows without interaction.
+  final Set<String> _collapsed = {};
+
   @override
   void dispose() {
     _relay.dispose();
@@ -134,17 +138,9 @@ class _LayersBodyState extends State<_LayersBody> {
               const SizedBox(height: EditorMetrics.tileGap),
               Builder(
                 builder: (_) {
-                  final roots = _rootsFrontmostFirst(doc, screen);
                   return Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: [
-                      for (var index = 0; index < roots.length; index++) ...[
-                        _layerRow(roots[index], roots.length, index),
-                        // Row children indent one level under their row
-                        // header, reordering within their own visual group.
-                        ..._childRows(doc, roots[index]),
-                      ],
-                    ],
+                    children: _treeRows(doc, screen, null, 0, const {}),
                   );
                 },
               ),
@@ -162,46 +158,122 @@ class _LayersBodyState extends State<_LayersBody> {
     );
   }
 
+  /// Nested layer rows for one sibling group ([parentId], null = the
+  /// screen's roots) at indent [depth]: frontmost-first within the group,
+  /// each header followed by its own subtree. [ancestors] holds the ids on
+  /// the current path (cycle-safe: corrupt self-parent/cycle edges terminate
+  /// instead of recursing forever). Collapsed subtrees (see [_collapsed])
+  /// render the header only. Reorder buttons still move within the node's
+  /// own visual group via [CanvasStore.reorderNode]; delete cascades through
+  /// [CanvasStore.deleteNode] at any depth (reparent-safe: descendants go
+  /// with the deleted node, never orphaned).
+  List<Widget> _treeRows(
+    ScreenDoc doc,
+    CanvasScreen screen,
+    String? parentId,
+    int depth,
+    Set<String> ancestors,
+  ) {
+    final group = _groupFrontmostFirst(doc, screen, parentId);
+    return [
+      for (var index = 0; index < group.length; index++)
+        ..._subtreeRows(
+          doc,
+          screen,
+          group[index],
+          group.length,
+          index,
+          depth,
+          ancestors,
+        ),
+    ];
+  }
+
+  /// One header row plus its (unless collapsed) nested subtree. Children are
+  /// the node's own sibling group frontmost-first, minus self/ancestor ids
+  /// so corrupt edges never loop.
+  List<Widget> _subtreeRows(
+    ScreenDoc doc,
+    CanvasScreen screen,
+    CanvasNode node,
+    int groupLength,
+    int visualIndex,
+    int depth,
+    Set<String> ancestors,
+  ) {
+    final kids = [
+      for (final k in _groupFrontmostFirst(doc, screen, node.id))
+        if (k.id != node.id && !ancestors.contains(k.id)) k,
+    ];
+    final next = {...ancestors, node.id};
+    return [
+      _layerRow(
+        node,
+        groupLength,
+        visualIndex,
+        depth: depth,
+        hasChildren: kids.isNotEmpty,
+      ),
+      if (!_collapsed.contains(node.id))
+        for (var ci = 0; ci < kids.length; ci++)
+          ..._subtreeRows(
+            doc,
+            screen,
+            kids[ci],
+            kids.length,
+            ci,
+            depth + 1,
+            next,
+          ),
+    ];
+  }
+
   /// One layer row wired to the store: tap selects (rows select for gap
   /// editing), duplicate/delete act, and the reorder buttons move within the
   /// node's visual group ([groupLength]/[visualIndex] in frontmost-first
-  /// display order) by passing the group-relative doc index.
-  Widget _layerRow(CanvasNode node, int groupLength, int visualIndex) {
-    return _LayerRow(
-      node: node,
-      selected: node.id == widget.selectedNodeId,
-      onTap: () => widget.onSelectNode(node.id),
-      onDuplicate: () => widget.store.duplicateNode(node.id),
-      onDelete: () => widget.store.deleteNode(node.id),
-      // Displayed frontmost-first: group-relative doc index of this row is
-      // groupLength-1-visualIndex; up moves toward the front (+1).
-      onMoveUp: visualIndex == 0
-          ? null
-          : () => widget.store.reorderNode(
-                node.id,
-                groupLength - visualIndex,
-              ),
-      onMoveDown: visualIndex == groupLength - 1
-          ? null
-          : () => widget.store.reorderNode(
-                node.id,
-                groupLength - 2 - visualIndex,
-              ),
+  /// display order) by passing the group-relative doc index. [depth] indents
+  /// the row one level per nesting depth; [hasChildren] shows the
+  /// expand/collapse toggle (collapsed hides the subtree via [_collapsed]).
+  Widget _layerRow(
+    CanvasNode node,
+    int groupLength,
+    int visualIndex, {
+    required int depth,
+    required bool hasChildren,
+  }) {
+    return Padding(
+      padding: EdgeInsets.only(left: depth * EditorMetrics.panelInset),
+      child: _LayerRow(
+        node: node,
+        selected: node.id == widget.selectedNodeId,
+        onTap: () => widget.onSelectNode(node.id),
+        onDuplicate: () => widget.store.duplicateNode(node.id),
+        onDelete: () => widget.store.deleteNode(node.id),
+        // Displayed frontmost-first: group-relative doc index of this row is
+        // groupLength-1-visualIndex; up moves toward the front (+1).
+        onMoveUp: visualIndex == 0
+            ? null
+            : () => widget.store.reorderNode(
+                  node.id,
+                  groupLength - visualIndex,
+                ),
+        onMoveDown: visualIndex == groupLength - 1
+            ? null
+            : () => widget.store.reorderNode(
+                  node.id,
+                  groupLength - 2 - visualIndex,
+                ),
+        hasChildren: hasChildren,
+        expanded: !_collapsed.contains(node.id),
+        onToggleExpanded: hasChildren
+            ? () => setState(() {
+                  if (!_collapsed.remove(node.id)) {
+                    _collapsed.add(node.id);
+                  }
+                })
+            : null,
+      ),
     );
-  }
-
-  /// Indented child rows for a row container (frontmost-first in the row).
-  /// Empty for leaves.
-  List<Widget> _childRows(ScreenDoc doc, CanvasNode row) {
-    if (!row.isRow) return const [];
-    final kids = _childrenFrontmostFirst(doc, row);
-    return [
-      for (var ci = 0; ci < kids.length; ci++)
-        Padding(
-          padding: const EdgeInsets.only(left: EditorMetrics.panelInset),
-          child: _layerRow(kids[ci], kids.length, ci),
-        ),
-    ];
   }
 
   /// Deletes a screen via [CanvasStore.deleteScreen]. A refusal (dangling
@@ -267,20 +339,18 @@ class _LayersBodyState extends State<_LayersBody> {
   }
 }
 
-/// Root nodes of [screen] in doc order reversed (top row = frontmost).
-List<CanvasNode> _rootsFrontmostFirst(ScreenDoc doc, CanvasScreen screen) {
+/// Siblings sharing [parentId] on [screen] in doc order reversed (top row =
+/// frontmost). Null [parentId] selects the screen roots. Any node may parent
+/// (COMPOSITION.md §1), so children are no longer a row-only concept — the
+/// same helper serves every depth.
+List<CanvasNode> _groupFrontmostFirst(
+  ScreenDoc doc,
+  CanvasScreen screen,
+  String? parentId,
+) {
   final nodes = [
     for (final n in doc.nodes)
-      if (n.screenId == screen.id && n.parentId == null) n,
-  ];
-  return nodes.reversed.toList();
-}
-
-/// Children of [row] in doc order reversed (top row = frontmost).
-List<CanvasNode> _childrenFrontmostFirst(ScreenDoc doc, CanvasNode row) {
-  final nodes = [
-    for (final n in doc.nodes)
-      if (n.parentId == row.id) n,
+      if (n.screenId == screen.id && n.parentId == parentId) n,
   ];
   return nodes.reversed.toList();
 }
@@ -350,6 +420,9 @@ class _LayerRow extends StatefulWidget {
     required this.onDelete,
     required this.onMoveUp,
     required this.onMoveDown,
+    this.hasChildren = false,
+    this.expanded = true,
+    this.onToggleExpanded,
   });
 
   final CanvasNode node;
@@ -362,6 +435,13 @@ class _LayerRow extends StatefulWidget {
   /// is null on the frontmost row, [onMoveDown] on the backmost.
   final VoidCallback? onMoveUp;
   final VoidCallback? onMoveDown;
+
+  /// Whether the node owns a visible subtree (shows the expand/collapse
+  /// toggle); [expanded] is its current state, flipped via
+  /// [onToggleExpanded].
+  final bool hasChildren;
+  final bool expanded;
+  final VoidCallback? onToggleExpanded;
 
   @override
   State<_LayerRow> createState() => _LayerRowState();
@@ -394,6 +474,19 @@ class _LayerRowState extends State<_LayerRow> {
           ),
           child: Row(
             children: [
+              if (widget.hasChildren)
+                _LayerAction(
+                  tooltip: widget.expanded ? 'Collapse' : 'Expand',
+                  icon: widget.expanded
+                      ? Icons.expand_more
+                      : Icons.chevron_right,
+                  onPressed: widget.onToggleExpanded,
+                )
+              else
+                const SizedBox(
+                  width: _kActionButtonSize,
+                  height: _kActionButtonSize,
+                ),
               Expanded(
                 child: Text(
                   '${_kindLabel(widget.node)} · ${widget.node.id}',

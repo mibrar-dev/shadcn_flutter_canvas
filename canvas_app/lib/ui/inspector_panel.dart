@@ -73,6 +73,68 @@ String _groupTitle(String group) {
   return group[0].toUpperCase() + group.substring(1);
 }
 
+/// Short node label for the nesting breadcrumb/picker (`Row · u3`,
+/// `Card · card1`, `Empty · u9` — the same `<Kind> · <id>` idiom as the
+/// layers panel rows).
+String _nodeShortLabel(CanvasNode node) {
+  if (node.isRow) return 'Row · ${node.id}';
+  if (node.items.isEmpty) return 'Empty · ${node.id}';
+  final kind = node.items.first.kind;
+  if (kind.isEmpty) return 'Empty · ${node.id}';
+  return '${kind[0].toUpperCase()}${kind.substring(1)} · ${node.id}';
+}
+
+/// Ancestor chain of [node] root-first via `parentId` hops, cycle-safe
+/// (visited guard, so corrupt cyclic docs terminate; a dangling edge stops
+/// the walk, mirroring [isAncestorOf]).
+List<CanvasNode> _breadcrumbChain(ScreenDoc doc, CanvasNode node) {
+  final byId = {for (final n in doc.nodes) n.id: n};
+  final chain = <CanvasNode>[];
+  final seen = <String>{node.id};
+  var cursor = node.parentId == null ? null : byId[node.parentId];
+  while (cursor != null && seen.add(cursor.id)) {
+    chain.insert(0, cursor);
+    final nextId = cursor.parentId;
+    cursor = nextId == null ? null : byId[nextId];
+  }
+  return chain;
+}
+
+/// Screen display name for the breadcrumb head; falls back to the id when
+/// the node's screen is missing (imported docs).
+String _screenName(ScreenDoc doc, String screenId) {
+  for (final s in doc.screens) {
+    if (s.id == screenId) return s.name;
+  }
+  return screenId;
+}
+
+/// Whether [node] is a legal parent target for the nesting picker: a row or
+/// a container (first item's kind in [kContainerKinds] — the catalog rule
+/// from COMPOSITION.md §2, reused here and in `phone_frame.dart`, never
+/// re-derived). Leaves are steered away (their children would render with
+/// the below-fallback, never inside chrome).
+bool _isParentTarget(CanvasNode node) =>
+    node.isRow ||
+    (node.items.isNotEmpty &&
+        kContainerKinds.contains(node.items.first.kind));
+
+/// Disabled reason for a picker [target] relative to [node], or null when
+/// the move is legal. Self and descendants stay visible-but-disabled (with
+/// the reason) instead of vanishing, so the refusal is discoverable;
+/// cross-screen nodes are excluded from the picker outright (a move never
+/// changes screens — see [CanvasStore.reparentNode]).
+String? _parentDisabledReason(
+  CanvasNode node,
+  CanvasNode target,
+  Set<String> descendantIds,
+) {
+  if (target.id == node.parentId) return 'current parent';
+  if (target.id == node.id) return 'cannot contain itself';
+  if (descendantIds.contains(target.id)) return 'would create a cycle';
+  return null;
+}
+
 /// One editable prop (pre-W2 shape; legacy compatibility shim).
 ///
 /// Kept for source compatibility (`inspector_row_test.dart` reads
@@ -520,6 +582,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 _actionCard(item),
                 const SizedBox(height: EditorMetrics.panelInset),
                 _visibilityCard(node),
+                const SizedBox(height: EditorMetrics.panelInset),
+                _nestingCard(node),
               ],
             ],
           );
@@ -552,6 +616,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
             if (node != null) ...[
               const SizedBox(height: EditorMetrics.panelInset),
               _visibilityCard(node),
+              const SizedBox(height: EditorMetrics.panelInset),
+              _nestingCard(node),
             ],
           ],
         );
@@ -676,6 +742,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
           ),
         ),
         const SizedBox(height: EditorMetrics.panelInset),
+        _nestingCard(node),
+        const SizedBox(height: EditorMetrics.panelInset),
         _visibilityCard(node),
       ],
     );
@@ -702,6 +770,98 @@ class _InspectorPanelState extends State<InspectorPanel> {
         onChanged: (v) {
           if (v != null) onChanged(v);
         },
+      ),
+    );
+  }
+
+  /// Track C2 nesting card: the breadcrumb trail (Screen › … › Node) plus
+  /// the parent picker. Shown for every selected node (rows and leaves
+  /// alike), reusing the inspector card/padding/rhythm tokens.
+  ///
+  /// The picker lists the screen-root target plus every same-screen row or
+  /// container node (see [_isParentTarget]). Moves go through the undoable
+  /// [CanvasStore.reparentNode], so the store's refusals (cross-screen,
+  /// self, cycles) apply; the button rebuilds live off the store relay, so
+  /// the breadcrumb and the disabled reasons follow every move.
+  Widget _nestingCard(CanvasNode node) {
+    final doc = widget.store.doc;
+    final chain = _breadcrumbChain(doc, node);
+    final crumb = [
+      _screenName(doc, node.screenId),
+      for (final ancestor in chain) _nodeShortLabel(ancestor),
+      _nodeShortLabel(node),
+    ].join(' › ');
+    final descendantIds = {
+      for (final d in descendants(doc, node.id)) d.id,
+    };
+    final targets = [
+      for (final n in doc.nodes)
+        if (n.screenId == node.screenId && _isParentTarget(n)) n,
+    ];
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Nesting', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          Text(
+            crumb,
+            key: const ValueKey('nesting-breadcrumb'),
+            style: EditorType.tileLabel,
+          ),
+          const SizedBox(height: _kInspectorGap),
+          const Text('Parent', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          _parentOption(
+            label: 'Screen root',
+            optionKey: const ValueKey('nesting-move-root'),
+            disabledReason:
+                node.parentId == null ? 'already at root' : null,
+            onMove: () => widget.store.reparentNode(node.id, null),
+          ),
+          for (final target in targets)
+            _parentOption(
+              label: _nodeShortLabel(target),
+              optionKey: ValueKey('nesting-move-${target.id}'),
+              disabledReason:
+                  _parentDisabledReason(node, target, descendantIds),
+              onMove: () => widget.store.reparentNode(node.id, target.id),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// One parent-picker row: the target [label] plus a `Move here` button,
+  /// or the [disabledReason] text when the move is illegal (the button is
+  /// omitted, never hidden-after-tap — illegal targets cannot be invoked).
+  Widget _parentOption({
+    required String label,
+    required ValueKey<String> optionKey,
+    required String? disabledReason,
+    required VoidCallback onMove,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _kInspectorGap),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: EditorType.tileLabel)),
+          if (disabledReason != null)
+            Text(
+              disabledReason,
+              style: EditorType.tileLabel.copyWith(
+                color: EditorTheme.of(context).onSurfaceVariant,
+              ),
+            )
+          else
+            shadcn.OutlineButton(
+              key: optionKey,
+              size: shadcn.ButtonSize.small,
+              onPressed: onMove,
+              child: const Text('Move here'),
+            ),
+        ],
       ),
     );
   }

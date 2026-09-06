@@ -329,21 +329,25 @@ int flowInsertionIndex(double pointerMain, List<double> childCenters) {
 }
 
 /// Renders one screen's nodes into a [PhoneFrame], with selection affordances.
-/// Insertion target resolved from a screen-local pointer: the deepest row
-/// containing it ([parentId], with [targetRect] driving the row highlight)
-/// else the screen root, plus the child [index] and the [lineMain] position
-/// of the 2px index line (x within a row, y at root; both screen-local px).
+/// Insertion target resolved from a screen-local pointer: the deepest
+/// container-or-row containing it ([parentId], with [targetRect] driving the
+/// target highlight) else the screen root, plus the child [index] and the
+/// [lineMain] position of the 2px index line (x within a row, y within a
+/// container or at root; all screen-local px). [targetIsRow] tells the index
+/// line which axis to span (rows are horizontal, containers vertical).
 class _FlowHit {
   final String? parentId;
   final int index;
   final double lineMain;
   final Rect? targetRect;
+  final bool targetIsRow;
 
   const _FlowHit({
     required this.parentId,
     required this.index,
     required this.lineMain,
     required this.targetRect,
+    this.targetIsRow = true,
   });
 }
 
@@ -396,9 +400,9 @@ class ScreenSurface extends StatefulWidget {
   /// Fired when a palette tile is dropped, with the drop point in screen
   /// coordinates (already relative to the phone's inner area) plus the
   /// flow insertion target resolved from measured geometry: [parentId] is
-  /// the hovered row (null for the screen root) and [index] the child
-  /// position within it. [DesignCanvas] forwards these to `onAccept`, which
-  /// lands the node there in one commit.
+  /// the hovered container-or-row (null for the screen root) and [index]
+  /// the child position within it. [DesignCanvas] forwards these to
+  /// `onAccept`, which lands the node there in one commit.
   final void Function(
     String kind,
     Offset position, {
@@ -557,28 +561,45 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   }
 
   /// Shared insert/reorder path: resolves the pointer to a flow target plus
-  /// a child index (by child midpoints along the container's axis; empty
-  /// containers yield 0) and the index-line position. Used identically by the
-  /// hover visuals and the drop path so the line and the landing agree.
+  /// a child index (by child midpoints along the target's axis — x for rows,
+  /// y for containers and the root; empty targets yield 0) and the
+  /// index-line position. Used identically by the hover visuals and the drop
+  /// path so the line and the landing agree.
+  ///
+  /// Target rule (Track C2 nesting — COMPOSITION.md §4): the deepest
+  /// container-or-row under the pointer wins (measured rects, smallest-area
+  /// tiebreak, so nested targets resolve inward). Container-ness reuses
+  /// [_isContainerNode] (the catalog [kContainerKinds] first-item rule —
+  /// never re-derived here). Leaf nodes are never targets (even with
+  /// children — their children render below, never inside chrome), so a
+  /// pointer over a leaf falls through to the enclosing container-or-row or
+  /// to the root. Every target kind carries a measured key (rows, containers
+  /// and leaves all build through [_nodeChrome] or the row detector), so
+  /// empty containers stay hit-testable through their chrome rect — no
+  /// placeholder needed in the builders.
   _FlowHit _flowHit(Offset pointer, RenderBox screenBox) {
-    // Deepest row containing the pointer wins; smallest area breaks ties so
-    // nested rows (should they ever nest) resolve inward.
-    CanvasNode? hitRow;
+    // Deepest container-or-row containing the pointer wins; smallest area
+    // breaks ties so nested targets (row-in-card, card-in-row, 3-deep
+    // chains) resolve inward.
+    CanvasNode? hitTarget;
     Rect? hitRect;
     for (final node in _visibleNodes) {
-      if (node.parentId != null || !node.isRow) continue;
+      if (!node.isRow && !_isContainerNode(node)) continue;
       final rect = _nodeRect(node.id, screenBox);
       if (rect == null || !rect.contains(pointer)) continue;
       if (hitRect == null ||
           rect.width * rect.height < hitRect.width * hitRect.height) {
-        hitRow = node;
+        hitTarget = node;
         hitRect = rect;
       }
     }
-    if (hitRow != null && hitRect != null) {
+    if (hitTarget != null && hitRect != null) {
+      final target = hitTarget;
+      final targetRect = hitRect;
+      final horizontal = target.isRow;
       final kids = [
         for (final node in _visibleNodes)
-          if (node.parentId == hitRow.id) node,
+          if (node.parentId == target.id) node,
       ];
       final centers = <double>[];
       final starts = <double?>[];
@@ -586,31 +607,37 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       for (final kid in kids) {
         final rect = _nodeRect(kid.id, screenBox);
         if (rect == null) {
-          // Pre-layout fallback: stored x as the center proxy.
-          centers.add(kid.x);
+          // Pre-layout fallback: stored x/y as the center proxy along the
+          // target's axis.
+          centers.add(horizontal ? kid.x : kid.y);
           starts.add(null);
           ends.add(null);
-        } else {
+        } else if (horizontal) {
           centers.add((rect.left + rect.right) / 2);
           starts.add(rect.left);
           ends.add(rect.right);
+        } else {
+          centers.add((rect.top + rect.bottom) / 2);
+          starts.add(rect.top);
+          ends.add(rect.bottom);
         }
       }
-      final rowRect = hitRect;
+      final pointerMain = horizontal ? pointer.dx : pointer.dy;
       final index =
-          flowInsertionIndex(pointer.dx, centers).clamp(0, kids.length);
+          flowInsertionIndex(pointerMain, centers).clamp(0, kids.length);
       return _FlowHit(
-        parentId: hitRow.id,
+        parentId: target.id,
         index: index,
         lineMain: _boundary(
-          pointer.dx,
+          pointerMain,
           index,
           starts,
           ends,
-          rowRect.left,
-          rowRect.right,
+          horizontal ? targetRect.left : targetRect.top,
+          horizontal ? targetRect.right : targetRect.bottom,
         ),
-        targetRect: rowRect,
+        targetRect: targetRect,
+        targetIsRow: horizontal,
       );
     }
     final roots = [
@@ -756,9 +783,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               }
               final hoverHit = hover;
               final hoverRect = hover?.targetRect;
-              // A hovered row carries its own wash; otherwise the whole
-              // screen washes while a drag hovers it.
-              final hoveringRow = hoverHit?.parentId != null;
+              // A hovered container-or-row carries its own wash; otherwise the
+              // whole screen washes while a drag hovers it.
+              final hoveringTarget = hoverHit?.parentId != null;
               // Screen-tap selection lives OUTSIDE the node detectors: taps
               // on nodes are claimed by the inner leaf/row `onTap`s (which
               // win the arena as the deeper recognizer), so this fires only
@@ -769,7 +796,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 child: Stack(
                   children: [
                     _buildFlow(colors),
-                  if (candidate.isNotEmpty && !hoveringRow)
+                  if (candidate.isNotEmpty && !hoveringTarget)
                     Positioned.fill(
                       child: ColoredBox(
                         color: colors.railActive.withValues(alpha: 0.25),
@@ -1098,15 +1125,27 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     );
   }
 
-  /// 2px index line spanning the hovered container's cross axis: horizontal
-  /// across the content for the root column, vertical across the row for a
-  /// row container.
+  /// 2px index line spanning the hovered target's cross axis: horizontal
+  /// across the content for the root column and for vertical (container)
+  /// targets, vertical across the row for a row target. Gated on `candidate`
+  /// via the caller, so it vanishes on drop/leave with the guides.
   Widget _buildInsertLine(_FlowHit hit, EditorColors colors) {
-    if (hit.parentId == null) {
+    if (hit.parentId == null || !hit.targetIsRow) {
+      if (hit.parentId == null) {
+        return Positioned(
+          key: kFlowInsertLineKey,
+          left: kFlowScreenPadding,
+          right: kFlowScreenPadding,
+          top: hit.lineMain - 1,
+          height: 2,
+          child: ColoredBox(color: colors.toolbarActive),
+        );
+      }
+      final rect = hit.targetRect!;
       return Positioned(
         key: kFlowInsertLineKey,
-        left: kFlowScreenPadding,
-        right: kFlowScreenPadding,
+        left: rect.left,
+        width: rect.width,
         top: hit.lineMain - 1,
         height: 2,
         child: ColoredBox(color: colors.toolbarActive),

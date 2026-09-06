@@ -153,19 +153,29 @@ class DesignCanvas extends StatefulWidget {
   /// when omitted the drop lands on [this.screenId], preserving the original
   /// single-screen call shape.
   ///
+  /// Drop-offset → parent/index mapping (Track C2 nesting — COMPOSITION.md
+  /// §1/§4): the surface resolves the pointer to the deepest container-or-row
+  /// under it (measured rects, smallest-area tiebreak) and forwards that as
+  /// [parentId] plus an [index] within the target's child group. [offset] is
+  /// the pointer point: it is used for index math (see below) and still
+  /// stored as the node's `x`/`y` metadata, which the flow renderer ignores
+  /// (it lays out by doc order). Explicit [parentId]/[index] (computed by the
+  /// surface from measured geometry) win; otherwise the index falls back to
+  /// pointer order along the target's axis — pointer-y for the screen root
+  /// and for container (vertical-stack) parents, pointer-x for row
+  /// (horizontal) parents. A [parentId] that names no SAME-SCREEN node
+  /// (unknown id or cross-screen) degrades to root so the drop is never lost.
+  /// Leaf drops splice in a single commit (one undo step) via
+  /// [CanvasStore.replaceDoc]; row drops append then move within their group
+  /// when the pointer asked for a non-final slot.
+  ///
   /// Flow insertion: [kind] `'row'` takes the row path — a container node via
-  /// [CanvasStore.addRow] (items are ignored) that always lands root-level.
-  /// Any other kind becomes a leaf with one item. [offset] is the pointer
-  /// point: it is used for index math (see below) and still stored as the
-  /// node's `x`/`y` metadata, which the flow renderer ignores (it lays out by
-  /// doc order). Explicit [parentId]/[index] (computed by the surface from
-  /// measured geometry) win; otherwise the root index falls back to
-  /// pointer-y order (leaves sort after same-screen roots dropped at or above
-  /// the pointer) and a row-child index to pointer-x order. A [parentId] that
-  /// names no same-screen row container degrades to root so the drop is never
-  /// lost. Leaf drops splice in a single commit (one undo step) via
-  /// [CanvasStore.replaceDoc]; row drops append then move within the root
-  /// group when the pointer asked for an earlier slot.
+  /// [CanvasStore.addRow] (items are ignored). Without an explicit same-screen
+  /// [parentId] it lands root-level (today's behavior); with one it nests
+  /// under that parent (row-in-card) via [CanvasStore.reparentNode]. Any
+  /// other kind becomes a leaf with one item parented to [parentId] (row,
+  /// container, or — via the model, though the surface never targets one —
+  /// leaf, whose children render with the below-fallback).
   String onAccept(
     String kind,
     Offset offset, {
@@ -174,17 +184,43 @@ class DesignCanvas extends StatefulWidget {
     int? index,
   }) {
     final targetScreen = screenId ?? this.screenId;
+    // Any same-screen node may parent (COMPOSITION.md §1 — layout follows
+    // the parent's kind); anything else degrades to root, never a throw.
+    String? resolvedParent;
+    if (parentId != null) {
+      for (final n in store.doc.nodes) {
+        if (n.id == parentId && n.screenId == targetScreen) {
+          resolvedParent = parentId;
+          break;
+        }
+      }
+    }
     if (kind == 'row') {
       final id = store.addRow(screenId: targetScreen);
-      final roots = [
-        for (final n in store.doc.nodes)
-          if (n.screenId == targetScreen && n.parentId == null) n,
-      ];
-      final at = (index ?? _rootIndexForOffset(store.doc, targetScreen, offset))
-          .clamp(0, roots.length - 1);
-      // addRow appends; move into place only when the pointer asked for an
-      // earlier slot (the common below-all-content drop stays one commit).
-      if (at != roots.length - 1) store.reorderNode(id, at);
+      String? groupParent;
+      if (resolvedParent != null) {
+        // addRow always appends root-level; nest when asked (never self —
+        // the id is fresh, so no cycle is possible here).
+        store.reparentNode(id, resolvedParent);
+        groupParent = resolvedParent;
+      }
+      final groupLength = _groupLength(store.doc, targetScreen, groupParent);
+      // Fallback index along the group's axis: pointer-y for the root and
+      // for vertical (container) parents, pointer-x for horizontal (row)
+      // parents.
+      final int fallback;
+      if (groupParent == null) {
+        fallback = _rootIndexForOffset(store.doc, targetScreen, offset);
+      } else if (_parentIsRow(store.doc, groupParent)) {
+        fallback = _rowIndexForOffset(store.doc, groupParent, offset);
+      } else {
+        fallback = _containerIndexForOffset(store.doc, groupParent, offset);
+      }
+      final at = (index ?? fallback).clamp(0, groupLength - 1);
+      // addRow appends; move into place only when the pointer asked for a
+      // non-final slot (the common below-all-content drop stays at two
+      // commits: add + nest, or one when root-final).
+      if (at != groupLength - 1) store.reorderNode(id, at);
       return id;
     }
     final entry = findEntry(kind);
@@ -195,22 +231,20 @@ class DesignCanvas extends StatefulWidget {
           ? <String, dynamic>{}
           : Map<String, dynamic>.of(entry.defaults),
     );
-    final resolvedParent =
-        parentId != null && store.doc.nodes.any((n) => n.id == parentId)
-            ? parentId
-            : null;
-    final rowParent = resolvedParent != null &&
-        store.doc.nodes.any(
-          (n) =>
-              n.id == resolvedParent && n.screenId == targetScreen && n.isRow,
-        );
-    final groupParent = rowParent ? resolvedParent : null;
+    final groupParent = resolvedParent;
     final groupLength = _groupLength(store.doc, targetScreen, groupParent);
-    final at = (index ??
-            (groupParent == null
-                ? _rootIndexForOffset(store.doc, targetScreen, offset)
-                : _rowIndexForOffset(store.doc, groupParent, offset)))
-        .clamp(0, groupLength);
+    // Fallback index along the group's axis (see the row path above):
+    // pointer-y for the root and for vertical (container/leaf) parents,
+    // pointer-x for horizontal (row) parents.
+    final int fallback;
+    if (groupParent == null) {
+      fallback = _rootIndexForOffset(store.doc, targetScreen, offset);
+    } else if (_parentIsRow(store.doc, groupParent)) {
+      fallback = _rowIndexForOffset(store.doc, groupParent, offset);
+    } else {
+      fallback = _containerIndexForOffset(store.doc, groupParent, offset);
+    }
+    final at = (index ?? fallback).clamp(0, groupLength);
     final node = CanvasNode(
       id: store.uid(),
       screenId: targetScreen,
@@ -274,10 +308,32 @@ int _rowIndexForOffset(ScreenDoc doc, String rowId, Offset offset) {
   return at;
 }
 
+/// Whether [parentId] names a horizontal (row) parent: rows lay children out
+/// left-to-right, every other parent stacks vertically.
+bool _parentIsRow(ScreenDoc doc, String parentId) {
+  for (final n in doc.nodes) {
+    if (n.id == parentId) return n.isRow;
+  }
+  return false;
+}
+
+/// Fallback container-child index from pointer position: container children
+/// stack vertically (COMPOSITION.md §1), so they sort after siblings stored
+/// at or above the pointer's y — the child-group analogue of
+/// [_rootIndexForOffset].
+int _containerIndexForOffset(ScreenDoc doc, String parentId, Offset offset) {
+  var at = 0;
+  for (final n in doc.nodes) {
+    if (n.parentId == parentId && n.y <= offset.dy) at++;
+  }
+  return at;
+}
+
 /// Flat doc index where group position [at] (already clamped to
 /// `0..groupLength`) splices: before the member currently there, or after
-/// the last member at the end. Empty groups anchor after the row node itself
-/// (row children) or after the screen's last node (roots), else doc end.
+/// the last member at the end. Empty groups anchor after the parent node
+/// itself (child groups — rows and containers alike) or after the screen's
+/// last node (roots), else doc end.
 int _docIndexForGroupIndex(
   ScreenDoc doc,
   String screenId,
