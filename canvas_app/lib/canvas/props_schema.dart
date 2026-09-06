@@ -1275,6 +1275,50 @@ const kPropSchemas = <String, List<PropSpec>>{
       defaultValue: 0,
     ),
   ],
+  // Track Y1 addition (2026-09-06): specs for the `navigation_bar` bottom
+  // tab bar. Defaults mirror `component_catalog.dart` (invented, documented
+  // on the builder there); only string/number prop types already established
+  // by the seed kinds are used.
+  'navigation_bar': [
+    PropSpec(
+      name: 'tab1',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Home',
+    ),
+    PropSpec(
+      name: 'tab2',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Search',
+    ),
+    PropSpec(
+      name: 'tab3',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'Saved',
+    ),
+    PropSpec(
+      name: 'tab4',
+      type: 'string',
+      control: 'text',
+      group: 'content',
+      defaultValue: 'You',
+    ),
+    PropSpec(
+      name: 'index',
+      type: 'number',
+      control: 'stepper',
+      group: 'state',
+      min: 0,
+      max: 3,
+      step: 1,
+      defaultValue: 0,
+    ),
+  ],
   'slider': [
     PropSpec(
       name: 'value',

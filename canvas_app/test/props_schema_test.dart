@@ -84,6 +84,8 @@ const _expectedKinds = {
   'hsv',
   'history',
   'feature_carousel',
+  // Track Y1 addition (2026-09-06).
+  'navigation_bar',
 };
 
 (CanvasStore, String, String) _storeWithButton() {

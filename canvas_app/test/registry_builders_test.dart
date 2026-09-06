@@ -2511,13 +2511,13 @@ void main() {
       // Spot-check across sections: these have registry entries but
       // canvasReady false, so the U1 fallback must NOT promote them to
       // 'canvas-ready coming soon' cards — canvas keeps unknown + X exactly
-      // as before U1.
+      // as before U1. (`navigation_bar` left this list in Track Y1
+      // (2026-09-06): it now bridges to a real catalog builder.)
       const placeholders = [
         'markdown',
         'spinner',
         'text',
         'autocomplete',
-        'navigation_bar',
         'switcher',
       ];
       for (final kind in placeholders) {

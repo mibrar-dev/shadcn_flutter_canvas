@@ -25,7 +25,7 @@ void main() {
       }
     });
 
-    test('all 68 catalog kinds are covered', () {
+    test('all 69 catalog kinds are covered', () {
       const expected = {
         'button',
         'card',
@@ -98,6 +98,9 @@ void main() {
         'hsv',
         'history',
         'feature_carousel',
+        // Track Y1 addition (2026-09-06): covered via the derived
+        // `kInspectorSchemas` (built from `kPropSchemas`, no inspector edit).
+        'navigation_bar',
       };
       expect(Set.of(kCatalog.map((e) => e.kind)), expected);
       expect(Set.of(kInspectorSchemas.keys), containsAll(expected));

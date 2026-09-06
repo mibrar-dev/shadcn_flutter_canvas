@@ -195,6 +195,14 @@ const Map<String, Map<String, dynamic>> _representativeProps = {
     'title2': 'Widgets',
     'description2': 'Compose anything.',
   },
+  // Track Y1 addition (2026-09-06): index 1 exercises the non-first tab.
+  'navigation_bar': {
+    'tab1': 'Home',
+    'tab2': 'Search',
+    'tab3': 'Saved',
+    'tab4': 'You',
+    'index': 1,
+  },
 };
 
 /// String prop keys that are enums/hex (not free text) — the long-text stress

@@ -84,7 +84,7 @@ class _KindSpec {
   const _KindSpec(this.prefix, this.shared, this.pubspecDeps, this.dependsOn);
 }
 
-// Exact metadata for the 78 canvas-ready kinds (19 seed + 10 W1: chip, alert,
+// Exact metadata for the 79 canvas-ready kinds (19 seed + 10 W1: chip, alert,
 // circular_progress_indicator, linear_progress_indicator, triple_dots,
 // dot_indicator, empty_state, code_snippet, number_ticker, text_area + 17
 // Track J: basic, card_image, scaffold, collapsible, steps, timeline,
@@ -95,6 +95,7 @@ class _KindSpec {
 // stepper, slider + 17 Track P: input_otp, calendar, date_picker,
 // time_picker, carousel, tree, table, form, form_field, formatted_input,
 // validated, color_picker, color_input, hsl, hsv, history, feature_carousel
+// + 1 Track Y1: navigation_bar
 // — snapshotted from the pinned kit's `components.json`:
 // destination prefix from `files[].destination`
 // (`{installPath}/components/<category>/<id>/`), alphabetized `shared`,
@@ -139,6 +140,10 @@ class _KindSpec {
 // (`alpha`/`color`/`eye_dropper`/`formatter`/`text_field`, part of
 // [`alpha`, `button`, `color`, `eye_dropper`, `formatter`, `history`,
 // `select`, `text_field`]) partially warn (verbatim policy).
+// NOTE (Track Y1): `navigation_bar`'s (`button`, `hidden`,
+// `overflow_marquee`, `tooltip`) partially warns — `button`/`hidden`/
+// `tooltip` resolve, `overflow_marquee` has no `_KindSpec` (verbatim
+// policy).
 // NOTE (Track G2): several `pubspecDeps` below carry MORE than the kit's
 // per-component metadata declares (verified kind-by-kind against the pinned
 // kit's `components.json`, which matches this table exactly). The extras are
@@ -200,6 +205,9 @@ const _kinds = <String, _KindSpec>{
   'breadcrumb': _KindSpec('{installPath}/components/navigation/breadcrumb/',
       ['basic_layout', 'radix_icons', 'style_value', 'text_modifiers', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'navigation_bar': _KindSpec('{installPath}/components/navigation/navigation_bar/',
+      ['animated_value_builder', 'color_extensions', 'component_schema', 'constants', 'outlined_container', 'platform_utils', 'style_value', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'hidden', 'overflow_marquee', 'tooltip']),
   'dialog': _KindSpec('{installPath}/components/overlay/dialog/',
       ['color_extensions', 'component_schema', 'constants', 'geometry_extensions', 'overlay', 'style_value', 'theme'],
       {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['card']),

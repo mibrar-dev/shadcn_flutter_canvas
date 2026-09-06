@@ -3,7 +3,7 @@
 //
 // One entry per kit component id plus the `row` pseudo-kind.
 // `canvasReady` is true only where a real bare-widget builder
-// exists: the 68 catalog kinds bridge to
+// exists: the 69 catalog kinds bridge to
 // `catalog.buildCatalogWithDefaults` (no duplication), the 10
 // hand-verified EASY kinds below build real widgets, and the
 // `row` pseudo-kind renders its structural Row (rows carry no
@@ -1111,8 +1111,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Themed navigation bar supporting destinations, overflow, and responsive layout.",
     section: "Navigation",
     icon: Icons.navigation,
-    build: (context) => RegistryPlaceholder(kind: "navigation_bar", label: "Themed navigation bar supporting destinations, overflow, and responsive layout."),
-    canvasReady: false,
+    build: (context) => catalog.buildCatalogWithDefaults("navigation_bar"),
+    canvasReady: true,
   ),
   RegistryEntry(
     kind: "navigation_menu",

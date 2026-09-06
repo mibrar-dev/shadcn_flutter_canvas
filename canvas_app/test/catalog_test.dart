@@ -74,9 +74,11 @@ void main() {
         'hsv',
         'history',
         'feature_carousel',
+        // Track Y1 addition (2026-09-06).
+        'navigation_bar',
       ]),
     );
-    expect(kCatalog, hasLength(68));
+    expect(kCatalog, hasLength(69));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -845,5 +847,16 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
       'type': 'string',
       'default': 'Choose a curated style preset.',
     },
+  ],
+  // No canvas block exists for this kind either (same pinned-kit scan — no
+  // `canvas` key on any of the 134 components), so this copy likewise
+  // mirrors the invented catalog defaults until a real block lands.
+  // (Track Y1 addition, 2026-09-06.)
+  'navigation_bar': [
+    {'name': 'tab1', 'type': 'string', 'default': 'Home'},
+    {'name': 'tab2', 'type': 'string', 'default': 'Search'},
+    {'name': 'tab3', 'type': 'string', 'default': 'Saved'},
+    {'name': 'tab4', 'type': 'string', 'default': 'You'},
+    {'name': 'index', 'type': 'int', 'default': 0},
   ],
 };

@@ -100,7 +100,7 @@ import 'package:flutter_shadcn_kit/registry/components/layout/table/table.dart'
 /// look up nodes).
 ///
 /// Dart-variance note: a 1-arg function is NOT a subtype of this 2-optional
-/// type, so [CatalogEntry.build] stays 1-arg (all 68 registrations compile
+/// type, so [CatalogEntry.build] stays 1-arg (all 69 registrations compile
 /// untouched — a 2-optional tear-off IS a subtype of the 1-arg type) and
 /// [buildCatalogItem] recovers migrated builders with an `is NodeBuilder`
 /// check instead.
@@ -2028,6 +2028,79 @@ Widget _buildStepper(Map<String, dynamic> props) {
   );
 }
 
+/// Local selection state for the catalog navigation bar (builders are
+/// stateless). Mirrors `_TabsCell`: four destination labels plus the selected
+/// index. Taps update the local highlight; screen navigation (when the node
+/// carries an action) fires at the player level around the whole node — the
+/// same single-action-per-node contract as the tabs catalog builder, so each
+/// destination is a real tappable widget but all four share the node's one
+/// tap action.
+class _NavigationBarCell extends StatefulWidget {
+  final int initialIndex;
+  final List<String> labels;
+
+  const _NavigationBarCell({
+    required this.initialIndex,
+    required this.labels,
+  });
+
+  @override
+  State<_NavigationBarCell> createState() => _NavigationBarCellState();
+}
+
+class _NavigationBarCellState extends State<_NavigationBarCell> {
+  late int _index = widget.initialIndex.clamp(0, widget.labels.length - 1);
+
+  static const _icons = [
+    Icons.home,
+    Icons.search,
+    Icons.bookmark,
+    Icons.person,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.NavigationBar(
+      index: _index,
+      // Labels always show: the kit default (`labelType: none`) renders an
+      // icon-only strip, but the canvas kind models a labeled bottom tab bar
+      // (Home/Search/Saved/You) — documented, like the menubar builder's
+      // explicit params. Per-item label overflow stays the kit default
+      // (`NavigationOverflow.marquee`), so long labels scroll instead of
+      // overflowing 320px viewports (narrow-width track).
+      labelType: shadcn.NavigationLabelType.all,
+      onSelected: (i) =>
+          setState(() => _index = i.clamp(0, widget.labels.length - 1)),
+      children: [
+        for (var i = 0; i < widget.labels.length; i++)
+          shadcn.NavigationItem(
+            child: Icon(_icons[i % _icons.length]),
+            label: Text(widget.labels[i]),
+          ),
+      ],
+    );
+  }
+}
+
+Widget _buildNavigationBar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: four
+  // destination labels plus the selected index (parsed via `num`, clamped
+  // into range so hand-written docs never crash — see _buildProgress).
+  // Discovered per the file-header rule (`grep -rn "^class .* extends
+  // .*Widget" navigation/navigation_bar/_impl/`): `NavigationBar`
+  // (StatefulWidget, `children: List<NavigationBarItem>`) + `NavigationItem`
+  // (`child` required, `label` optional). (Qualified via `shadcn.`: material
+  // also declares `NavigationBar`.)
+  final labels = [
+    (props['tab1'] ?? 'Home') as String,
+    (props['tab2'] ?? 'Search') as String,
+    (props['tab3'] ?? 'Saved') as String,
+    (props['tab4'] ?? 'You') as String,
+  ];
+  final index = (props['index'] as num?)?.toInt() ?? 0;
+  return _NavigationBarCell(initialIndex: index, labels: labels);
+}
+
 /// Local value state for the catalog slider (builders are stateless).
 /// `Slider` is controlled (`value` + `onChanged`, both required), so the
 /// cell owns a double exactly like `_StarRatingCell` owns its rating.
@@ -3171,6 +3244,25 @@ final List<CatalogEntry> kCatalog = [
       'step': 0,
     },
     build: _buildStepper,
+  ),
+  // Track Y1 addition (2026-09-06): real builder for the `navigation_bar`
+  // bottom tab bar (kit `NavigationBar` + `NavigationItem`, discovered per
+  // the file-header rule). Label mirrors the `components.json` description
+  // (registry bridge test); defaults are invented and documented on the
+  // builder above. Only bool/string/num prop types already established by
+  // the seed kinds.
+  CatalogEntry(
+    kind: 'navigation_bar',
+    label:
+        'Themed navigation bar supporting destinations, overflow, and responsive layout.',
+    defaults: const {
+      'tab1': 'Home',
+      'tab2': 'Search',
+      'tab3': 'Saved',
+      'tab4': 'You',
+      'index': 0,
+    },
+    build: _buildNavigationBar,
   ),
   CatalogEntry(
     kind: 'slider',
