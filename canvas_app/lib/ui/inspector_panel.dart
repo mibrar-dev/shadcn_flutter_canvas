@@ -1686,6 +1686,94 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
+  /// Track F4 node sizing intent for the sizing-mode selector: one control
+  /// over both axes, derived from the stored fields (never stored itself,
+  /// so `screen_doc` JSON gains no keys).
+  /// * width-expand role → `expand` (row/column flex; the only expand axis).
+  /// * either fixed dim → `fixed` (the steppers below stay authoritative).
+  /// * else → `hug` (intrinsic).
+  String _sizeModeOf(CanvasNode node) {
+    if (node.widthMode == SizeMode.expand) return 'expand';
+    if (node.widthMode == SizeMode.fixed ||
+        node.heightMode == SizeMode.fixed) {
+      return 'fixed';
+    }
+    return 'hug';
+  }
+
+  /// Writes a sizing-mode pick through the existing store paths only
+  /// (`setNodeSize` for w/h, `patchNode` for expand/flex — both owned by
+  /// other batches, so no new store API):
+  /// * `expand` → flex role (`flex`, default 1) + fixed dims cleared.
+  /// * `fixed` → missing dims seeded at [_kSizeFallback] (present kept).
+  /// * `hug` → both dims cleared + `expand: 'none'` (the documented
+  ///   default-equivalent — `patchNode` has no null-clear path, and `none`
+  ///   derives back to hug).
+  /// Every branch guards its own no-op so re-picking the active mode writes
+  /// no undo entry.
+  void _pickSizeMode(CanvasNode node, String mode) {
+    switch (mode) {
+      case 'expand':
+        if (_sizeModeOf(node) == 'expand') return;
+        widget.store.patchNode(node.id, expand: 'flex', flex: node.flex ?? 1);
+        widget.store.setNodeSize(node.id, clearW: true, clearH: true);
+      case 'fixed':
+        final w = node.w ?? _kSizeFallback;
+        final h = node.h ?? _kSizeFallback;
+        if (node.w == w && node.h == h) return;
+        widget.store.setNodeSize(node.id, w: w, h: h);
+      case 'hug':
+        if (_sizeModeOf(node) == 'hug') return;
+        widget.store.setNodeSize(node.id, clearW: true, clearH: true);
+        if (node.expand == 'flex' || node.expand == 'expanded') {
+          widget.store.patchNode(node.id, expand: 'none');
+        }
+    }
+  }
+
+  /// Track F4 sizing-mode selector: segmented fixed|expand|hug bound to
+  /// [_sizeModeOf] (derived [SizeMode] getters + w/h/flex — no new
+  /// storage). Mounts above the dimension steppers in [_sizeCard] and
+  /// [_rowCard]; those steppers stay mounted verbatim underneath (their
+  /// keys and presets are pinned by `node_size_inspector_test.dart`).
+  Widget _sizingModeSelector(CanvasNode node) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Sizing mode', style: EditorType.tileLabel),
+        const SizedBox(height: _kInspectorGap),
+        PropSegmentedEditor(
+          key: const ValueKey('node-size-mode'),
+          value: _sizeModeOf(node),
+          options: const ['fixed', 'expand', 'hug'],
+          onChanged: (m) => _pickSizeMode(node, m),
+        ),
+      ],
+    );
+  }
+
+  /// Flex stepper for width-expand nodes. Callers mount it conditionally
+  /// (see [_sizeCard]/[_rowCard]) so the row-gap `find.text('+')` suites
+  /// keep their unique match; the guard below is belt-and-braces.
+  Widget _expandFlexStepper(CanvasNode node) {
+    if (_sizeModeOf(node) != 'expand') return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Flex', style: EditorType.tileLabel),
+        const SizedBox(height: _kInspectorGap),
+        PropNumberEditor(
+          key: const ValueKey('node-flex'),
+          value: (node.flex ?? 1).toDouble(),
+          min: 0,
+          step: 1,
+          isInt: true,
+          onChanged: (v) => widget.store.patchNode(node.id, flex: v.toInt()),
+        ),
+      ],
+    );
+  }
+
   /// Track U2 node-size card: one stepper row per dimension (W/H) writing
   /// through the undoable `store.setNodeSize`. Shown for every selected node
   /// (leaves and rows alike — rows additionally carry their container
@@ -1693,15 +1781,25 @@ class _InspectorPanelState extends State<InspectorPanel> {
   ///
   /// Track X2: one-tap presets below each stepper (width Fill/Half/Third,
   /// height Fill only — see [_widthPresets]/[_heightPresets]).
+  ///
+  /// Track F4: the sizing-mode selector + conditional flex stepper mount
+  /// above the Width row (see [_sizingModeSelector]).
   Widget _sizeCard(CanvasNode node) {
     final stageWidth = _stageWidthForNode(node);
     final reason = _sizePresetReason(node);
+    final expand = _sizeModeOf(node) == 'expand';
     return shadcn.Card(
       padding: const EdgeInsets.all(EditorMetrics.panelInset),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text('Size', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          _sizingModeSelector(node),
+          if (expand) ...[
+            const SizedBox(height: _kInspectorGap),
+            _expandFlexStepper(node),
+          ],
           const SizedBox(height: _kInspectorGap),
           _nodeSizeRow(
             label: 'Width',
@@ -1893,6 +1991,14 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 onChanged: (v) =>
                     widget.store.patchNode(node.id, crossAxis: v),
               ),
+              const SizedBox(height: _kInspectorGap),
+              // Track F4: sizing-mode selector above the Width row (same
+              // contract as [_sizeCard] — steppers below stay verbatim).
+              _sizingModeSelector(node),
+              if (_sizeModeOf(node) == 'expand') ...[
+                const SizedBox(height: _kInspectorGap),
+                _expandFlexStepper(node),
+              ],
               const SizedBox(height: _kInspectorGap),
               _nodeSizeRow(
                 label: 'Width',
@@ -2449,6 +2555,54 @@ class _InspectorPanelState extends State<InspectorPanel> {
         editor = PropAlignmentGrid(
           key: ValueKey('${item.id}/${spec.name}'),
           value: PropAlignmentGrid.read(resolved),
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'paint':
+        // Track F4 paint editor (container color). Token picks write the
+        // tagged envelope (theme accessor downstream, never a hex);
+        // literal hex writes the raw string both emitters read.
+        final paint = PropPaintEditor.parse(resolved);
+        editor = PropPaintEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          token: paint.token,
+          hex: paint.hex,
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'borderRadius':
+        // Track F4 radius editor. Uniform writes collapse to the raw num
+        // (`BorderRadius.circular` downstream); mixed corners keep the
+        // tagged envelope.
+        editor = PropBorderRadiusEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          value: PropBorderRadiusEditor.parse(resolved),
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'border':
+        // Track F4 border editor (`{color, width}` → `Border.all…`).
+        final border = PropBorderEditor.parse(resolved);
+        editor = PropBorderEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          color: border.color,
+          width: border.width,
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'gradient':
+        // Track F4 gradient editor (`{begin, end, colors}` →
+        // `LinearGradient…`).
+        final gradient = PropGradientEditor.parse(resolved);
+        editor = PropGradientEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          colors: gradient.colors,
+          beginName: gradient.beginName,
+          endName: gradient.endName,
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'shadow':
+        // Track F4 shadow editor (`[{color, blur, offset, spread?}]` →
+        // `boxShadow:`).
+        editor = PropShadowEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          entries: PropShadowEditor.parse(resolved),
           onChanged: (v) => _patch(spec.name, v),
         );
       default:
