@@ -76,6 +76,18 @@ void main() {
         'feature_carousel',
         // Track Y1 addition (2026-09-06).
         'navigation_bar',
+        // Track F additions (2026-09-06): the ten §7.1 layout primitives
+        // (raw Flutter builders, kit-first exempt).
+        'container',
+        'column',
+        'row',
+        'stack',
+        'padding',
+        'center',
+        'align',
+        'expanded',
+        'sized_box',
+        'spacer',
         // Track FF2 additions (2026-09-06): placeholder blitz — the
         // form/input family plus the bare-capable display/layout/utility
         // batch (28 kinds).
@@ -109,7 +121,7 @@ void main() {
         'repeated_animation_builder',
       ]),
     );
-    expect(kCatalog, hasLength(97));
+    expect(kCatalog, hasLength(107));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -407,6 +419,16 @@ void main() {
           expect(prop, hasLength(1), reason: '${entry.kind}.${defaultProp.key}');
           final type = prop.single['type'] as String;
           final value = defaultProp.value;
+          // Track F nullable style/dim props: null means unset — the block
+          // copy must agree it defaults to null, and no type arm applies.
+          if (value == null) {
+            expect(
+              prop.single['default'],
+              isNull,
+              reason: '${entry.kind}.${defaultProp.key} null default drifted',
+            );
+            continue;
+          }
           switch (type) {
             case 'bool':
               expect(value, isA<bool>(), reason: '${entry.kind}.${defaultProp.key}');
@@ -424,6 +446,9 @@ void main() {
               expect(value, isA<double>(), reason: '${entry.kind}.${defaultProp.key}');
             case 'int':
               expect(value, isA<int>(), reason: '${entry.kind}.${defaultProp.key}');
+            case 'alignment':
+              // Track F named-constant alignment (never a free string).
+              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
             default:
               fail('unknown schema type $type for ${entry.kind}.${defaultProp.key}');
           }
@@ -1044,5 +1069,97 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   ],
   'repeated_animation_builder': [
     {'name': 'label', 'type': 'string', 'default': 'Pulsing'},
+  ],
+  // No canvas blocks exist for the ten Track F primitives either (they are
+  // raw Flutter, not kit components), so these copies mirror the invented
+  // catalog defaults. Nullable style/dim props default to null (unset) —
+  // the drift test short-circuits nulls (see above). Composite types
+  // (`edgeInsets`, `paint`, `borderRadius`, `border`, `gradient`, `shadow`,
+  // `alignment`) name the §7.3 style vocabulary; only `alignment` carries a
+  // non-null default (`center`).
+  'container': [
+    {'name': 'width', 'type': 'double', 'default': null},
+    {'name': 'height', 'type': 'double', 'default': null},
+    {'name': 'padding', 'type': 'edgeInsets', 'default': null},
+    {'name': 'margin', 'type': 'edgeInsets', 'default': null},
+    {'name': 'color', 'type': 'paint', 'default': null},
+    {'name': 'radius', 'type': 'borderRadius', 'default': null},
+    {'name': 'border', 'type': 'border', 'default': null},
+    {'name': 'gradient', 'type': 'gradient', 'default': null},
+    {'name': 'shadow', 'type': 'shadow', 'default': null},
+    {'name': 'alignment', 'type': 'alignment', 'default': null},
+  ],
+  'column': [
+    {'name': 'gap', 'type': 'double', 'default': 12.0},
+    {
+      'name': 'mainAxis',
+      'type': 'enum',
+      'enum': [
+        'start',
+        'center',
+        'end',
+        'spaceBetween',
+        'spaceAround',
+        'spaceEvenly',
+      ],
+      'default': null,
+    },
+    {
+      'name': 'crossAxis',
+      'type': 'enum',
+      'enum': ['start', 'center', 'end', 'stretch'],
+      'default': null,
+    },
+  ],
+  'row': [
+    {'name': 'gap', 'type': 'double', 'default': 8.0},
+    {
+      'name': 'mainAxis',
+      'type': 'enum',
+      'enum': [
+        'start',
+        'center',
+        'end',
+        'spaceBetween',
+        'spaceAround',
+        'spaceEvenly',
+      ],
+      'default': null,
+    },
+    {
+      'name': 'crossAxis',
+      'type': 'enum',
+      'enum': ['start', 'center', 'end', 'stretch'],
+      'default': null,
+    },
+  ],
+  'stack': [
+    {'name': 'alignment', 'type': 'alignment', 'default': null},
+    {
+      'name': 'fit',
+      'type': 'enum',
+      'enum': ['loose', 'expand', 'passthrough'],
+      'default': 'loose',
+    },
+  ],
+  'padding': [
+    {'name': 'padding', 'type': 'edgeInsets', 'default': null},
+  ],
+  'center': [
+    {'name': 'widthFactor', 'type': 'double', 'default': null},
+    {'name': 'heightFactor', 'type': 'double', 'default': null},
+  ],
+  'align': [
+    {'name': 'alignment', 'type': 'alignment', 'default': 'center'},
+  ],
+  'expanded': [
+    {'name': 'flex', 'type': 'int', 'default': 1},
+  ],
+  'sized_box': [
+    {'name': 'width', 'type': 'double', 'default': null},
+    {'name': 'height', 'type': 'double', 'default': null},
+  ],
+  'spacer': [
+    {'name': 'flex', 'type': 'int', 'default': 1},
   ],
 };

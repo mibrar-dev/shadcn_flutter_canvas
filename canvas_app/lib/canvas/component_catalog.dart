@@ -138,6 +138,19 @@ const Set<String> kContainerKinds = {
   'toast',
   'validated',
   'refresh_trigger',
+  // Track F promotions (COMPOSITION.md §2.1: raw-Flutter layout primitives
+  // with generic child slots + 0/1/2-children goldens). `spacer` stays a
+  // leaf (no child slot); `row` joins as the first-class item-kind form of
+  // the structural `isRow` pseudo-kind.
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
 };
 
 /// Named builder slots (Track BB): kind → slot names a node may fill with a
@@ -3965,6 +3978,657 @@ Widget _buildRepeatedAnimationBuilder(Map<String, dynamic> props) {
   return shadcn.PulsingAnimation(child: Text(label));
 }
 
+/// Track F layout primitives (raw Flutter, kit-first exempt).
+///
+/// The ten §7.1 kinds (`container`, `column`, `row`, `stack`, `padding`,
+/// `center`, `align`, `expanded`, `sized_box`, `spacer`) build real Flutter
+/// layout widgets — not kit widgets — so the kit-first rule does not apply
+/// (exemption recorded on [SizeMode] in `canvas_core` and in
+/// `canvas/COMPOSITION.md` §2.1).
+///
+/// PROP-SHAPE CONTRACT (mirrored by the F3 codegen emitters in
+/// `canvas_core/lib/src/codegen_bundle.dart` + `codegen_single.dart`; the
+/// two sides share no code because `canvas_core` is Flutter-free, so both
+/// document this contract verbatim):
+/// * edgeInsets props (`padding`, `margin`): tagged
+///   `{"$":"edgeInsets","v":{"l","t","r","b"}}` envelope, a raw num (→
+///   uniform), or a raw `{l,t,r,b}` map; absent/unparseable → null (no-op).
+/// * color props: tagged `{"$":"color","v":{"kind":"token","token"}}` or
+///   `{"kind":"literal","argb"}` envelope, a raw int ARGB, or a
+///   `"#RRGGBB"`/`"#AARRGGBB"` string; absent/unparseable → null.
+///   Token names are material `ColorScheme` roles (see
+///   [_primSchemeColor]); unknown roles fall back to `primary`, never a
+///   crash. Token colors resolve via `Theme.of(context)`, so builders take
+///   the `Builder` path when any token is present.
+/// * radius props: tagged `{"$":"borderRadius","v":{"tl","tr","br","bl"}}`
+///   envelope or a raw num (→ circular); absent → null.
+/// * border props: `{color, width}` map (`color` any color shape above,
+///   default black; `width` num, default 1); absent/unparseable → null.
+/// * gradient props: `{begin:{x,y}, end:{x,y}, colors:[...], stops?}` map
+///   (`begin`/`end` default centerLeft/centerRight); absent, empty colors,
+///   or an unparseable stop → null (never a partial gradient).
+/// * shadow props: list of `{color, blur, offset:{x,y}, spread?}` maps;
+///   absent/empty → null (unparseable entries are skipped, never a crash).
+/// * alignment props: tagged `{"$":"alignment","v":{"x","y"}}` envelope, a
+///   raw `{x,y}` map, or a named constant (`topLeft`…`bottomRight`,
+///   `center`); absent/unparseable → caller default.
+/// * axis props (`mainAxis`): `start|center|end|spaceBetween|spaceAround|`
+///   `spaceEvenly` (default `start`); `crossAxis`:
+///   `start|center|end|stretch` (default `center`).
+/// * `fit` (stack): `loose|expand|passthrough` (default `loose` → omit).
+///
+/// §6.2 rule (both builders and emitters): a `Container` takes `color:` XOR
+/// `decoration:` — the moment `radius`/`border`/`gradient`/`shadow` is set,
+/// `color` moves inside the `BoxDecoration`.
+///
+/// Childless single-slot builders render a small labeled ghost (see
+/// [_primGhost]) so palette tiles and empty canvas nodes stay visible and
+/// hit-testable; the F3 codegen 0-children goldens pin the bare widgets
+/// instead (codegen never calls these builders).
+double? _primDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is Map && value[r'$'] == 'double' && value['v'] is num) {
+    return (value['v'] as num).toDouble();
+  }
+  return null;
+}
+
+/// Edge dims `[l,t,r,b]` from a tagged envelope, raw num (uniform), or raw
+/// map; null when absent/unparseable.
+({double l, double t, double r, double b})? _primEdgeDims(Object? value) {
+  if (value is num) {
+    final d = value.toDouble();
+    return (l: d, t: d, r: d, b: d);
+  }
+  if (value is Map) {
+    final Map v = (value[r'$'] == 'edgeInsets' && value['v'] is Map)
+        ? value['v'] as Map
+        : value;
+    if (v.keys.any((k) => k == 'l' || k == 't' || k == 'r' || k == 'b')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      return (l: n(v['l']), t: n(v['t']), r: n(v['r']), b: n(v['b']));
+    }
+  }
+  return null;
+}
+
+/// EdgeInsets from any edgeInsets shape, or null when absent/unparseable.
+EdgeInsets? _primEdgeInsetsOrNull(Object? value) {
+  final d = _primEdgeDims(value);
+  if (d == null) return null;
+  return EdgeInsets.fromLTRB(d.l, d.t, d.r, d.b);
+}
+
+/// Resolved primitive color parts: literal ARGB now, or a scheme token for
+/// the `Builder` path. Null when absent/unparseable (never a throw).
+({int? argb, String? token})? _primColorParts(Object? value) {
+  if (value is int) return (argb: value, token: null);
+  if (value is String) {
+    final argb = _primParseHex(value);
+    return argb == null ? null : (argb: argb, token: null);
+  }
+  if (value is Map) {
+    final Object? v =
+        (value[r'$'] == 'color' && value['v'] is Map) ? value['v'] : value;
+    if (v is Map) {
+      if (v['kind'] == 'token' && v['token'] is String) {
+        return (argb: null, token: v['token'] as String);
+      }
+      if (v['kind'] == 'literal' && v['argb'] is num) {
+        return (argb: (v['argb'] as num).toInt(), token: null);
+      }
+    }
+  }
+  return null;
+}
+
+/// `#RRGGBB` / `#AARRGGBB` (leading `#` optional) → ARGB int; null when
+/// malformed. Parses user data at runtime — never a hex literal in code.
+int? _primParseHex(String s) {
+  var hex = s.startsWith('#') ? s.substring(1) : s;
+  if (hex.length == 6) hex = 'FF$hex';
+  if (hex.length != 8) return null;
+  return int.tryParse(hex, radix: 16);
+}
+
+/// Material scheme role lookup for token colors. Unknown roles fall back to
+/// `primary` — never a crash on hand-written docs.
+Color _primSchemeColor(ColorScheme scheme, String token) {
+  switch (token) {
+    case 'onPrimary':
+      return scheme.onPrimary;
+    case 'primaryContainer':
+      return scheme.primaryContainer;
+    case 'onPrimaryContainer':
+      return scheme.onPrimaryContainer;
+    case 'secondary':
+      return scheme.secondary;
+    case 'onSecondary':
+      return scheme.onSecondary;
+    case 'secondaryContainer':
+      return scheme.secondaryContainer;
+    case 'onSecondaryContainer':
+      return scheme.onSecondaryContainer;
+    case 'tertiary':
+      return scheme.tertiary;
+    case 'onTertiary':
+      return scheme.onTertiary;
+    case 'tertiaryContainer':
+      return scheme.tertiaryContainer;
+    case 'onTertiaryContainer':
+      return scheme.onTertiaryContainer;
+    case 'error':
+      return scheme.error;
+    case 'onError':
+      return scheme.onError;
+    case 'errorContainer':
+      return scheme.errorContainer;
+    case 'onErrorContainer':
+      return scheme.onErrorContainer;
+    case 'surface':
+      return scheme.surface;
+    case 'onSurface':
+      return scheme.onSurface;
+    case 'surfaceDim':
+      return scheme.surfaceDim;
+    case 'surfaceBright':
+      return scheme.surfaceBright;
+    case 'surfaceContainerLowest':
+      return scheme.surfaceContainerLowest;
+    case 'surfaceContainerLow':
+      return scheme.surfaceContainerLow;
+    case 'surfaceContainer':
+      return scheme.surfaceContainer;
+    case 'surfaceContainerHigh':
+      return scheme.surfaceContainerHigh;
+    case 'surfaceContainerHighest':
+      return scheme.surfaceContainerHighest;
+    case 'onSurfaceVariant':
+      return scheme.onSurfaceVariant;
+    case 'surfaceVariant':
+      // Deprecated material role (use surfaceContainerHighest instead):
+      // kept as an accepted token name mapping to the replacement.
+      return scheme.surfaceContainerHighest;
+    case 'outline':
+      return scheme.outline;
+    case 'outlineVariant':
+      return scheme.outlineVariant;
+    case 'shadow':
+      return scheme.shadow;
+    case 'scrim':
+      return scheme.scrim;
+    case 'inverseSurface':
+      return scheme.inverseSurface;
+    case 'onInverseSurface':
+      return scheme.onInverseSurface;
+    case 'inversePrimary':
+      return scheme.inversePrimary;
+    case 'primary':
+    default:
+      return scheme.primary;
+  }
+}
+
+/// Resolves color parts to a `Color` (`scheme` required exactly when a
+/// token is present — callers take the `Builder` path then).
+Color _primResolveColor(
+  ({int? argb, String? token}) parts,
+  ColorScheme? scheme,
+) {
+  if (parts.token != null) return _primSchemeColor(scheme!, parts.token!);
+  return Color(parts.argb!);
+}
+
+/// True when any style prop carries a scheme token (the `Builder` path).
+bool _primStyleUsesToken(Map<String, dynamic> props) {
+  if (_primColorParts(props['color'])?.token != null) return true;
+  final border = props['border'];
+  if (border is Map && _primColorParts(border['color'])?.token != null) {
+    return true;
+  }
+  final gradient = props['gradient'];
+  if (gradient is Map && gradient['colors'] is List) {
+    for (final c in gradient['colors'] as List) {
+      if (_primColorParts(c)?.token != null) return true;
+    }
+  }
+  final shadow = props['shadow'];
+  if (shadow is List) {
+    for (final s in shadow) {
+      if (s is Map && _primColorParts(s['color'])?.token != null) return true;
+    }
+  }
+  return false;
+}
+
+/// BorderRadius from a tagged envelope or raw num; null when absent.
+BorderRadius? _primBorderRadius(Object? value) {
+  if (value is num) return BorderRadius.circular(value.toDouble());
+  if (value is Map) {
+    final Map v = (value[r'$'] == 'borderRadius' && value['v'] is Map)
+        ? value['v'] as Map
+        : value;
+    if (v.keys.any((k) => k == 'tl' || k == 'tr' || k == 'br' || k == 'bl')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      final tl = n(v['tl']);
+      final tr = n(v['tr']);
+      final br = n(v['br']);
+      final bl = n(v['bl']);
+      if (tl == tr && tr == br && br == bl) {
+        return BorderRadius.circular(tl);
+      }
+      return BorderRadius.only(
+        topLeft: Radius.circular(tl),
+        topRight: Radius.circular(tr),
+        bottomRight: Radius.circular(br),
+        bottomLeft: Radius.circular(bl),
+      );
+    }
+  }
+  return null;
+}
+
+/// `Border.all` from a `{color, width}` map; null when absent/unparseable.
+BoxBorder? _primBorder(Object? value, ColorScheme? scheme) {
+  if (value is! Map) return null;
+  if (!value.containsKey('color') && !value.containsKey('width')) return null;
+  final parts = _primColorParts(value['color']);
+  return Border.all(
+    color: parts == null
+        ? Colors.black
+        : _primResolveColor(parts, scheme),
+    width: _primDouble(value['width']) ?? 1.0,
+  );
+}
+
+/// Alignment from a tagged envelope, raw `{x,y}` map, or named constant;
+/// null when absent/unparseable (caller applies its default).
+Alignment? _primAlignmentOrNull(Object? value) {
+  if (value is String) {
+    switch (value) {
+      case 'topLeft':
+        return Alignment.topLeft;
+      case 'topCenter':
+        return Alignment.topCenter;
+      case 'topRight':
+        return Alignment.topRight;
+      case 'centerLeft':
+        return Alignment.centerLeft;
+      case 'center':
+        return Alignment.center;
+      case 'centerRight':
+        return Alignment.centerRight;
+      case 'bottomLeft':
+        return Alignment.bottomLeft;
+      case 'bottomCenter':
+        return Alignment.bottomCenter;
+      case 'bottomRight':
+        return Alignment.bottomRight;
+      default:
+        return null;
+    }
+  }
+  if (value is Map) {
+    final Map v = (value[r'$'] == 'alignment' && value['v'] is Map)
+        ? value['v'] as Map
+        : value;
+    final x = v['x'];
+    final y = v['y'];
+    if (x is num && y is num) return Alignment(x.toDouble(), y.toDouble());
+  }
+  return null;
+}
+
+/// LinearGradient from a `{begin, end, colors, stops?}` map; null when
+/// absent, empty, or unparseable (never a partial gradient).
+Gradient? _primGradient(Object? value, ColorScheme? scheme) {
+  if (value is! Map) return null;
+  final colors = value['colors'];
+  if (colors is! List || colors.isEmpty) return null;
+  final resolved = <Color>[];
+  for (final c in colors) {
+    final parts = _primColorParts(c);
+    if (parts == null) return null;
+    resolved.add(_primResolveColor(parts, scheme));
+  }
+  List<double>? stops;
+  if (value['stops'] is List) {
+    final raw = (value['stops'] as List).whereType<num>().toList();
+    if (raw.length == resolved.length) {
+      stops = [for (final s in raw) s.toDouble()];
+    }
+  }
+  Alignment xy(Object? v, Alignment fallback) {
+    if (v is Map) {
+      final x = v['x'];
+      final y = v['y'];
+      if (x is num && y is num) return Alignment(x.toDouble(), y.toDouble());
+    }
+    return fallback;
+  }
+
+  return LinearGradient(
+    begin: xy(value['begin'], Alignment.centerLeft),
+    end: xy(value['end'], Alignment.centerRight),
+    colors: resolved,
+    stops: stops,
+  );
+}
+
+/// BoxShadow list from a `[{color, blur, offset, spread?}]` list; null when
+/// absent/empty (unparseable entries are skipped, never a crash).
+List<BoxShadow>? _primShadows(Object? value, ColorScheme? scheme) {
+  if (value is! List || value.isEmpty) return null;
+  final out = <BoxShadow>[];
+  for (final s in value) {
+    if (s is! Map) continue;
+    final parts = _primColorParts(s['color']);
+    double n(Object? x) => x is num ? x.toDouble() : 0.0;
+    Offset offset = Offset.zero;
+    if (s['offset'] is Map) {
+      final o = s['offset'] as Map;
+      offset = Offset(n(o['x']), n(o['y']));
+    }
+    out.add(
+      BoxShadow(
+        color: parts == null
+            ? Colors.black26
+            : _primResolveColor(parts, scheme),
+        blurRadius: _primDouble(s['blur']) ?? 0.0,
+        spreadRadius: _primDouble(s['spread']) ?? 0.0,
+        offset: offset,
+      ),
+    );
+  }
+  return out.isEmpty ? null : out;
+}
+
+/// Full style decoration (§6.2 merge site): null unless at least one of
+/// `color`/`radius`/`border`/`gradient`/`shadow` is present. With
+/// [includeColor] false the `color` prop is skipped, so callers can tell a
+/// color-only container (direct `color:` arg, the hand-written form) from
+/// one needing a real decoration.
+BoxDecoration? _primDecoration(
+  Map<String, dynamic> props,
+  ColorScheme? scheme, {
+  bool includeColor = true,
+}) {
+  final colorParts =
+      includeColor ? _primColorParts(props['color']) : null;
+  final radius = _primBorderRadius(props['radius']);
+  final border = _primBorder(props['border'], scheme);
+  final gradient = _primGradient(props['gradient'], scheme);
+  final shadows = _primShadows(props['shadow'], scheme);
+  if (colorParts == null &&
+      radius == null &&
+      border == null &&
+      gradient == null &&
+      shadows == null) {
+    return null;
+  }
+  return BoxDecoration(
+    color:
+        colorParts == null ? null : _primResolveColor(colorParts, scheme),
+    border: border,
+    borderRadius: radius,
+    boxShadow: shadows,
+    gradient: gradient,
+  );
+}
+
+MainAxisAlignment _primMainAxis(Object? value) {
+  switch (value) {
+    case 'center':
+      return MainAxisAlignment.center;
+    case 'end':
+      return MainAxisAlignment.end;
+    case 'spaceBetween':
+      return MainAxisAlignment.spaceBetween;
+    case 'spaceAround':
+      return MainAxisAlignment.spaceAround;
+    case 'spaceEvenly':
+      return MainAxisAlignment.spaceEvenly;
+    case 'start':
+    default:
+      return MainAxisAlignment.start;
+  }
+}
+
+CrossAxisAlignment _primCrossAxis(Object? value, CrossAxisAlignment fallback) {
+  switch (value) {
+    case 'start':
+      return CrossAxisAlignment.start;
+    case 'end':
+      return CrossAxisAlignment.end;
+    case 'stretch':
+      return CrossAxisAlignment.stretch;
+    case 'center':
+      return CrossAxisAlignment.center;
+    default:
+      return fallback;
+  }
+}
+
+/// Single-`child` splice (COMPOSITION.md §2.1): 0 kids → null (caller omits
+/// `child` or substitutes a ghost); 1 kid → the kid; 2+ kids →
+/// `Column(mainAxisSize: min)` with `kFlowScreenGap` separators (the §1
+/// below-fallback rhythm, shared with both codegen emitters).
+Widget? _primSingleChild(List<Widget> children) {
+  if (children.isEmpty) return null;
+  if (children.length == 1) return children.first;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) const SizedBox(height: kFlowScreenGap),
+        children[i],
+      ],
+    ],
+  );
+}
+
+/// Multi-children stack with [gap] separators (column/row/stack bodies).
+List<Widget> _primChildStack(List<Widget> children, double gap, bool vertical) {
+  if (gap <= 0) return children;
+  return [
+    for (var i = 0; i < children.length; i++) ...[
+      if (i > 0)
+        vertical ? SizedBox(height: gap) : SizedBox(width: gap),
+      children[i],
+    ],
+  ];
+}
+
+/// Visible empty-state for childless single-slot primitives (palette tiles
+/// and empty canvas nodes stay visible + hit-testable; codegen never calls
+/// builders, so its 0-children goldens pin the bare widgets instead).
+Widget _primGhost(String label) {
+  return Builder(
+    builder: (context) {
+      final scheme = Theme.of(context).colorScheme;
+      return Container(
+        constraints: const BoxConstraints(minWidth: 64, minHeight: 48),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: Border.all(color: scheme.outline),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 12),
+        ),
+      );
+    },
+  );
+}
+
+Widget _containerPrimitive(
+  Map<String, dynamic> props,
+  List<Widget> children,
+  ColorScheme? scheme,
+) {
+  // §6.2: color XOR decoration — a color-only container keeps the direct
+  // `color:` arg (the hand-written form); the moment radius/border/
+  // gradient/shadow is set, color moves inside the `BoxDecoration`.
+  final child = _primSingleChild(children) ?? _primGhost('container');
+  if (_primDecoration(props, scheme, includeColor: false) == null) {
+    final colorParts = _primColorParts(props['color']);
+    return Container(
+      width: _primDouble(props['width']),
+      height: _primDouble(props['height']),
+      margin: _primEdgeInsetsOrNull(props['margin']),
+      padding: _primEdgeInsetsOrNull(props['padding']),
+      alignment: _primAlignmentOrNull(props['alignment']),
+      color: colorParts == null ? null : _primResolveColor(colorParts, scheme),
+      child: child,
+    );
+  }
+  return Container(
+    width: _primDouble(props['width']),
+    height: _primDouble(props['height']),
+    margin: _primEdgeInsetsOrNull(props['margin']),
+    padding: _primEdgeInsetsOrNull(props['padding']),
+    alignment: _primAlignmentOrNull(props['alignment']),
+    decoration: _primDecoration(props, scheme),
+    child: child,
+  );
+}
+
+/// Raw `Container` with the §7.3 style vocabulary (props → widget, real
+/// Flutter primitive).
+Widget _buildContainerPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  if (_primStyleUsesToken(props)) {
+    return Builder(
+      builder: (context) => _containerPrimitive(
+        props,
+        children,
+        Theme.of(context).colorScheme,
+      ),
+    );
+  }
+  return _containerPrimitive(props, children, null);
+}
+
+/// Raw `Column` with `gap` separators (props → widget).
+Widget _buildColumnPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  final gap = _primDouble(props['gap']) ?? 12.0;
+  final kids = children.isEmpty ? [_primGhost('column')] : children;
+  return Column(
+    mainAxisAlignment: _primMainAxis(props['mainAxis']),
+    crossAxisAlignment: _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
+    children: _primChildStack(kids, gap, true),
+  );
+}
+
+/// Raw `Row` with `gap` separators — the first-class item-kind form of the
+/// structural `isRow` pseudo-kind (which keeps working unchanged).
+Widget _buildRowPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  final gap = _primDouble(props['gap']) ?? 8.0;
+  final kids = children.isEmpty ? [_primGhost('row')] : children;
+  return Row(
+    mainAxisAlignment: _primMainAxis(props['mainAxis']),
+    crossAxisAlignment: _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
+    children: _primChildStack(kids, gap, false),
+  );
+}
+
+/// Raw `Stack` (props → widget; children overlay, never separated).
+Widget _buildStackPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  final fit = switch (props['fit']) {
+    'expand' => StackFit.expand,
+    'passthrough' => StackFit.passthrough,
+    'loose' => StackFit.loose,
+    _ => null,
+  };
+  return Stack(
+    alignment: _primAlignmentOrNull(props['alignment']) ?? AlignmentDirectional.topStart,
+    fit: fit ?? StackFit.loose,
+    children: children.isEmpty ? [_primGhost('stack')] : children,
+  );
+}
+
+/// Raw `Padding` (absent padding defaults to `all(16)`, the screen idiom).
+Widget _buildPaddingPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  return Padding(
+    padding: _primEdgeInsetsOrNull(props['padding']) ?? const EdgeInsets.all(16),
+    child: _primSingleChild(children) ?? _primGhost('padding'),
+  );
+}
+
+/// Raw `Center` (`widthFactor`/`heightFactor` nullable, Flutter defaults).
+Widget _buildCenterPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  return Center(
+    widthFactor: _primDouble(props['widthFactor']),
+    heightFactor: _primDouble(props['heightFactor']),
+    child: _primSingleChild(children) ?? _primGhost('center'),
+  );
+}
+
+/// Raw `Align` (absent alignment defaults to `center`, always explicit).
+Widget _buildAlignPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  return Align(
+    alignment: _primAlignmentOrNull(props['alignment']) ?? Alignment.center,
+    child: _primSingleChild(children) ?? _primGhost('align'),
+  );
+}
+
+/// Raw `Expanded` (flex role; clamped to ≥ 1, Flutter asserts positive).
+Widget _buildExpandedPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  final flex = props['flex'] is num ? (props['flex'] as num).toInt() : 1;
+  return Expanded(
+    flex: flex < 1 ? 1 : flex,
+    child: _primSingleChild(children) ?? _primGhost('expanded'),
+  );
+}
+
+/// Raw `SizedBox` (dims nullable; no dims + no child → shrink).
+Widget _buildSizedBoxPrimitive(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
+  final width = _primDouble(props['width']);
+  final height = _primDouble(props['height']);
+  final child = _primSingleChild(children);
+  if (child == null) {
+    if (width == null && height == null) return _primGhost('sized_box');
+    if (width == null) return SizedBox(height: height);
+    if (height == null) return SizedBox(width: width);
+    return SizedBox(width: width, height: height);
+  }
+  return SizedBox(width: width, height: height, child: child);
+}
+
+/// Raw `Spacer` (leaf — ignores children; flex clamped to ≥ 1).
+Widget _buildSpacerPrimitive(Map<String, dynamic> props) {
+  final flex = props['flex'] is num ? (props['flex'] as num).toInt() : 1;
+  return Spacer(flex: flex < 1 ? 1 : flex);
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -4813,6 +5477,84 @@ final List<CatalogEntry> kCatalog = [
     label: 'Looping animation builder with interpolated values.',
     defaults: const {'label': 'Pulsing'},
     build: _buildRepeatedAnimationBuilder,
+  ),
+  // Track F additions: the ten §7.1 layout primitives (raw Flutter,
+  // kit-first exempt). Labels are invented (no `components.json` entries
+  // exist for primitives); defaults are inert-by-construction (null = unset
+  // for style/dims, real framework defaults otherwise) so default-built
+  // widgets match absent-prop rendering exactly. Only bool/string/num/map
+  // prop types already established by the seed kinds, plus the §6.1 tagged
+  // envelopes the F3 emitters read (see the contract above).
+  CatalogEntry(
+    kind: 'container',
+    label: 'Raw container with padding, color, radius, border, gradient, and shadow.',
+    defaults: const {
+      'width': null,
+      'height': null,
+      'padding': null,
+      'margin': null,
+      'color': null,
+      'radius': null,
+      'border': null,
+      'gradient': null,
+      'shadow': null,
+      'alignment': null,
+    },
+    build: _buildContainerPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'column',
+    label: 'Vertical layout with gap separators.',
+    defaults: const {'gap': 12.0, 'mainAxis': null, 'crossAxis': null},
+    build: _buildColumnPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'row',
+    label: 'Horizontal layout with gap separators.',
+    defaults: const {'gap': 8.0, 'mainAxis': null, 'crossAxis': null},
+    build: _buildRowPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'stack',
+    label: 'Overlapping layout with alignment and fit.',
+    defaults: const {'alignment': null, 'fit': 'loose'},
+    build: _buildStackPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'padding',
+    label: 'Single-child padding wrapper.',
+    defaults: const {'padding': null},
+    build: _buildPaddingPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'center',
+    label: 'Single-child centering wrapper.',
+    defaults: const {'widthFactor': null, 'heightFactor': null},
+    build: _buildCenterPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'align',
+    label: 'Single-child alignment wrapper.',
+    defaults: const {'alignment': 'center'},
+    build: _buildAlignPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'expanded',
+    label: 'Flex-fill wrapper for row and column children.',
+    defaults: const {'flex': 1},
+    build: _buildExpandedPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'sized_box',
+    label: 'Fixed-size box with optional child.',
+    defaults: const {'width': null, 'height': null},
+    build: _buildSizedBoxPrimitive,
+  ),
+  CatalogEntry(
+    kind: 'spacer',
+    label: 'Flex-fill empty space for rows and columns.',
+    defaults: const {'flex': 1},
+    build: _buildSpacerPrimitive,
   ),
 ];
 

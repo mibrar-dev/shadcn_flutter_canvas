@@ -2176,6 +2176,227 @@ const kPropSchemas = <String, List<PropSpec>>{
       nullable: true,
     ),
   ],
+  // Track F layout primitives (raw Flutter, kit-first exempt). The style
+  // vocabulary (§7.3: color, padding, margin, radius, border, gradient,
+  // shadow) uses composite spec types holding §6.1 tagged values (or the
+  // raw num/map shapes the catalog builders also accept); the inspector
+  // renders unknown types read-only until the F4 editors land. Every
+  // catalog default key has a spec with an equal default (pinned by
+  // `props_schema_test.dart`); composite specs default to null (unset).
+  'container': [
+    PropSpec(
+      name: 'width',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 1440,
+      step: 8,
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'height',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 1440,
+      step: 8,
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'padding',
+      type: 'edgeInsets',
+      control: 'edgeInsets',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'margin',
+      type: 'edgeInsets',
+      control: 'edgeInsets',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'color',
+      type: 'paint',
+      control: 'paint',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'radius',
+      type: 'borderRadius',
+      control: 'borderRadius',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'border',
+      type: 'border',
+      control: 'border',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'gradient',
+      type: 'gradient',
+      control: 'gradient',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'shadow',
+      type: 'shadow',
+      control: 'shadow',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'alignment',
+      type: 'alignment',
+      control: 'alignment',
+      group: 'style',
+      nullable: true,
+    ),
+  ],
+  'column': [
+    PropSpec(
+      name: 'gap',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 64,
+      step: 4,
+      defaultValue: 12.0,
+    ),
+    PropSpec(
+      name: 'mainAxis',
+      type: 'enum',
+      control: 'select',
+      group: 'layout',
+      options: kMainAxisOptions,
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'crossAxis',
+      type: 'enum',
+      control: 'select',
+      group: 'layout',
+      options: kCrossAxisOptions,
+      nullable: true,
+    ),
+  ],
+  // NOTE: the `row` entry above doubles as the item-kind schema for
+  // `items: [row]` nodes (Track F first-class row): same prop names, same
+  // meanings, same gap default (`kFlowRowGapDefault` == 8.0). The
+  // structural `isRow` form keeps its dedicated node-field editors in
+  // `inspector_panel.dart`; the item-kind form edits through these specs.
+  'stack': [
+    PropSpec(
+      name: 'alignment',
+      type: 'alignment',
+      control: 'alignment',
+      group: 'style',
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'fit',
+      type: 'enum',
+      control: 'select',
+      group: 'layout',
+      options: ['loose', 'expand', 'passthrough'],
+      defaultValue: 'loose',
+    ),
+  ],
+  'padding': [
+    PropSpec(
+      name: 'padding',
+      type: 'edgeInsets',
+      control: 'edgeInsets',
+      group: 'style',
+      nullable: true,
+    ),
+  ],
+  'center': [
+    PropSpec(
+      name: 'widthFactor',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 8,
+      step: 0.5,
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'heightFactor',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 8,
+      step: 0.5,
+      nullable: true,
+    ),
+  ],
+  'align': [
+    PropSpec(
+      name: 'alignment',
+      type: 'alignment',
+      control: 'alignment',
+      group: 'style',
+      defaultValue: 'center',
+    ),
+  ],
+  'expanded': [
+    PropSpec(
+      name: 'flex',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 1,
+      max: 10,
+      step: 1,
+      defaultValue: 1,
+    ),
+  ],
+  'sized_box': [
+    PropSpec(
+      name: 'width',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 1440,
+      step: 8,
+      nullable: true,
+    ),
+    PropSpec(
+      name: 'height',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 0,
+      max: 1440,
+      step: 8,
+      nullable: true,
+    ),
+  ],
+  'spacer': [
+    PropSpec(
+      name: 'flex',
+      type: 'number',
+      control: 'stepper',
+      group: 'layout',
+      min: 1,
+      max: 10,
+      step: 1,
+      defaultValue: 1,
+    ),
+  ],
 };
 
 /// Looks up the [PropSpec] for ([kind], [name]), or null when unknown.

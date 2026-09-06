@@ -5,6 +5,7 @@
 /// `../_impl/embedded_sources.dart`, the CLI reads bodies from disk.
 import 'screen_doc.dart';
 import 'app_state.dart';
+import 'emit/tagged_value.dart';
 
 /// Builds a single-file Dart program for [doc], inlining the registry
 /// sources of every used component [kind] found in [sourcesByDestination].
@@ -145,7 +146,11 @@ String buildSingleFile(
     // `Icon` widget itself is widgets-level); conditional like
     // `keyboard_shortcut` below, so docs without it keep byte-identical
     // headers.
-    final needsMaterial = needsMaterialSteps || kinds.contains('icon');
+    // Track F: `container` bodies read `Theme.of(context)` for token
+    // colors — same conditional rule.
+    final needsMaterial = needsMaterialSteps ||
+        kinds.contains('icon') ||
+        kinds.contains('container');
     out.writeln(
       needsMaterial
           ? "import 'package:flutter/material.dart';"
@@ -4819,9 +4824,10 @@ String _scaffoldExprWithSlots(
 }
 
 /// Track C3 (COMPOSITION.md §2): kinds whose child slot codegen splices
-/// recursively generated children into. The `row` pseudo-kind is structural
-/// (`isRow == true`, handled by the Row emitters) and is NOT listed here.
-/// Every other kind is a leaf: children use the below-fallback (§1).
+/// recursively generated children into. The structural `isRow == true` row
+/// form is handled by the Row emitters; the first-class `row` item kind
+/// joins this set (Track F). Every other kind is a leaf: children use the
+/// below-fallback (§1).
 const _kContainerKinds = {
   'card',
   'outlined_container',
@@ -4837,6 +4843,17 @@ const _kContainerKinds = {
   'toast',
   'validated',
   'refresh_trigger',
+  // Track F layout primitives with child slots (COMPOSITION.md §2.1;
+  // `spacer` is a leaf and stays out).
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
 };
 
 /// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with
@@ -8083,9 +8100,543 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
       return 'SubFocus(builder: (context, state) => Text(${_str(_prop(props, 'label', 'Focused scope'))})),';
     case 'repeated_animation_builder':
       return 'PulsingAnimation(child: Text(${_str(_prop(props, 'label', 'Pulsing'))})),';
+    // Track F layout primitives (raw Flutter, kit-first exempt): the same
+    // prop-shape contract as `codegen_bundle.dart` (mirrored — the
+    // exporters share no code). `spacer` is a leaf; the rest take [nested].
+    case 'container':
+      return _containerExpr(props, nested);
+    case 'column':
+      return _columnExpr(props, nested);
+    case 'row':
+      return _rowKindExpr(props, nested);
+    case 'stack':
+      return _stackExpr(props, nested);
+    case 'padding':
+      return _paddingExpr(props, nested);
+    case 'center':
+      return _centerExpr(props, nested);
+    case 'align':
+      return _alignExpr(props, nested);
+    case 'expanded':
+      return _expandedExpr(props, nested);
+    case 'sized_box':
+      return _sizedBoxExpr(props, nested);
+    case 'spacer':
+      return _spacerExpr(props);
     default:
       return "Text('unknown: ${item.kind}'),";
   }
+}
+
+/// Track F layout primitives (COMPOSITION.md §2.1): raw Flutter emitters in
+/// the single-file statement style (unindented multi-line strings, trailing
+/// comma — see [_cardExpr]). Same prop-shape contract as
+/// `codegen_bundle.dart` (mirrored — the exporters share no code) and the
+/// same §6.2 color-XOR-decoration rule.
+const _primTheme = 'Theme.of(context)';
+
+String _primNum(double value) =>
+    value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+
+double? _primDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is Map && value[r'$'] == 'double' && value['v'] is num) {
+    return (value['v'] as num).toDouble();
+  }
+  return null;
+}
+
+int _primInt(Object? value, int fallback) =>
+    value is num ? value.toInt() : fallback;
+
+({String code, bool themed})? _primColor(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is ColorValue) {
+    return (code: tagged.toDart(_primTheme), themed: tagged.token != null);
+  }
+  if (value is Map) {
+    // Bare `{kind: token|literal, …}` maps (same leniency as the canvas
+    // builders — canvas/codegen parity on hand-written docs).
+    if (value['kind'] == 'token' && value['token'] is String) {
+      return (
+        code: ColorValue.token(value['token'] as String).toDart(_primTheme),
+        themed: true
+      );
+    }
+    if (value['kind'] == 'literal' && value['argb'] is num) {
+      return (
+        code: ColorValue.literal((value['argb'] as num).toInt())
+            .toDart(_primTheme),
+        themed: false
+      );
+    }
+    return null;
+  }
+  if (value is int) {
+    return (code: ColorValue.literal(value).toDart(_primTheme), themed: false);
+  }
+  if (value is String) {
+    final hex = value.startsWith('#') ? value.substring(1) : value;
+    final full = hex.length == 6 ? 'FF$hex' : hex;
+    final argb = full.length == 8 ? int.tryParse(full, radix: 16) : null;
+    if (argb == null) return null;
+    return (
+      code: ColorValue.literal(argb).toDart(_primTheme),
+      themed: false
+    );
+  }
+  return null;
+}
+
+String? _primEdge(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is EdgeInsetsValue) {
+    return 'const ${tagged.toDart(_primTheme)}';
+  }
+  if (value is num) {
+    return 'const EdgeInsets.all(${_primNum(value.toDouble())})';
+  }
+  if (value is Map) {
+    if (value.keys.any((k) => k == 'l' || k == 't' || k == 'r' || k == 'b')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      final parsed = EdgeInsetsValue(
+        left: n(value['l']),
+        top: n(value['t']),
+        right: n(value['r']),
+        bottom: n(value['b']),
+      );
+      return 'const ${parsed.toDart(_primTheme)}';
+    }
+  }
+  return null;
+}
+
+String? _primRadius(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is BorderRadiusValue) return tagged.toDart(_primTheme);
+  if (value is num) {
+    return 'BorderRadius.circular(${_primNum(value.toDouble())})';
+  }
+  if (value is Map) {
+    if (value.keys
+        .any((k) => k == 'tl' || k == 'tr' || k == 'br' || k == 'bl')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      final parsed = BorderRadiusValue(
+        topLeft: n(value['tl']),
+        topRight: n(value['tr']),
+        bottomRight: n(value['br']),
+        bottomLeft: n(value['bl']),
+      );
+      return parsed.toDart(_primTheme);
+    }
+  }
+  return null;
+}
+
+String? _primAlign(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is AlignmentValue) return tagged.toDart(_primTheme);
+  if (value is String) {
+    const names = {
+      'topLeft',
+      'topCenter',
+      'topRight',
+      'centerLeft',
+      'center',
+      'centerRight',
+      'bottomLeft',
+      'bottomCenter',
+      'bottomRight',
+    };
+    if (names.contains(value)) return 'Alignment.$value';
+    return null;
+  }
+  if (value is Map) {
+    final x = value['x'];
+    final y = value['y'];
+    if (x is num && y is num) {
+      return AlignmentValue(x.toDouble(), y.toDouble()).toDart(_primTheme);
+    }
+  }
+  return null;
+}
+
+({String code, bool themed})? _primBorder(Object? value) {
+  if (value is! Map) return null;
+  if (!value.containsKey('color') && !value.containsKey('width')) return null;
+  final color = _primColor(value['color']);
+  final width = _primDouble(value['width']) ?? 1.0;
+  return (
+    code: 'Border.all(color: ${color?.code ?? 'Color(0xFF000000)'}, '
+        'width: ${_primNum(width)})',
+    themed: color?.themed ?? false,
+  );
+}
+
+String _primXy(Object? value, String fallback) {
+  if (value is Map) {
+    final x = value['x'];
+    final y = value['y'];
+    if (x is num && y is num) {
+      return AlignmentValue(x.toDouble(), y.toDouble()).toDart(_primTheme);
+    }
+  }
+  return fallback;
+}
+
+({String code, bool themed})? _primGradient(Object? value) {
+  if (value is! Map) return null;
+  final colors = value['colors'];
+  if (colors is! List || colors.isEmpty) return null;
+  final parts = <({String code, bool themed})>[];
+  for (final c in colors) {
+    final part = _primColor(c);
+    if (part == null) return null;
+    parts.add(part);
+  }
+  List<double>? stops;
+  if (value['stops'] is List) {
+    final raw = (value['stops'] as List).whereType<num>().toList();
+    if (raw.length == parts.length) {
+      stops = [for (final s in raw) s.toDouble()];
+    }
+  }
+  final themed = parts.any((p) => p.themed);
+  final buf = StringBuffer()
+    ..writeln('${themed ? '' : 'const '}LinearGradient(')
+    ..writeln('      begin: ${_primXy(value['begin'], 'Alignment.centerLeft')},')
+    ..writeln(
+        '      end: ${_primXy(value['end'], 'Alignment.centerRight')},')
+    ..writeln('      colors: [');
+  for (final p in parts) {
+    buf.writeln('        ${p.code},');
+  }
+  buf.writeln('      ],');
+  if (stops != null) {
+    buf.writeln('      stops: [${stops.map(_primNum).join(', ')}],');
+  }
+  buf.write('    )');
+  return (code: buf.toString(), themed: themed);
+}
+
+({String code, bool themed})? _primShadows(Object? value) {
+  if (value is! List || value.isEmpty) return null;
+  final buf = StringBuffer()..writeln('[');
+  var themed = false;
+  var count = 0;
+  for (final s in value) {
+    if (s is! Map) continue;
+    final color = _primColor(s['color']);
+    if (color?.themed ?? false) themed = true;
+    double n(Object? x) => x is num ? x.toDouble() : 0.0;
+    var ox = 0.0;
+    var oy = 0.0;
+    if (s['offset'] is Map) {
+      ox = n((s['offset'] as Map)['x']);
+      oy = n((s['offset'] as Map)['y']);
+    }
+    buf
+      ..writeln('      BoxShadow(')
+      ..writeln('        color: ${color?.code ?? 'Color(0x40000000)'},')
+      ..writeln(
+          '        blurRadius: ${_primNum(_primDouble(s['blur']) ?? 0.0)},')
+      ..writeln(
+          '        spreadRadius: ${_primNum(_primDouble(s['spread']) ?? 0.0)},')
+      ..writeln('        offset: Offset(${_primNum(ox)}, ${_primNum(oy)}),')
+      ..writeln('      ),');
+    count++;
+  }
+  if (count == 0) return null;
+  buf.write('    ]');
+  return (code: '${themed ? '' : 'const '}${buf}', themed: themed);
+}
+
+String? _primMainAxis(Object? value) {
+  switch (value) {
+    case 'center':
+      return 'MainAxisAlignment.center';
+    case 'end':
+      return 'MainAxisAlignment.end';
+    case 'spaceBetween':
+      return 'MainAxisAlignment.spaceBetween';
+    case 'spaceAround':
+      return 'MainAxisAlignment.spaceAround';
+    case 'spaceEvenly':
+      return 'MainAxisAlignment.spaceEvenly';
+    case 'start':
+    default:
+      return null;
+  }
+}
+
+String? _primCrossAxis(Object? value) {
+  switch (value) {
+    case 'start':
+      return 'CrossAxisAlignment.start';
+    case 'end':
+      return 'CrossAxisAlignment.end';
+    case 'stretch':
+      return 'CrossAxisAlignment.stretch';
+    case 'center':
+    default:
+      return null;
+  }
+}
+
+double _primGap(Map<String, dynamic> props, double fallback) {
+  final gap = _primDouble(props['gap']) ?? fallback;
+  return gap < 0 ? 0 : gap;
+}
+
+double? _primDim(Object? value) {
+  final parsed = _primDouble(value);
+  if (parsed == null) return null;
+  return parsed < 0 ? 0 : parsed;
+}
+
+int _primFlex(Object? value) {
+  final flex = _primInt(value, 1);
+  return flex < 1 ? 1 : flex;
+}
+
+/// `child:` expression for single-slot primitives: no unit → null (caller
+/// omits, or substitutes); one unit → `child:` inline with leading `//`
+/// comment lines hoisted above; several → `Column(min, start)` with
+/// `kFlowScreenGap` separators.
+String? _primChildExpr(List<String> nested) {
+  if (nested.isEmpty) return null;
+  if (nested.length == 1) return _primChildUnit(nested.single);
+  final buf = StringBuffer()
+    ..writeln('child: Column(')
+    ..writeln('    mainAxisSize: MainAxisSize.min,')
+    ..writeln('    crossAxisAlignment: CrossAxisAlignment.start,')
+    ..writeln('    children: [');
+  var first = true;
+  for (final unit in nested) {
+    if (!first) buf.writeln('      const SizedBox(height: 12),');
+    first = false;
+    for (final line in unit.split('\n')) {
+      if (line.isEmpty) continue;
+      buf.writeln('      $line');
+    }
+  }
+  buf
+    ..writeln('    ],')
+    ..write('  ),');
+  return buf.toString();
+}
+
+/// One unit as a `child:` expression (leading comments hoist above). The
+/// result always ends with a trailing comma (units carry their own; the
+/// shrink fallback adds one).
+String _primChildUnit(String unit) {
+  final comments = <String>[];
+  final rest = <String>[];
+  var head = true;
+  for (final line in unit.split('\n')) {
+    if (line.isEmpty) continue;
+    if (head && line.startsWith('//')) {
+      comments.add(line);
+      continue;
+    }
+    head = false;
+    rest.add(line);
+  }
+  final buf = StringBuffer();
+  for (final c in comments) {
+    buf.writeln('  $c');
+  }
+  if (rest.isEmpty) {
+    buf.write('  child: SizedBox.shrink(),');
+    return buf.toString();
+  }
+  buf.writeln('  child: ${rest.first}');
+  for (final line in rest.skip(1)) {
+    buf.writeln('    $line');
+  }
+  var text = buf.toString().trimRight();
+  if (!text.endsWith(',')) text = '$text,';
+  return text;
+}
+
+/// `children:` expression with [gap] separators (column/row bodies), ending
+/// with the trailing comma.
+String _primChildrenExpr(
+  List<String> nested,
+  double gap,
+  bool vertical,
+) {
+  final sep = vertical
+      ? '    const SizedBox(height: ${_primNum(gap)}),'
+      : '    const SizedBox(width: ${_primNum(gap)}),';
+  final buf = StringBuffer()..writeln('  children: [');
+  var first = true;
+  for (final unit in nested) {
+    if (!first) buf.writeln(sep);
+    first = false;
+    for (final line in unit.split('\n')) {
+      if (line.isEmpty) continue;
+      buf.writeln('    $line');
+    }
+  }
+  buf.write('  ],');
+  return buf.toString();
+}
+
+String _containerExpr(Map<String, dynamic> props, List<String> nested) {
+  final buf = StringBuffer()..writeln('Container(');
+  final width = _primDim(props['width']);
+  if (width != null) buf.writeln('  width: ${_primNum(width)},');
+  final height = _primDim(props['height']);
+  if (height != null) buf.writeln('  height: ${_primNum(height)},');
+  final margin = _primEdge(props['margin']);
+  if (margin != null) buf.writeln('  margin: $margin,');
+  final padding = _primEdge(props['padding']);
+  if (padding != null) buf.writeln('  padding: $padding,');
+  final alignment = _primAlign(props['alignment']);
+  if (alignment != null) buf.writeln('  alignment: $alignment,');
+  final border = props['border'] is Map ? _primBorder(props['border']) : null;
+  final radius = _primRadius(props['radius']);
+  final shadows =
+      props['shadow'] is List ? _primShadows(props['shadow']) : null;
+  final gradient =
+      props['gradient'] is Map ? _primGradient(props['gradient']) : null;
+  if (border == null && radius == null && shadows == null && gradient == null) {
+    final color = _primColor(props['color']);
+    if (color != null) buf.writeln('  color: ${color.code},');
+  } else {
+    final color = _primColor(props['color']);
+    final themed = (border?.themed ?? false) ||
+        (shadows?.themed ?? false) ||
+        (gradient?.themed ?? false) ||
+        (color?.themed ?? false);
+    buf.writeln('  decoration: ${themed ? '' : 'const '}BoxDecoration(');
+    if (color != null) buf.writeln('    color: ${color.code},');
+    if (border != null) buf.writeln('    border: ${border.code},');
+    if (radius != null) buf.writeln('    borderRadius: $radius,');
+    if (shadows != null) buf.writeln('    boxShadow: ${shadows.code},');
+    if (gradient != null) buf.writeln('    gradient: ${gradient.code},');
+    buf.writeln('  ),');
+  }
+  final child = _primChildExpr(nested);
+  if (child != null) buf.writeln(child);
+  final text = buf.toString().trimRight();
+  if (text == 'Container(') return 'Container(),';
+  return '$text\n),';
+}
+
+String _columnExpr(Map<String, dynamic> props, List<String> nested) {
+  final buf = StringBuffer()..writeln('Column(');
+  final main = _primMainAxis(props['mainAxis']);
+  if (main != null) buf.writeln('  mainAxisAlignment: $main,');
+  final cross = _primCrossAxis(props['crossAxis']);
+  if (cross != null) buf.writeln('  crossAxisAlignment: $cross,');
+  if (nested.isEmpty) {
+    buf.writeln('  children: [],');
+  } else {
+    buf.writeln(_primChildrenExpr(nested, _primGap(props, 12.0), true));
+  }
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _rowKindExpr(Map<String, dynamic> props, List<String> nested) {
+  final buf = StringBuffer()..writeln('Row(');
+  final main = _primMainAxis(props['mainAxis']);
+  if (main != null) buf.writeln('  mainAxisAlignment: $main,');
+  final cross = _primCrossAxis(props['crossAxis']);
+  if (cross != null) buf.writeln('  crossAxisAlignment: $cross,');
+  if (nested.isEmpty) {
+    buf.writeln('  children: [],');
+  } else {
+    buf.writeln(_primChildrenExpr(nested, _primGap(props, 8.0), false));
+  }
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _stackExpr(Map<String, dynamic> props, List<String> nested) {
+  final buf = StringBuffer()..writeln('Stack(');
+  final alignment = _primAlign(props['alignment']);
+  if (alignment != null) buf.writeln('  alignment: $alignment,');
+  final fit = switch (props['fit']) {
+    'expand' => 'StackFit.expand',
+    'passthrough' => 'StackFit.passthrough',
+    _ => null,
+  };
+  if (fit != null) buf.writeln('  fit: $fit,');
+  if (nested.isEmpty) {
+    buf.writeln('  children: [],');
+  } else {
+    buf.writeln('  children: [');
+    for (final unit in nested) {
+      for (final line in unit.split('\n')) {
+        if (line.isEmpty) continue;
+        buf.writeln('    $line');
+      }
+    }
+    buf.writeln('  ],');
+  }
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _paddingExpr(Map<String, dynamic> props, List<String> nested) {
+  final padding = _primEdge(props['padding']) ?? 'const EdgeInsets.all(16)';
+  final buf = StringBuffer()
+    ..writeln('Padding(')
+    ..writeln('  padding: $padding,');
+  final child = _primChildExpr(nested);
+  if (child != null) buf.writeln(child);
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _centerExpr(Map<String, dynamic> props, List<String> nested) {
+  final child = _primChildExpr(nested);
+  if (child == null) return 'Center(),';
+  return 'Center(\n$child\n),';
+}
+
+String _alignExpr(Map<String, dynamic> props, List<String> nested) {
+  final buf = StringBuffer()
+    ..writeln('Align(')
+    ..writeln(
+        '  alignment: ${_primAlign(props['alignment']) ?? 'Alignment.center'},');
+  final child = _primChildExpr(nested);
+  if (child != null) buf.writeln(child);
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _expandedExpr(Map<String, dynamic> props, List<String> nested) {
+  final flex = _primFlex(props['flex']);
+  final buf = StringBuffer()..writeln('Expanded(');
+  if (flex != 1) buf.writeln('  flex: $flex,');
+  final child = _primChildExpr(
+    nested.isEmpty ? ['SizedBox.shrink(),'] : nested,
+  )!;
+  buf.writeln(child);
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _sizedBoxExpr(Map<String, dynamic> props, List<String> nested) {
+  final width = _primDim(props['width']);
+  final height = _primDim(props['height']);
+  if (nested.isEmpty) {
+    if (width == null && height == null) return 'const SizedBox.shrink(),';
+    final dims = [
+      if (width != null) 'width: ${_primNum(width)}',
+      if (height != null) 'height: ${_primNum(height)}',
+    ].join(', ');
+    return 'const SizedBox($dims),';
+  }
+  final buf = StringBuffer()..writeln('SizedBox(');
+  if (width != null) buf.writeln('  width: ${_primNum(width)},');
+  if (height != null) buf.writeln('  height: ${_primNum(height)},');
+  buf.writeln(_primChildExpr(nested)!);
+  return '${buf.toString().trimRight()}\n),';
+}
+
+String _spacerExpr(Map<String, dynamic> props) {
+  final flex = _primFlex(props['flex']);
+  if (flex == 1) return 'const Spacer(),';
+  return 'Spacer(flex: $flex),';
 }
 
 /// Strips `import`/`export`/`part`/`part of`/`library` directives so the

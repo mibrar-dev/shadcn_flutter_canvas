@@ -287,10 +287,10 @@ const _kExpectedSections = <String, String>{
 
 void main() {
   group('registry coverage', () {
-    test('all 134 kit ids plus the row pseudo-kind, each exactly once', () {
+    test('all 134 kit ids plus the ten Track F primitives, each exactly once', () {
       expect(_kKitIds, hasLength(134));
       final kinds = [for (final entry in kRegistry) entry.kind];
-      expect(kinds, hasLength(_kKitIds.length + 1));
+      expect(kinds, hasLength(_kKitIds.length + 10));
       expect(kinds.toSet(), hasLength(kinds.length));
       for (final id in _kKitIds) {
         expect(
@@ -332,9 +332,21 @@ void main() {
         }
       }
       expect(seen, orderedEquals(kRegistrySectionOrder));
-      // Every kit id sits in its category section; row starts the palette.
+      // Every kit id sits in its category section; the ten Track F
+      // primitives start the palette in `Layout Primitives`.
       for (final entry in kRegistry) {
-        if (entry.kind == 'row') {
+        if (const {
+          'row',
+          'container',
+          'column',
+          'stack',
+          'padding',
+          'center',
+          'align',
+          'expanded',
+          'sized_box',
+          'spacer',
+        }.contains(entry.kind)) {
           expect(entry.section, 'Layout Primitives');
         } else {
           expect(
@@ -344,13 +356,13 @@ void main() {
           );
         }
       }
-      // Per-section counts (manifest: 32/28/25/17/14/11/7 + row).
+      // Per-section counts (manifest: 32/28/25/17/14/11/7 + 10 primitives).
       final counts = <String, int>{};
       for (final entry in kRegistry) {
         counts[entry.section] = (counts[entry.section] ?? 0) + 1;
       }
       expect(counts, {
-        'Layout Primitives': 1,
+        'Layout Primitives': 10,
         'Layout & Structure': 25,
         'Display': 28,
         'Forms & Inputs': 32,
@@ -363,7 +375,7 @@ void main() {
 
     test('bridge: every catalog kind is canvas-ready with a matching label',
         () {
-      expect(kCatalog, hasLength(97));
+      expect(kCatalog, hasLength(107));
       for (final entry in kCatalog) {
         final reg = findRegistryEntry(entry.kind);
         expect(reg, isNotNull, reason: 'no registry entry ${entry.kind}');
@@ -380,9 +392,9 @@ void main() {
           if (entry.canvasReady) entry.kind,
       ];
       expect(ready.length, greaterThanOrEqualTo(25));
-      // Pinned: 96 bridged + 10 hand-verified + the row pseudo-kind
-      // + 1 frozen-track exemption (navigation_bar).
-      expect(ready.length, 108);
+      // Pinned: 107 bridged (96 kit + 10 Track F primitives + navigation_bar)
+      // + 10 hand-verified.
+      expect(ready.length, 117);
     });
 
     test('hidden utilities stay covered but leave the palette', () {
@@ -456,6 +468,11 @@ void main() {
     ) async {
       for (final entry in kRegistry) {
         if (!entry.canvasReady) continue;
+        // Track F: `expanded`/`spacer` are Flutter `ParentDataWidget`s —
+        // bare pumps violate the framework contract by design (they only
+        // ever render under a Flex on canvas). Covered in Flex contexts by
+        // `narrow_width_test.dart` + `f2_primitives_test.dart` instead.
+        if (entry.kind == 'expanded' || entry.kind == 'spacer') continue;
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(body: Builder(builder: entry.build)),

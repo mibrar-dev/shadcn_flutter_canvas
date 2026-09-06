@@ -1,0 +1,190 @@
+{
+  "screens": [
+    {"id": "s1", "name": "Primitives", "x": 0.0, "y": 0.0, "bg": "surface"}
+  ],
+  "nodes": [
+    {
+      "id": "n_scaffold",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "items": [
+        {"id": "i_scaffold", "kind": "scaffold", "title": "Prim", "body": "Welcome"}
+      ]
+    },
+    {
+      "id": "n_col",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_scaffold",
+      "items": [
+        {"id": "i_col", "kind": "column"}
+      ]
+    },
+    {
+      "id": "n_hero",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_col",
+      "items": [
+        {
+          "id": "i_hero",
+          "kind": "container",
+          "padding": {"$": "edgeInsets", "v": {"l": 20, "t": 20, "r": 20, "b": 20}},
+          "color": {"$": "color", "v": {"kind": "token", "token": "primaryContainer"}},
+          "radius": {"$": "borderRadius", "v": {"tl": 16, "tr": 16, "br": 16, "bl": 16}},
+          "gradient": {
+            "begin": {"x": -1.0, "y": 0.0},
+            "end": {"x": 1.0, "y": 0.0},
+            "colors": [
+              {"kind": "token", "token": "primary"},
+              {"kind": "token", "token": "secondary"}
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "n_heroRow",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_hero",
+      "isRow": true,
+      "gap": 8.0,
+      "items": []
+    },
+    {
+      "id": "n_avatar",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_heroRow",
+      "items": [
+        {"id": "i_avatar", "kind": "avatar", "initials": "AK"}
+      ]
+    },
+    {
+      "id": "n_namecol",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_heroRow",
+      "items": [
+        {"id": "i_namecol", "kind": "column", "gap": 4}
+      ]
+    },
+    {
+      "id": "n_t1",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_namecol",
+      "items": [
+        {"id": "i_t1", "kind": "text", "text": "Ada K"}
+      ]
+    },
+    {
+      "id": "n_t2",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_namecol",
+      "items": [
+        {"id": "i_t2", "kind": "text", "text": "Engineer"}
+      ]
+    },
+    {
+      "id": "n_spacer",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_heroRow",
+      "items": [
+        {"id": "i_spacer", "kind": "spacer", "flex": 1}
+      ]
+    },
+    {
+      "id": "n_badge",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_heroRow",
+      "items": [
+        {"id": "i_badge", "kind": "badge", "label": "Pro", "variant": "secondary"}
+      ]
+    },
+    {
+      "id": "n_gap",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_col",
+      "items": [
+        {"id": "i_gap", "kind": "sized_box", "height": 24}
+      ]
+    },
+    {
+      "id": "n_exp",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_col",
+      "items": [
+        {"id": "i_exp", "kind": "expanded"}
+      ]
+    },
+    {
+      "id": "n_list",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_exp",
+      "items": [
+        {"id": "i_list", "kind": "column", "gap": 12}
+      ]
+    },
+    {
+      "id": "n_c1",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_list",
+      "items": [
+        {"id": "i_c1", "kind": "card", "title": "Card 1", "description": "First"}
+      ]
+    },
+    {
+      "id": "n_c2",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_list",
+      "items": [
+        {"id": "i_c2", "kind": "card", "title": "Card 2", "description": "Second"}
+      ]
+    },
+    {
+      "id": "n_c3",
+      "screenId": "s1",
+      "x": 0.0,
+      "y": 0.0,
+      "parentId": "n_list",
+      "items": [
+        {"id": "i_c3", "kind": "card", "title": "Card 3", "description": "Third"}
+      ]
+    }
+  ],
+  "theme": {
+    "paletteKey": "slate",
+    "dark": false,
+    "shape": "rounded",
+    "motion": "standard"
+  },
+  "meta": {
+    "title": "Primitives",
+    "brief": "Track F definition of done (§7.5): layout-primitive round-trip"
+  }
+}

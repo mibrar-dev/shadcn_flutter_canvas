@@ -76,6 +76,33 @@ Rule for classifying future kinds — promote a kind only when ALL hold:
    (header/label stays vs. replaced, separator used).
 3. Render + codegen goldens cover 0/1/2 children for the kind.
 
+## 2.1 Layout-primitive container set (Track F)
+
+The ten §7.1 layout primitives join the §2 container set. They are the
+purest cases of the promotion rule above: each exposes a generic child
+slot by construction (they ARE the Flutter layout widgets), and each
+carries render + codegen goldens covering 0/1/2 children (see
+`canvas_core/test/fixtures/primitives_screen.*` and the `f3_*` golden
+tests).
+
+KIT-FIRST EXEMPTION (BUILD_SPEC §7.1): primitives are raw Flutter
+(`Container`, `Column`), not kit widgets. The `shadcn_ui.dart` kit-first
+rule does NOT apply to them (also recorded on `SizeMode` in
+`canvas_core/lib/src/screen_doc.dart`).
+
+| Kind | Child slot children splice into |
+|---|---|
+| `container` | Single `child` (0 kids → omitted; 2+ kids → `Column` wrap) |
+| `column` | Multi `children` (`gap` separators) |
+| `row` | Multi `children` (`gap` separators; item-kind form — the `isRow` structural form keeps working unchanged) |
+| `stack` | Multi `children` (plain stack children) |
+| `padding` | Single `child` (same 0/1/2+ rule as `container`) |
+| `center` | Single `child` |
+| `align` | Single `child` |
+| `expanded` | Single `child` (emits the `Expanded` wrapper itself) |
+| `sized_box` | Single `child` (0 kids + no dims → `SizedBox.shrink()`) |
+| `spacer` | Leaf — no slot (`Spacer`, takes no child) |
+
 ## 3. Builder contract change (app-side, documented — NOT a core type)
 
 `canvas_core` stays Flutter-free, so this contract lives in

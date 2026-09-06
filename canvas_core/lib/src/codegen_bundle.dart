@@ -56,6 +56,7 @@ import 'package:archive/archive.dart';
 
 import 'screen_doc.dart';
 import 'app_state.dart';
+import 'emit/tagged_value.dart';
 
 /// Result of [buildCleanBundle].
 class BundleManifest {
@@ -513,6 +514,8 @@ const _bundleNeedsMaterial = {
   'popup',
   'navigation_bar',
   'icon',
+  // Track F: `container` bodies read `Theme.of(context)` for token colors.
+  'container',
 };
 
 /// Real kit entry file per kind, relative to the kind's install prefix.
@@ -714,6 +717,9 @@ BundleManifest buildCleanBundle(
   for (final node in doc.nodes) {
     for (final item in node.items) {
       if (_kinds[item.kind] == null) {
+        // Track F primitives are raw Flutter (no kit barrels, no pubspec
+        // deps): they emit cleanly with the screen's Flutter import alone.
+        if (_bundlePrimitiveKinds.contains(item.kind)) continue;
         warnings.add("unknown kind '${item.kind}' (item ${item.id}): skipped");
       } else {
         requireKind(item.kind, 'canvas item ${item.id}');
@@ -1423,6 +1429,25 @@ List<String> _bundleContainerBody(
       return _bundleValidated(item.props, nested);
     case 'refresh_trigger':
       return _bundleRefreshTrigger(item.props, nested);
+    // Track F layout primitives with child slots (COMPOSITION.md §2.1).
+    case 'container':
+      return _bundleContainer(item.props, nested);
+    case 'column':
+      return _bundleColumn(item.props, nested);
+    case 'row':
+      return _bundleRowKind(item.props, nested);
+    case 'stack':
+      return _bundleStack(item.props, nested);
+    case 'padding':
+      return _bundlePadding(item.props, nested);
+    case 'center':
+      return _bundleCenter(item.props, nested);
+    case 'align':
+      return _bundleAlign(item.props, nested);
+    case 'expanded':
+      return _bundleExpanded(item.props, nested);
+    case 'sized_box':
+      return _bundleSizedBox(item.props, nested);
     default:
       return _bundleBody(item);
   }
@@ -1639,6 +1664,29 @@ List<String> _bundleBody(CanvasItem item) {
       return _bundleSubfocus(item.props);
     case 'repeated_animation_builder':
       return _bundleRepeatedAnimationBuilder(item.props);
+    // Track F layout primitives (raw Flutter, kit-first exempt). `spacer`
+    // is a leaf; the rest splice children via [_bundleContainerBody] above
+    // (single-item container nodes) and render childless here.
+    case 'container':
+      return _bundleContainer(item.props);
+    case 'column':
+      return _bundleColumn(item.props);
+    case 'row':
+      return _bundleRowKind(item.props);
+    case 'stack':
+      return _bundleStack(item.props);
+    case 'padding':
+      return _bundlePadding(item.props);
+    case 'center':
+      return _bundleCenter(item.props);
+    case 'align':
+      return _bundleAlign(item.props);
+    case 'expanded':
+      return _bundleExpanded(item.props);
+    case 'sized_box':
+      return _bundleSizedBox(item.props);
+    case 'spacer':
+      return _bundleSpacer(item.props);
     default:
       return ["Text(${_bundleStr(_labelOf(item))}),"];
   }
@@ -2244,10 +2292,12 @@ List<String> _bundleScaffold(
   Map<String, dynamic> props, [
   List<List<String>> nested = const [],
 ]) {
-  // Track C3 slot: body Padding column under the body text.
+  // Track C3 slot: body Padding column under the body text. Flat line
+  // list (never one joined string): callers indent per line, so nested
+  // children keep canonical indentation (dart-format clean).
   final padded = nested.isEmpty
-      ? "      child: Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))}),"
-      : [
+      ? <String>["      child: Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))}),"]
+      : <String>[
           '      child: Column(',
           '        mainAxisSize: MainAxisSize.min,',
           '        crossAxisAlignment: CrossAxisAlignment.start,',
@@ -2256,7 +2306,7 @@ List<String> _bundleScaffold(
           ..._spliceBundleKids(nested, '          '),
           '        ],',
           '      ),',
-        ].join('\n');
+        ];
   return [
     'SizedBox(',
     '  height: 320,',
@@ -2264,7 +2314,7 @@ List<String> _bundleScaffold(
     "    headers: [AppBar(title: Text(${_bundleStr(_bStr(props, 'title', 'My App'))}))],",
     '    child: Padding(',
     '      padding: const EdgeInsets.all(16),',
-    padded,
+    ...padded,
     '    ),',
     '  ),',
     '),',
@@ -2287,19 +2337,19 @@ List<String> _bundleScaffoldWithSlots(
   List<String>? footerBlock,
 ) {
   final headers = _bundleSlotListItem(appBarBlock, 'appBar', '      ') == null
-      ? "    headers: [AppBar(title: Text(${_bundleStr(_bStr(props, 'title', 'My App'))}))],"
-      : [
+      ? <String>["    headers: [AppBar(title: Text(${_bundleStr(_bStr(props, 'title', 'My App'))}))],"]
+      : <String>[
           '    headers: [',
           ..._bundleSlotListItem(appBarBlock, 'appBar', '      ')!,
           '    ],',
-        ].join('\n');
+        ];
   final footers = _bundleSlotListItem(footerBlock, 'footer', '      ') == null
       ? null
-      : [
+      : <String>[
           '    footers: [',
           ..._bundleSlotListItem(footerBlock, 'footer', '      ')!,
           '    ],',
-        ].join('\n');
+        ];
   String? bodyExpr;
   List<String> bodyComments = const [];
   if (bodyBlock != null) {
@@ -2316,31 +2366,46 @@ List<String> _bundleScaffoldWithSlots(
   }
   final bodyText = "Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))})";
   final hasBody = bodyExpr != null || flow.isNotEmpty;
+  // Flat line list (never one joined string): multi-line slot expressions
+  // keep their relative structure under the same base indent, so nested
+  // children stay canonical (dart-format clean).
+  final List<String> bodyLines;
+  if (bodyExpr != null) {
+    final split = bodyExpr.split('\n');
+    bodyLines = [
+      '          ${split.first}',
+      for (final line in split.skip(1))
+        if (line.isNotEmpty) '          $line',
+    ];
+    bodyLines[bodyLines.length - 1] = '${bodyLines.last},';
+  } else {
+    bodyLines = ['          $bodyText,'];
+  }
   final padded = !hasBody
-      ? '      child: $bodyText,'
-      : [
+      ? <String>['      child: $bodyText,']
+      : <String>[
           '      child: Column(',
           '        mainAxisSize: MainAxisSize.min,',
           '        crossAxisAlignment: CrossAxisAlignment.start,',
           '        children: [',
           ...bodyComments,
-          '          ${bodyExpr ?? bodyText},',
+          ...bodyLines,
           ..._spliceBundleKids(flow, '          '),
           '        ],',
           '      ),',
-        ].join('\n');
+        ];
   // Historical shape keeps `child: Padding(child: …)`; the slotless path
   // above reproduces [_bundleScaffold] byte-identically (no `footers`).
   return [
     'SizedBox(',
     '  height: 320,',
     '  child: Scaffold(',
-    headers,
+    ...headers,
     '    child: Padding(',
     '      padding: const EdgeInsets.all(16),',
-    padded,
+    ...padded,
     '    ),',
-    if (footers != null) footers,
+    if (footers != null) ...footers,
     '  ),',
     '),',
   ];
@@ -3879,12 +3944,629 @@ List<String> _bundleRepeatedAnimationBuilder(Map<String, dynamic> props) {
   ];
 }
 
+/// Track F layout primitives (COMPOSITION.md §2.1): raw Flutter emitters,
+/// kit-first exempt. One case per kind in [_bundleBody] (+
+/// [_bundleContainerBody] for the nine slotted kinds); `spacer` is a leaf.
+///
+/// PROP-SHAPE CONTRACT (mirrored by the canvas builders in
+/// `component_catalog.dart` and the single-file emitters below in
+/// `codegen_single.dart`; the three sides share no code because
+/// `canvas_core` must stay Flutter-free and the exporters share nothing, so
+/// all three document this contract verbatim):
+/// * edgeInsets props (`padding`, `margin`): tagged envelope, raw num
+///   (uniform), or raw `{l,t,r,b}` map → collapsed `const EdgeInsets…`
+///   (§6.1); absent/unparseable → omitted (single `padding` defaults to
+///   `all(16)`).
+/// * color props: tagged `{"$":"color","v":…}` envelope or bare
+///   `{kind: token|literal, …}` map (token → `Theme.of(context)` accessor,
+///   never a hex — §6.1 rule; literal → `Color(0x…)`), raw int ARGB, or
+///   hex string; absent/unparseable → omitted.
+/// * radius props: tagged envelope or raw num → collapsed `BorderRadius…`.
+/// * border props: `{color, width}` map → `Border.all`.
+/// * gradient props: `{begin:{x,y}, end:{x,y}, colors:[...], stops?}` map
+///   (ends collapse to named `Alignment` constants) → `LinearGradient`.
+/// * shadow props: list of `{color, blur, offset:{x,y}, spread?}` maps →
+///   `boxShadow: [BoxShadow…]`.
+/// * alignment props: tagged envelope, raw `{x,y}` map, or named constant.
+/// * axis props: `mainAxis` (default `start` → omitted),
+///   `crossAxis` (default `center` → omitted); `fit` (default `loose`).
+///
+/// §6.2 rule: `color:` XOR `decoration:` — a color-only container keeps the
+/// direct arg (the hand-written form); radius/border/gradient/shadow fuse
+/// with color into one `BoxDecoration` (const iff no token inside).
+/// Negative dims/gaps clamp to 0 and flex to ≥ 1 (never a crash on
+/// hand-written docs).
+const _bundlePrimTheme = 'Theme.of(context)';
+
+/// Track F primitive kind set: raw Flutter (no kit barrels, no pubspec
+/// deps — see the [buildCleanBundle] skip above).
+const _bundlePrimitiveKinds = {
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
+  'spacer',
+};
+
+/// Whole flow doubles print without `.0` (mirrors [_bundleFlowNum]).
+String _bundlePrimNum(double value) =>
+    value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+
+double? _bundlePrimDouble(Object? value) {
+  if (value is num) return value.toDouble();
+  if (value is Map && value[r'$'] == 'double' && value['v'] is num) {
+    return (value['v'] as num).toDouble();
+  }
+  return null;
+}
+
+int _bundlePrimInt(Object? value, int fallback) =>
+    value is num ? value.toInt() : fallback;
+
+/// (`code`, `themed`) color expression from any color shape; null when
+/// absent/unparseable. Map forms accept the tagged envelope AND the bare
+/// `{kind: token|literal, …}` map (same leniency as the canvas builders —
+/// canvas/codegen parity on hand-written docs).
+({String code, bool themed})? _bundlePrimColor(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is ColorValue) {
+    return (
+      code: tagged.toDart(_bundlePrimTheme),
+      themed: tagged.token != null
+    );
+  }
+  if (value is Map) {
+    if (value['kind'] == 'token' && value['token'] is String) {
+      return (
+        code: ColorValue.token(value['token'] as String)
+            .toDart(_bundlePrimTheme),
+        themed: true
+      );
+    }
+    if (value['kind'] == 'literal' && value['argb'] is num) {
+      return (
+        code: ColorValue.literal((value['argb'] as num).toInt())
+            .toDart(_bundlePrimTheme),
+        themed: false
+      );
+    }
+    return null;
+  }
+  if (value is int) {
+    return (
+      code: ColorValue.literal(value).toDart(_bundlePrimTheme),
+      themed: false
+    );
+  }
+  if (value is String) {
+    final hex = value.startsWith('#') ? value.substring(1) : value;
+    final full = hex.length == 6 ? 'FF$hex' : hex;
+    final argb = full.length == 8 ? int.tryParse(full, radix: 16) : null;
+    if (argb == null) return null;
+    return (
+      code: ColorValue.literal(argb).toDart(_bundlePrimTheme),
+      themed: false
+    );
+  }
+  return null;
+}
+
+/// Collapsed `const EdgeInsets…` or null when absent/unparseable.
+String? _bundlePrimEdge(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is EdgeInsetsValue) {
+    return 'const ${tagged.toDart(_bundlePrimTheme)}';
+  }
+  if (value is num) {
+    return 'const EdgeInsets.all(${_bundlePrimNum(value.toDouble())})';
+  }
+  if (value is Map) {
+    if (value.keys.any((k) => k == 'l' || k == 't' || k == 'r' || k == 'b')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      final parsed = EdgeInsetsValue(
+        left: n(value['l']),
+        top: n(value['t']),
+        right: n(value['r']),
+        bottom: n(value['b']),
+      );
+      return 'const ${parsed.toDart(_bundlePrimTheme)}';
+    }
+  }
+  return null;
+}
+
+/// Collapsed `BorderRadius…` (const-eligible, so callers add no prefix) or
+/// null when absent/unparseable.
+String? _bundlePrimRadius(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is BorderRadiusValue) return tagged.toDart(_bundlePrimTheme);
+  if (value is num) {
+    return 'BorderRadius.circular(${_bundlePrimNum(value.toDouble())})';
+  }
+  if (value is Map) {
+    if (value.keys
+        .any((k) => k == 'tl' || k == 'tr' || k == 'br' || k == 'bl')) {
+      double n(Object? x) => x is num ? x.toDouble() : 0.0;
+      final parsed = BorderRadiusValue(
+        topLeft: n(value['tl']),
+        topRight: n(value['tr']),
+        bottomRight: n(value['br']),
+        bottomLeft: n(value['bl']),
+      );
+      return parsed.toDart(_bundlePrimTheme);
+    }
+  }
+  return null;
+}
+
+/// Alignment expression (named-constant collapse) or null.
+String? _bundlePrimAlign(Object? value) {
+  final tagged = TaggedValue.parse(value);
+  if (tagged is AlignmentValue) return tagged.toDart(_bundlePrimTheme);
+  if (value is String) {
+    const names = {
+      'topLeft',
+      'topCenter',
+      'topRight',
+      'centerLeft',
+      'center',
+      'centerRight',
+      'bottomLeft',
+      'bottomCenter',
+      'bottomRight',
+    };
+    if (names.contains(value)) return 'Alignment.$value';
+    return null;
+  }
+  if (value is Map) {
+    final x = value['x'];
+    final y = value['y'];
+    if (x is num && y is num) {
+      return AlignmentValue(x.toDouble(), y.toDouble())
+          .toDart(_bundlePrimTheme);
+    }
+  }
+  return null;
+}
+
+/// (`Border.all…`, `themed`) or null when absent/unparseable.
+({String code, bool themed})? _bundlePrimBorder(Object? value) {
+  if (value is! Map) return null;
+  if (!value.containsKey('color') && !value.containsKey('width')) return null;
+  final color = _bundlePrimColor(value['color']);
+  final width = _bundlePrimDouble(value['width']) ?? 1.0;
+  return (
+    code: 'Border.all(color: ${color?.code ?? 'Color(0xFF000000)'}, '
+        'width: ${_bundlePrimNum(width)})',
+    themed: color?.themed ?? false,
+  );
+}
+
+/// Alignment expression from a raw `{x,y}` map (gradient ends) with a named
+/// fallback.
+String _bundlePrimXy(Object? value, String fallback) {
+  if (value is Map) {
+    final x = value['x'];
+    final y = value['y'];
+    if (x is num && y is num) {
+      return AlignmentValue(x.toDouble(), y.toDouble())
+          .toDart(_bundlePrimTheme);
+    }
+  }
+  return fallback;
+}
+
+/// LinearGradient lines at decoration depth (4-space base) + themed flag, or
+/// null when absent, empty, or unparseable (never a partial gradient).
+({List<String> lines, bool themed})? _bundlePrimGradient(Object? value) {
+  if (value is! Map) return null;
+  final colors = value['colors'];
+  if (colors is! List || colors.isEmpty) return null;
+  final parts = <({String code, bool themed})>[];
+  for (final c in colors) {
+    final part = _bundlePrimColor(c);
+    if (part == null) return null;
+    parts.add(part);
+  }
+  List<double>? stops;
+  if (value['stops'] is List) {
+    final raw = (value['stops'] as List).whereType<num>().toList();
+    if (raw.length == parts.length) {
+      stops = [for (final s in raw) s.toDouble()];
+    }
+  }
+  final themed = parts.any((p) => p.themed);
+  final lines = <String>[
+    '    gradient: ${themed ? '' : 'const '}LinearGradient(',
+    '      begin: ${_bundlePrimXy(value['begin'], 'Alignment.centerLeft')},',
+    '      end: ${_bundlePrimXy(value['end'], 'Alignment.centerRight')},',
+    '      colors: [',
+    for (final p in parts) '        ${p.code},',
+    '      ],',
+    if (stops != null)
+      '      stops: [${stops.map(_bundlePrimNum).join(', ')}],',
+    '    ),',
+  ];
+  return (lines: lines, themed: themed);
+}
+
+/// `boxShadow:` lines at decoration depth (4-space base) + themed flag, or
+/// null when absent/empty (unparseable entries are skipped, never a crash).
+/// Const lives on the list alone (`const` iff every stop is literal — a
+/// `const` entry inside a themed list would trip `unnecessary_const` the
+/// other way round, so entries never carry their own).
+({List<String> lines, bool themed})? _bundlePrimShadows(Object? value) {
+  if (value is! List || value.isEmpty) return null;
+  final entries = <List<String>>[];
+  var themed = false;
+  for (final s in value) {
+    if (s is! Map) continue;
+    final color = _bundlePrimColor(s['color']);
+    if (color?.themed ?? false) themed = true;
+    double n(Object? x) => x is num ? x.toDouble() : 0.0;
+    var ox = 0.0;
+    var oy = 0.0;
+    if (s['offset'] is Map) {
+      ox = n((s['offset'] as Map)['x']);
+      oy = n((s['offset'] as Map)['y']);
+    }
+    entries.add([
+      '      BoxShadow(',
+      '        color: ${color?.code ?? 'Color(0x40000000)'},',
+      '        blurRadius: ${_bundlePrimNum(_bundlePrimDouble(s['blur']) ?? 0.0)},',
+      '        spreadRadius: ${_bundlePrimNum(_bundlePrimDouble(s['spread']) ?? 0.0)},',
+      '        offset: Offset(${_bundlePrimNum(ox)}, ${_bundlePrimNum(oy)}),',
+      '      ),',
+    ]);
+  }
+  if (entries.isEmpty) return null;
+  return (
+    lines: [
+      '    boxShadow: ${themed ? '' : 'const '}[',
+      for (final entry in entries) ...entry,
+      '    ],',
+    ],
+    themed: themed,
+  );
+}
+
+/// `mainAxisAlignment:` name or null when default/unparseable (omit).
+String? _bundlePrimMainAxis(Object? value) {
+  switch (value) {
+    case 'center':
+      return 'MainAxisAlignment.center';
+    case 'end':
+      return 'MainAxisAlignment.end';
+    case 'spaceBetween':
+      return 'MainAxisAlignment.spaceBetween';
+    case 'spaceAround':
+      return 'MainAxisAlignment.spaceAround';
+    case 'spaceEvenly':
+      return 'MainAxisAlignment.spaceEvenly';
+    case 'start':
+    default:
+      return null;
+  }
+}
+
+/// `crossAxisAlignment:` name or null when default/unparseable (omit).
+String? _bundlePrimCrossAxis(Object? value) {
+  switch (value) {
+    case 'start':
+      return 'CrossAxisAlignment.start';
+    case 'end':
+      return 'CrossAxisAlignment.end';
+    case 'stretch':
+      return 'CrossAxisAlignment.stretch';
+    case 'center':
+    default:
+      return null;
+  }
+}
+
+/// Gap prop with fallback, clamped to ≥ 0 (negative would crash layout).
+double _bundlePrimGap(Map<String, dynamic> props, double fallback) {
+  final gap = _bundlePrimDouble(props['gap']) ?? fallback;
+  return gap < 0 ? 0 : gap;
+}
+
+/// Non-negative dim prop (negative would crash layout) or null when absent.
+double? _bundlePrimDim(Object? value) {
+  final parsed = _bundlePrimDouble(value);
+  if (parsed == null) return null;
+  return parsed < 0 ? 0 : parsed;
+}
+
+/// Flex prop clamped to ≥ 1 (Flutter asserts positive).
+int _bundlePrimFlex(Object? value) {
+  final flex = _bundlePrimInt(value, 1);
+  return flex < 1 ? 1 : flex;
+}
+
+/// `child:` arg lines for single-slot primitives (COMPOSITION.md §2.1): no
+/// block → [] (caller omits, or substitutes); one block → `child:` inline
+/// with leading `//` comment lines hoisted above (a comment cannot follow
+/// `child:` on the same line); several → `Column(min, start)` with
+/// `kFlowScreenGap` separators (the §1 below-fallback rhythm, same as the
+/// catalog [_primSingleChild]).
+List<String> _bundlePrimChildArg(List<List<String>> nested) {
+  if (nested.isEmpty) return const [];
+  if (nested.length == 1) return _bundlePrimChildLines(nested.single);
+  final out = <String>[
+    '  child: Column(',
+    '    mainAxisSize: MainAxisSize.min,',
+    '    crossAxisAlignment: CrossAxisAlignment.start,',
+    '    children: [',
+  ];
+  var first = true;
+  for (final block in nested) {
+    if (!first) out.add('      const SizedBox(height: 12),');
+    first = false;
+    for (final line in block) {
+      if (line.isEmpty) continue;
+      out.add('      $line');
+    }
+  }
+  out
+    ..add('    ],')
+    ..add('  ),');
+  return out;
+}
+
+/// One block as a `child:` arg: leading comment lines hoist to full lines
+/// above, the expression inlines after `child:` (the tap-wrap idiom).
+List<String> _bundlePrimChildLines(List<String> block) {
+  final comments = <String>[];
+  final rest = <String>[];
+  var head = true;
+  for (final line in block) {
+    if (line.isEmpty) continue;
+    if (head && line.startsWith('//')) {
+      comments.add(line);
+      continue;
+    }
+    head = false;
+    rest.add(line);
+  }
+  final out = <String>[for (final c in comments) '  $c'];
+  if (rest.isEmpty) {
+    out.add('  child: SizedBox.shrink(),');
+    return out;
+  }
+  out.add('  child: ${rest.first}');
+  for (var i = 1; i < rest.length; i++) {
+    var line = '    ${rest[i]}';
+    if (i == rest.length - 1 && !line.trimRight().endsWith(',')) {
+      line = '$line,';
+    }
+    out.add(line);
+  }
+  return out;
+}
+
+/// `children:` block lines with [gap] separators (column/row/stack bodies).
+List<String> _bundlePrimChildren(
+  List<List<String>> nested,
+  double gap,
+  bool vertical,
+) {
+  final sep = vertical
+      ? '    const SizedBox(height: ${_bundlePrimNum(gap)}),'
+      : '    const SizedBox(width: ${_bundlePrimNum(gap)}),';
+  final out = <String>['  children: ['];
+  var first = true;
+  for (final block in nested) {
+    if (!first) out.add(sep);
+    first = false;
+    for (final line in block) {
+      if (line.isEmpty) continue;
+      out.add('    $line');
+    }
+  }
+  out.add('  ],');
+  return out;
+}
+
+List<String> _bundleContainer(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final out = <String>['Container('];
+  final width = _bundlePrimDim(props['width']);
+  if (width != null) out.add('  width: ${_bundlePrimNum(width)},');
+  final height = _bundlePrimDim(props['height']);
+  if (height != null) out.add('  height: ${_bundlePrimNum(height)},');
+  final margin = _bundlePrimEdge(props['margin']);
+  if (margin != null) out.add('  margin: $margin,');
+  final padding = _bundlePrimEdge(props['padding']);
+  if (padding != null) out.add('  padding: $padding,');
+  final alignment = _bundlePrimAlign(props['alignment']);
+  if (alignment != null) out.add('  alignment: $alignment,');
+  final border =
+      props['border'] is Map ? _bundlePrimBorder(props['border']) : null;
+  final radius = _bundlePrimRadius(props['radius']);
+  final shadows =
+      props['shadow'] is List ? _bundlePrimShadows(props['shadow']) : null;
+  final gradient =
+      props['gradient'] is Map ? _bundlePrimGradient(props['gradient']) : null;
+  if (border == null && radius == null && shadows == null && gradient == null) {
+    final color = _bundlePrimColor(props['color']);
+    if (color != null) out.add('  color: ${color.code},');
+  } else {
+    final themed = (border?.themed ?? false) ||
+        (shadows?.themed ?? false) ||
+        (gradient?.themed ?? false) ||
+        ((_bundlePrimColor(props['color']))?.themed ?? false);
+    out.add(
+        '  decoration: ${themed ? '' : 'const '}BoxDecoration(');
+    final color = _bundlePrimColor(props['color']);
+    if (color != null) out.add('    color: ${color.code},');
+    if (border != null) out.add('    border: ${border.code},');
+    if (radius != null) out.add('    borderRadius: $radius,');
+    if (shadows != null) out.addAll(shadows.lines);
+    if (gradient != null) out.addAll(gradient.lines);
+    out.add('  ),');
+  }
+  out.addAll(_bundlePrimChildArg(nested));
+  if (out.length == 1) return ['Container(),'];
+  out.add('),');
+  return out;
+}
+
+List<String> _bundleColumn(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final out = <String>['Column('];
+  final main = _bundlePrimMainAxis(props['mainAxis']);
+  if (main != null) out.add('  mainAxisAlignment: $main,');
+  final cross = _bundlePrimCrossAxis(props['crossAxis']);
+  if (cross != null) out.add('  crossAxisAlignment: $cross,');
+  if (nested.isEmpty) {
+    out.add('  children: [],');
+  } else {
+    out.addAll(_bundlePrimChildren(nested, _bundlePrimGap(props, 12.0), true));
+  }
+  out.add('),');
+  return out;
+}
+
+List<String> _bundleRowKind(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final out = <String>['Row('];
+  final main = _bundlePrimMainAxis(props['mainAxis']);
+  if (main != null) out.add('  mainAxisAlignment: $main,');
+  final cross = _bundlePrimCrossAxis(props['crossAxis']);
+  if (cross != null) out.add('  crossAxisAlignment: $cross,');
+  if (nested.isEmpty) {
+    out.add('  children: [],');
+  } else {
+    out.addAll(_bundlePrimChildren(nested, _bundlePrimGap(props, 8.0), false));
+  }
+  out.add('),');
+  return out;
+}
+
+List<String> _bundleStack(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final out = <String>['Stack('];
+  final alignment = _bundlePrimAlign(props['alignment']);
+  if (alignment != null) out.add('  alignment: $alignment,');
+  final fit = switch (props['fit']) {
+    'expand' => 'StackFit.expand',
+    'passthrough' => 'StackFit.passthrough',
+    _ => null,
+  };
+  if (fit != null) out.add('  fit: $fit,');
+  if (nested.isEmpty) {
+    out.add('  children: [],');
+  } else {
+    out.add('  children: [');
+    for (final block in nested) {
+      for (final line in block) {
+        if (line.isEmpty) continue;
+        out.add('    $line');
+      }
+    }
+    out.add('  ],');
+  }
+  out.add('),');
+  return out;
+}
+
+List<String> _bundlePadding(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final padding = _bundlePrimEdge(props['padding']) ?? 'const EdgeInsets.all(16)';
+  return [
+    'Padding(',
+    '  padding: $padding,',
+    ..._bundlePrimChildArg(nested),
+    '),',
+  ];
+}
+
+List<String> _bundleCenter(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final child = _bundlePrimChildArg(nested);
+  if (child.isEmpty) return ['Center(),'];
+  return ['Center(', ...child, '),'];
+}
+
+List<String> _bundleAlign(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  return [
+    'Align(',
+    '  alignment: ${_bundlePrimAlign(props['alignment']) ?? 'Alignment.center'},',
+    ..._bundlePrimChildArg(nested),
+    '),',
+  ];
+}
+
+List<String> _bundleExpanded(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final flex = _bundlePrimFlex(props['flex']);
+  final out = <String>['Expanded('];
+  if (flex != 1) out.add('  flex: $flex,');
+  out.addAll(
+    _bundlePrimChildArg(
+      nested.isEmpty ? const [['SizedBox.shrink(),']] : nested,
+    ),
+  );
+  out.add('),');
+  return out;
+}
+
+List<String> _bundleSizedBox(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final width = _bundlePrimDim(props['width']);
+  final height = _bundlePrimDim(props['height']);
+  if (nested.isEmpty) {
+    if (width == null && height == null) return ['const SizedBox.shrink(),'];
+    final dims = [
+      if (width != null) 'width: ${_bundlePrimNum(width)}',
+      if (height != null) 'height: ${_bundlePrimNum(height)}',
+    ].join(', ');
+    return ['const SizedBox($dims),'];
+  }
+  final out = <String>['SizedBox('];
+  if (width != null) out.add('  width: ${_bundlePrimNum(width)},');
+  if (height != null) out.add('  height: ${_bundlePrimNum(height)},');
+  out.addAll(_bundlePrimChildArg(nested));
+  out.add('),');
+  return out;
+}
+
+List<String> _bundleSpacer(Map<String, dynamic> props) {
+  final flex = _bundlePrimFlex(props['flex']);
+  if (flex == 1) return ['const Spacer(),'];
+  return ['Spacer(flex: $flex),'];
+}
+
 /// Track C3 (COMPOSITION.md §2): kinds whose child slot screen bodies splice
 /// recursively generated children into — the same set as `codegen_single.dart`
-/// (mirrored here because this package's exporters share no code). The `row`
-/// pseudo-kind is structural (`isRow == true`, handled by [_writeBundleRow])
-/// and is NOT listed here. Every other kind is a leaf: children use the
-/// below-fallback ([_writeBundleFallback]).
+/// (mirrored here because this package's exporters share no code). The
+/// structural `isRow == true` row form is handled by [_writeBundleRow]; the
+/// first-class `row` item kind joins this set (Track F). Every other kind is
+/// a leaf: children use the below-fallback ([_writeBundleFallback]).
 const _bundleContainerKinds = {
   'card',
   'outlined_container',
@@ -3900,6 +4582,17 @@ const _bundleContainerKinds = {
   'toast',
   'validated',
   'refresh_trigger',
+  // Track F layout primitives with child slots (COMPOSITION.md §2.1;
+  // `spacer` is a leaf and stays out).
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
 };
 
 /// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with

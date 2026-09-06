@@ -2065,7 +2065,8 @@ void main() {
         expect(entry!.build is NodeBuilder, isTrue, reason: kind);
         expect(kContainerKinds.contains(kind), isTrue, reason: kind);
       }
-      expect(kContainerKinds, hasLength(14));
+      // Track F: 14 + the nine primitive containers (`spacer` is a leaf).
+      expect(kContainerKinds, hasLength(23));
     });
 
     /// The promoted chrome per kind (`Validated<String>` never equals the raw
@@ -2570,13 +2571,14 @@ void main() {
     testWidgets('row pseudo-kind renders its structural preview', (
       tester,
     ) async {
-      // Deliberate U1 side effect of the literal fallback rule (exists +
-      // real build → use it): the `row` pseudo-kind is canvasReady with a
-      // real structural builder, so it no longer renders unknown. Rows lay
-      // out structurally and never route item props here, so defaults apply.
+      // Track F promotion: `row` is a first-class catalog entry now (real
+      // `Row` builder + empty-state ghost), so it renders the catalog Row
+      // instead of the old registry structural preview. Rows laid out via
+      // `isRow` never route item props here; `items: [row]` nodes do.
       await _pump(tester, buildCatalogItem('row', {}));
       expect(find.text('unknown: row'), findsNothing);
-      expect(find.text('Row'), findsOneWidget);
+      expect(find.byType(Row), findsOneWidget);
+      expect(find.text('row'), findsOneWidget);
     });
 
     testWidgets('registry fallback honors the props/children contract', (

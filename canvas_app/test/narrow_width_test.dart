@@ -272,6 +272,30 @@ const Map<String, Map<String, dynamic>> _representativeProps = {
   'repeated_animation_builder': {'label': 'Beat'},
   'markdown': {'data': '# Hi\n\nSome *narrow* text.'},
   'text_animate': {'text': 'Typing it out.'},
+  // Track F additions (2026-09-06): the ten §7.1 layout primitives. The
+  // container color rides a tagged token envelope (maps survive `_longProps`
+  // untouched — only free-text strings are stressed).
+  'container': {
+    'width': 200.0,
+    'padding': 12,
+    'radius': 8.0,
+    'color': {
+      '\$': 'color',
+      'v': {
+        'kind': 'token',
+        'token': 'primary',
+      },
+    },
+  },
+  'column': {'gap': 4.0, 'mainAxis': 'center', 'crossAxis': 'stretch'},
+  'row': {'gap': 4.0, 'mainAxis': 'center', 'crossAxis': 'center'},
+  'stack': {'alignment': 'topLeft', 'fit': 'expand'},
+  'padding': {'padding': 24},
+  'center': {'widthFactor': 2.0, 'heightFactor': 2.0},
+  'align': {'alignment': 'bottomRight'},
+  'expanded': {'flex': 2},
+  'sized_box': {'width': 120.0, 'height': 60.0},
+  'spacer': {'flex': 2},
 };
 
 /// String prop keys that are enums/hex (not free text) — the long-text stress
@@ -284,6 +308,11 @@ const _kNonTextKeys = {
   'separator',
   'level',
   'hex',
+  // Track F primitive enums/alignment names (not free text either).
+  'mainAxis',
+  'crossAxis',
+  'fit',
+  'alignment',
 };
 
 /// Count extremes that only make sense as a stress case (beyond the
@@ -353,6 +382,13 @@ Future<void> _pumpChecked(
   expect(error, isNull, reason: reason);
 }
 
+/// Flex-role primitive kinds (`expanded`, `spacer`) are Flutter
+/// `ParentDataWidget`s: pumping them bare violates the framework contract
+/// (throws by design), so the direct leg below hosts them in a `Column`
+/// (bounded body — still catches overflow/paint errors) while the
+/// row-expanded leg stays as-is.
+const _kFlexKinds = {'expanded', 'spacer'};
+
 Future<void> _pumpBothLayouts(
   WidgetTester tester,
   String kind,
@@ -360,9 +396,12 @@ Future<void> _pumpBothLayouts(
   required bool dark,
   required String set,
 }) async {
+  final direct = _kFlexKinds.contains(kind)
+      ? Column(children: [buildCatalogItem(kind, props)])
+      : buildCatalogItem(kind, props);
   await _pumpChecked(
     tester,
-    buildCatalogItem(kind, props),
+    direct,
     dark: dark,
     reason: '$kind $set dark=$dark direct',
   );
@@ -372,9 +411,14 @@ Future<void> _pumpBothLayouts(
   if (kind == 'markdown') await tester.pumpAndSettle();
   // Narrow row child: catches unbounded-width crashes (Track M `command`
   // shell precedent) — the builder must survive a tight 320px slice of a Row.
+  // Flex-role kinds ride the Row directly (an extra `Expanded` wrapper would
+  // compete for the same parent data — a framework error, not a widget bug).
+  final rowChild = _kFlexKinds.contains(kind)
+      ? buildCatalogItem(kind, props)
+      : Expanded(child: buildCatalogItem(kind, props));
   await _pumpChecked(
     tester,
-    Row(children: [Expanded(child: buildCatalogItem(kind, props))]),
+    Row(children: [rowChild]),
     dark: dark,
     reason: '$kind $set dark=$dark row-expanded',
   );

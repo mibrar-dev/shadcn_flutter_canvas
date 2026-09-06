@@ -115,6 +115,20 @@ const _expectedKinds = {
   'text_animate',
   // Track Y1 addition (2026-09-06).
   'navigation_bar',
+  // Track F additions (2026-09-06): the ten §7.1 layout primitives (raw
+  // Flutter builders, kit-first exempt). The structural `row` container
+  // schema doubles as the `row` item-kind schema (same props, same
+  // defaults — see the note in `props_schema.dart`).
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
+  'spacer',
 };
 
 (CanvasStore, String, String) _storeWithButton() {
@@ -157,11 +171,13 @@ void main() {
       }
     });
 
-    test('all 68 catalog kinds plus the row container are covered', () {
+    test('all 107 catalog kinds are covered (row is first-class now)', () {
       expect(Set.of(kCatalog.map((e) => e.kind)), _expectedKinds);
       expect(Set.of(kPropSchemas.keys), containsAll(_expectedKinds));
       expect(kPropSchemas.containsKey('row'), isTrue);
-      expect(kPropSchemas.length, _expectedKinds.length + 1);
+      // Track F: `row` is a catalog kind, so the schema map holds exactly
+      // the catalog set (the old +1 was the schema-only structural row).
+      expect(kPropSchemas.length, _expectedKinds.length);
     });
 
     test('schema covers catalog defaults; extras resolve via spec defaults', () {

@@ -387,6 +387,132 @@ class PropSlotEditor extends StatelessWidget {
   }
 }
 
+/// Track F4 box-model editor for `edgeInsets` props (container
+/// padding/margin, padding primitive).
+///
+/// Parses the same shapes as the catalog builders (tagged envelope, raw num,
+/// raw `{l,t,r,b}` map; absent/unparseable → zeros) and always writes the
+/// canonical raw `{l,t,r,b}` map — builders and both codegen emitters read
+/// it back identically. Four compact labeled steppers (left/top/right/
+/// bottom), reusing [PropNumberEditor] so stepping/clamping/typing behave
+/// exactly like every other number prop.
+class PropEdgeInsetsEditor extends StatelessWidget {
+  final Map<String, double> value;
+  final ValueChanged<Map<String, double>> onChanged;
+
+  const PropEdgeInsetsEditor({
+    super.key,
+    required this.value,
+    required this.onChanged,
+  });
+
+  /// Lenient parse shared with the inspector wiring below (never a throw).
+  static Map<String, double> parse(Object? raw) {
+    double n(Object? x) => x is num ? x.toDouble() : 0.0;
+    if (raw is num) {
+      final d = raw.toDouble();
+      return {'l': d, 't': d, 'r': d, 'b': d};
+    }
+    if (raw is Map) {
+      final Map v = (raw[r'$'] == 'edgeInsets' && raw['v'] is Map)
+          ? raw['v'] as Map
+          : raw;
+      if (v.keys.any((k) => k == 'l' || k == 't' || k == 'r' || k == 'b')) {
+        return {'l': n(v['l']), 't': n(v['t']), 'r': n(v['r']), 'b': n(v['b'])};
+      }
+    }
+    return {'l': 0, 't': 0, 'r': 0, 'b': 0};
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const sides = ['l', 't', 'r', 'b'];
+    const labels = {'l': 'Left', 't': 'Top', 'r': 'Right', 'b': 'Bottom'};
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var i = 0; i < sides.length; i++) ...[
+          if (i > 0) const SizedBox(height: _kEditorGap),
+          Row(
+            children: [
+              SizedBox(
+                width: 64,
+                child: Text(labels[sides[i]]!, style: EditorType.tileLabel),
+              ),
+              Expanded(
+                child: PropNumberEditor(
+                  key: ValueKey('edge-${sides[i]}'),
+                  value: value[sides[i]] ?? 0,
+                  min: 0,
+                  step: 4,
+                  onChanged: (v) => onChanged({...value, sides[i]: v}),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// Track F4 alignment grid for `alignment` props (stack/align/container).
+///
+/// Nine small buttons writing the named `Alignment` constants
+/// (`topLeft`…`bottomRight`, `center`); the active one fills. Values that
+/// are not named constants (tagged `{x,y}` maps, raw maps) show no active
+/// button but stay pickable — picking writes the name. Pure props, no store
+/// import (same contract as every other editor here).
+class PropAlignmentGrid extends StatelessWidget {
+  final String? value;
+  final ValueChanged<String> onChanged;
+
+  const PropAlignmentGrid({super.key, required this.value, required this.onChanged});
+
+  static const names = [
+    ['topLeft', 'topCenter', 'topRight'],
+    ['centerLeft', 'center', 'centerRight'],
+    ['bottomLeft', 'bottomCenter', 'bottomRight'],
+  ];
+
+  /// Lenient read: named strings pass through; anything else (tagged/raw
+  /// maps, null) shows no selection.
+  static String? read(Object? raw) => raw is String ? raw : null;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (final row in names)
+          Padding(
+            padding: const EdgeInsets.only(bottom: _kEditorGap),
+            child: Row(
+              children: [
+                for (var i = 0; i < row.length; i++) ...[
+                  if (i > 0) const SizedBox(width: EditorMetrics.toolbarButtonGap),
+                  Expanded(
+                    child: value == row[i]
+                        ? shadcn.PrimaryButton(
+                            size: shadcn.ButtonSize.small,
+                            onPressed: () => onChanged(row[i]),
+                            child: Text(row[i]),
+                          )
+                        : shadcn.OutlineButton(
+                            size: shadcn.ButtonSize.small,
+                            onPressed: () => onChanged(row[i]),
+                            child: Text(row[i]),
+                          ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 /// Disabled-editor marker for dictated store params that have not landed
 /// yet (W3 `patchNode` params): a TODO chip plus the reason.
 class TodoChip extends StatelessWidget {

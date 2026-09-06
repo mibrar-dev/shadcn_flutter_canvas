@@ -8,8 +8,8 @@
 /// `_bridgeKinds` / `_readyKinds` are library-scoped and cannot be imported)
 /// and cross-checks them against the importable registry + catalog surface:
 /// every catalog kind must be a generator bridge kind, and the registry's
-/// canvas-ready set must equal bridges + bare-widget builds + the `row`
-/// pseudo-kind exactly. A Track-J-style hand bridge that forgets the
+/// canvas-ready set must equal bridges + bare-widget builds exactly (Track F:
+/// `row` is a bridge kind now, not a special case). A Track-J-style hand
 /// generator update (or a stale generator entry) fails loudly here instead
 /// of silently reverting on regen.
 ///
@@ -29,9 +29,12 @@ import 'package:flutter_test/flutter_test.dart';
 import '../tool/gen_registry.dart' as gen;
 
 /// Catalog kinds with real bridges that the frozen generator does not know
-/// yet (see the file header). Kept to exactly the Track Y1 set; any other
-/// drift still fails loudly.
-const kFrozenTrackKinds = <String>{'navigation_bar'};
+/// yet (see the file header). Track F retired the Track Y1 exemption:
+/// `navigation_bar` is a `_bridgeKinds` entry now (a regen preserves it),
+/// and the ten layout primitives are bridges too — so this set is empty.
+/// Kept (empty) so a future frozen-track exemption still fails loudly if it
+/// forgets the generator update.
+const kFrozenTrackKinds = <String>{};
 
 void main() {
   group('gen_registry drift guard', () {
@@ -60,6 +63,8 @@ void main() {
     });
 
     test('registry canvas-ready set matches generator allowlists exactly', () {
+      // Track F: `row` is a bridge kind now (one of the ten primitives), so
+      // the literal below is redundant but kept as documentation.
       final expected = <String>{
         ...gen.bridgeKindsForTest,
         ...gen.readyKindsForTest.keys,
@@ -82,14 +87,14 @@ void main() {
       );
     });
 
-    test('pinned counts: 96 bridges + 10 bare builders + row + 1 frozen-track exemption = 108 ready', () {
-      expect(gen.bridgeKindsForTest, hasLength(96));
+    test('pinned counts: 107 bridges + 10 bare builders = 117 ready', () {
+      expect(gen.bridgeKindsForTest, hasLength(107));
       expect(gen.readyKindsForTest, hasLength(10));
-      expect(kCatalog, hasLength(97));
-      expect(kFrozenTrackKinds, <String>{'navigation_bar'});
+      expect(kCatalog, hasLength(107));
+      expect(kFrozenTrackKinds, isEmpty);
       expect(
         [for (final e in kRegistry) if (e.canvasReady) e.kind],
-        hasLength(108),
+        hasLength(117),
       );
     });
   });

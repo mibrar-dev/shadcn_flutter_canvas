@@ -296,6 +296,40 @@ class CanvasScreen {
       };
 }
 
+/// Sizing mode per axis (Track F1 — BUILD_SPEC §7.2 vocabulary, P16
+/// reconciliation).
+///
+/// P16/U2 already landed this vocabulary in stored form: fixed width/height
+/// ride `CanvasNode.w`/`h` (null = auto), and expand rides `expand`
+/// (`flex`/`expanded`) + `flex` on the child node. Storing a parallel
+/// `widthMode`/`heightMode` field would duplicate that state across ~14
+/// `CanvasNode(...)` reconstruction sites in `canvas_store.dart` (plus the
+/// `_withProps` copies in both exporters) — the exact silent-drop class the
+/// COPY-SITE CONTRACT below documents for `w`/`h`.
+///
+/// So the modes are DERIVED, not stored: [CanvasNode.widthMode] and
+/// [CanvasNode.heightMode] compute from `w`/`h`/`expand` (fixed ⟺ explicit
+/// `w`/`h`; expand ⟺ `expand` is `flex`/`expanded`; else hug/intrinsic).
+/// No new JSON keys, no store carries, no migration: old docs round-trip
+/// byte-identically by construction, and emitters switch on the modes
+/// without a second source of truth.
+///
+/// KIT-FIRST EXEMPTION (BUILD_SPEC §7.1): layout primitives (`container`,
+/// `column`, `row`, `stack`, `padding`, `center`, `align`, `expanded`,
+/// `sized_box`, `spacer`) are raw Flutter widgets (`Container`, `Column`,
+/// …), not kit widgets. The `shadcn_ui.dart` kit-first rule does NOT apply
+/// to them — recorded here and in `canvas/COMPOSITION.md` §2 (Track F1).
+enum SizeMode {
+  /// Explicit logical-px size (`w`/`h` set).
+  fixed,
+
+  /// Fill free space (`expand` of `flex`/`expanded` on a row/column child).
+  expand,
+
+  /// Intrinsic size (no `w`/`h`, no expand role).
+  hug,
+}
+
 /// A flow-layout container of items on a screen.
 ///
 /// `parentId == null` means the node sits in the screen-root vertical flow.
@@ -432,6 +466,24 @@ class CanvasNode {
   /// handles, export ignores the flag. Missing key parses to false;
   /// [toJson] omits the key when false.
   final bool locked;
+
+  /// Sizing mode of the horizontal axis (Track F1 — derived, see [SizeMode]).
+  ///
+  /// Fixed when [w] is set; expand when this node carries an expand role
+  /// ([expand] of `flex`/`expanded`, meaningful as a row/column child);
+  /// hug otherwise. Fixed beats expand (documented precedence on the sizing
+  /// table above, mirrored by both codegen row-child emitters).
+  SizeMode get widthMode {
+    if (w != null) return SizeMode.fixed;
+    if (expand == 'flex' || expand == 'expanded') return SizeMode.expand;
+    return SizeMode.hug;
+  }
+
+  /// Sizing mode of the vertical axis (Track F1 — derived, see [SizeMode]).
+  ///
+  /// Fixed when [h] is set, hug otherwise. The expand role is horizontal
+  /// (row/column main axis), so it never applies here.
+  SizeMode get heightMode => h != null ? SizeMode.fixed : SizeMode.hug;
 
   const CanvasNode({
     required this.id,

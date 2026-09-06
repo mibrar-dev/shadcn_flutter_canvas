@@ -1,9 +1,10 @@
 // Generates lib/canvas/component_registry.dart from the kit manifest.
 //
 // Reads `components.json` (id + description + category per component) and
-// emits one [RegistryEntry] per kit component id plus the `row` pseudo-kind.
+// emits one [RegistryEntry] per kit component id plus the ten Track F
+// layout primitives ([_primitiveKinds]).
 // Entry builders are NOT generated from previews (previews render full
-// `Scaffold`s — see component_catalog.dart): the 96 catalog kinds bridge to
+// `Scaffold`s — see component_catalog.dart): the 106 catalog kinds bridge to
 // `buildCatalogWithDefaults`, 10 hand-verified EASY kinds get bare-widget
 // builders (sources embedded below, each verified by grepping the kit
 // `_impl/` sources for a ctor taking only string/num/bool/enum/child
@@ -56,7 +57,7 @@ const _hiddenUtilities = <String>{
   'wrapper',
 };
 
-/// The 96 catalog kinds: registry builders delegate to
+/// The 106 catalog kinds: registry builders delegate to
 /// `catalog.buildCatalogWithDefaults` (no duplication).
 const _bridgeKinds = <String>{
   'button',
@@ -163,6 +164,25 @@ const _bridgeKinds = <String>{
   'repeated_animation_builder',
   'markdown',
   'text_animate',
+  // Track Y1 promotion (2026-09-06), preserved across regen: `navigation_bar`
+  // has a real catalog builder; the frozen-track exemption in
+  // `test/gen_registry_drift_test.dart` was retired when this line landed.
+  'navigation_bar',
+  // Track F additions (2026-09-06): the ten §7.1 layout primitives (raw
+  // Flutter builders in component_catalog.dart, kit-first exempt); listed
+  // here so a regen byte-preserves their bridges. They emit into the
+  // `Layout Primitives` section (see [_primitiveKinds]), not the
+  // kit-category loop below (they are not kit components).
+  'container',
+  'column',
+  'row',
+  'stack',
+  'padding',
+  'center',
+  'align',
+  'expanded',
+  'sized_box',
+  'spacer',
 };
 
 /// Hand-verified EASY kinds with real bare-widget builders below
@@ -187,6 +207,58 @@ const _readyKinds = <String, String>{
 /// emission.
 const bridgeKindsForTest = _bridgeKinds;
 const readyKindsForTest = _readyKinds;
+
+/// Track F layout primitives: kind → (label, icon) for the `Layout
+/// Primitives` section. Labels MUST equal the `CatalogEntry.label` values in
+/// `component_catalog.dart` (pinned by the registry bridge test); icons are
+/// material icons (primitives are raw Flutter, never kit widgets).
+///
+/// `row` sorts first (the historical pseudo-kind position); the rest are
+/// alphabetical. All ten bridge to `catalog.buildCatalogWithDefaults` like
+/// every other bridge kind (see the emission below).
+const _primitiveKinds = <String, ({String label, String icon})>{
+  'row': (
+    label: 'Horizontal layout with gap separators.',
+    icon: 'Icons.view_column',
+  ),
+  'align': (
+    label: 'Single-child alignment wrapper.',
+    icon: 'Icons.format_align_center',
+  ),
+  'center': (
+    label: 'Single-child centering wrapper.',
+    icon: 'Icons.center_focus_strong',
+  ),
+  'column': (
+    label: 'Vertical layout with gap separators.',
+    icon: 'Icons.table_rows',
+  ),
+  'container': (
+    label:
+        'Raw container with padding, color, radius, border, gradient, and shadow.',
+    icon: 'Icons.check_box_outline_blank',
+  ),
+  'expanded': (
+    label: 'Flex-fill wrapper for row and column children.',
+    icon: 'Icons.expand',
+  ),
+  'padding': (
+    label: 'Single-child padding wrapper.',
+    icon: 'Icons.padding',
+  ),
+  'sized_box': (
+    label: 'Fixed-size box with optional child.',
+    icon: 'Icons.aspect_ratio',
+  ),
+  'spacer': (
+    label: 'Flex-fill empty space for rows and columns.',
+    icon: 'Icons.space_bar',
+  ),
+  'stack': (
+    label: 'Overlapping layout with alignment and fit.',
+    icon: 'Icons.layers',
+  ),
+};
 
 /// Nearest Icons.* constant per kit component id (fallback: Icons.widgets).
 const _icons = <String, String>{
@@ -557,13 +629,13 @@ void main(List<String> args) {
         'lib/registry/manifests/components.json '
         '(${components.length} components).')
     ..writeln('//')
-    ..writeln('// One entry per kit component id plus the `row` pseudo-kind.')
+    ..writeln('// One entry per kit component id plus the ten Track F')
+    ..writeln('// layout primitives (raw Flutter builders, kit-first exempt).')
     ..writeln('// `canvasReady` is true only where a real bare-widget builder')
-    ..writeln('// exists: the 96 catalog kinds bridge to')
-    ..writeln('// `catalog.buildCatalogWithDefaults` (no duplication), the 10')
-    ..writeln('// hand-verified EASY kinds below build real widgets, and the')
-    ..writeln('// `row` pseudo-kind renders its structural Row (rows carry no')
-    ..writeln('// items and lay out in ScreenSurface). Every other kind gets')
+    ..writeln('// exists: the 106 catalog kinds bridge to')
+    ..writeln('// `catalog.buildCatalogWithDefaults` (no duplication) and the')
+    ..writeln('// 10 hand-verified EASY kinds below build real widgets.')
+    ..writeln('// Every other kind gets')
     ..writeln('// [RegistryPlaceholder]: a dashed-border card with the label +')
     ..writeln("// 'canvas-ready coming soon' — the palette lists them anyway")
     ..writeln('// (product requirement), rendering honestly.')
@@ -579,7 +651,7 @@ void main(List<String> args) {
     ..writeln()
     ..writeln('/// One palette/canvas registry entry.')
     ..writeln('///')
-    ..writeln('/// [kind] is the kit component id (or the `row` pseudo-kind).')
+    ..writeln('/// [kind] is the kit component id (or a Track F layout primitive).')
     ..writeln('/// [label] mirrors the manifest description (the palette tile shows')
     ..writeln('/// the humanized kind; the label is the tooltip + search text).')
     ..writeln('/// [section] is one of [kRegistrySectionOrder]. [build] constructs')
@@ -760,32 +832,26 @@ void main(List<String> args) {
   }
 
   out
-    ..writeln('/// Full registry: every kit component id plus the `row`')
-    ..writeln('/// pseudo-kind, grouped by [kRegistrySectionOrder] (kinds')
+    ..writeln('/// Full registry: every kit component id plus the ten Track F')
+    ..writeln('/// layout primitives, grouped by [kRegistrySectionOrder] (kinds')
     ..writeln('/// alphabetical within a section).')
     ..writeln('final List<RegistryEntry> kRegistry = [');
 
-  // Row pseudo-kind first (Layout Primitives).
-  out
-    ..writeln("  // Layout Primitives.")
-    ..writeln('  RegistryEntry(')
-    ..writeln("    kind: 'row',")
-    ..writeln("    label: 'Row',")
-    ..writeln("    section: 'Layout Primitives',")
-    ..writeln('    icon: Icons.view_column,')
-    ..writeln('    // Rows carry no items and lay out structurally in')
-    ..writeln('    // ScreenSurface (see kContainerTiles); this builder renders')
-    ..writeln('    // the same horizontal structure for standalone previews.')
-    ..writeln('    build: (_) => const Row(')
-    ..writeln('      mainAxisSize: MainAxisSize.min,')
-    ..writeln('      children: [')
-    ..writeln('        Icon(Icons.view_column, size: 20),')
-    ..writeln('        SizedBox(width: 8),')
-    ..writeln("        Text('Row'),")
-    ..writeln('      ],')
-    ..writeln('    ),')
-    ..writeln('    canvasReady: true,')
-    ..writeln('  ),');
+  // Layout Primitives first: the ten Track F kinds (see [_primitiveKinds]),
+  // each bridging to its catalog builder like every other bridge kind.
+  out.writeln("  // Layout Primitives.");
+  for (final entry in _primitiveKinds.entries) {
+    out
+      ..writeln('  RegistryEntry(')
+      ..writeln('    kind: ${_dartStr(entry.key)},')
+      ..writeln('    label: ${_dartStr(entry.value.label)},')
+      ..writeln("    section: 'Layout Primitives',")
+      ..writeln('    icon: ${entry.value.icon},')
+      ..writeln(
+          '    build: (context) => catalog.buildCatalogWithDefaults(${_dartStr(entry.key)}),')
+      ..writeln('    canvasReady: true,')
+      ..writeln('  ),');
+  }
 
   // Kit components grouped by section order, alphabetical within.
   final bySection = <String, List<Map<String, dynamic>>>{};
@@ -824,10 +890,12 @@ void main(List<String> args) {
   File('${appRoot.path}/lib/canvas/component_registry.dart')
     ..parent.createSync(recursive: true)
     ..writeAsStringSync(out.toString());
-  final ready =
-      _bridgeKinds.length + _readyKinds.length + 1; // +1 for row.
+  // Track F: `row` is a bridge kind now (one of the ten primitives), so no
+  // +1: canvas-ready == bridges + bare EASY builders exactly.
+  final ready = _bridgeKinds.length + _readyKinds.length;
+  final primitives = _primitiveKinds.length;
   stdout.writeln(
-    'emitted ${components.length + 1} entries ($ready canvas-ready)',
+    'emitted ${components.length + primitives} entries ($ready canvas-ready)',
   );
 }
 

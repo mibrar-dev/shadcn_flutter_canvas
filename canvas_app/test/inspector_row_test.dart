@@ -17,6 +17,10 @@ void main() {
     test('every catalog kind resolves a schema (loop)', () {
       expect(kCatalog, isNotEmpty);
       for (final entry in kCatalog) {
+        // Track F: `row` keeps its dedicated structural editor — the legacy
+        // view excludes the `row` key by design (the live inspector reads
+        // `kPropSchemas`, which does cover `row`).
+        if (entry.kind == 'row') continue;
         expect(
           kInspectorSchemas.containsKey(entry.kind),
           isTrue,
@@ -25,7 +29,7 @@ void main() {
       }
     });
 
-    test('all 97 catalog kinds are covered', () {
+    test('all 107 catalog kinds are covered', () {
       const expected = {
         'button',
         'card',
@@ -131,9 +135,29 @@ void main() {
         // Track Y1 addition (2026-09-06): covered via the derived
         // `kInspectorSchemas` (built from `kPropSchemas`, no inspector edit).
         'navigation_bar',
+        // Track F additions (2026-09-06): the ten §7.1 layout primitives,
+        // covered via the derived `kInspectorSchemas` the same way. `row`
+        // keeps its dedicated structural editor: the legacy view excludes
+        // the `row` key by design (see below), while the live inspector
+        // reads `kPropSchemas` directly.
+        'container',
+        'column',
+        'row',
+        'stack',
+        'padding',
+        'center',
+        'align',
+        'expanded',
+        'sized_box',
+        'spacer',
       };
       expect(Set.of(kCatalog.map((e) => e.kind)), expected);
-      expect(Set.of(kInspectorSchemas.keys), containsAll(expected));
+      // The legacy `kInspectorSchemas` view excludes `row` (dedicated
+      // structural editor); every other kind derives automatically.
+      expect(
+        Set.of(kInspectorSchemas.keys),
+        containsAll(expected.difference({'row'})),
+      );
     });
   });
 

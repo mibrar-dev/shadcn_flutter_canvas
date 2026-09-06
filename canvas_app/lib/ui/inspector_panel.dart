@@ -2432,6 +2432,25 @@ class _InspectorPanelState extends State<InspectorPanel> {
         editor = PropSlotEditor(
           label: '${spec.name}: ${resolved ?? spec.defaultValue ?? 'empty'}',
         );
+      case 'edgeInsets':
+        // Track F4 box-model editor (container padding/margin, padding
+        // primitive). Writes the canonical raw `{l,t,r,b}` map; reset
+        // clears back to the null (unset) default via the shared path.
+        final dims = PropEdgeInsetsEditor.parse(resolved);
+        editor = PropEdgeInsetsEditor(
+          key: ValueKey('${item.id}/${spec.name}'),
+          value: dims,
+          onChanged: (v) => _patch(spec.name, v),
+        );
+      case 'alignment':
+        // Track F4 alignment grid (stack/align/container). Named constants
+        // round-trip as strings; exotic forms (tagged maps) show no
+        // selection until picked.
+        editor = PropAlignmentGrid(
+          key: ValueKey('${item.id}/${spec.name}'),
+          value: PropAlignmentGrid.read(resolved),
+          onChanged: (v) => _patch(spec.name, v),
+        );
       default:
         // Unknown spec types render read-only instead of crashing.
         editor = Text('${spec.name}: $resolved');

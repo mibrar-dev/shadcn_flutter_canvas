@@ -338,11 +338,15 @@ void main() {
   });
 
   group('palette container resolution', () {
-    test('row resolves to the container tile', () {
+    test('row resolves to its first-class catalog entry', () {
+      // Track F promotion: `row` is a catalog entry now, and catalog kinds
+      // resolve first (see the next test) — so drops/diagnostics see the
+      // real Row builder entry, while `kContainerTiles` keeps the
+      // structural tile record for the `isRow` render path.
       final entry = resolvePaletteEntry('row');
       expect(entry, isNotNull);
       expect(entry!.kind, 'row');
-      expect(entry.label, 'Row');
+      expect(entry.label, findEntry('row')!.label);
     });
 
     test('catalog kinds resolve first, unknown kinds stay null', () {
