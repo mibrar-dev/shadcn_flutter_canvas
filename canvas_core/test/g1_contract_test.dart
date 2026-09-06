@@ -154,6 +154,46 @@ void main() {
       expect(imports.lines, ["import 'package:t/t.dart' as t;"]);
     });
 
+    test('import collector renders hide/show combinators, unions re-adds',
+        () {
+      final imports = ImportCollector()
+        ..add('package:k/k.dart', hide: const ['Theme', 'Column'])
+        ..add('package:k/k.dart', hide: const ['Column', 'Row'])
+        ..add('package:s/s.dart', asPrefix: 's', show: const ['A']);
+      expect(imports.lines, [
+        "import 'package:k/k.dart' hide Column, Row, Theme;",
+        "import 'package:s/s.dart' as s show A;",
+      ]);
+      // Conflicting prefixes keep the first registration; hides merge.
+      final prefixed = ImportCollector()
+        ..add('package:t/t.dart', asPrefix: 'a', hide: const ['X'])
+        ..add('package:t/t.dart', asPrefix: 'b', hide: const ['Y']);
+      expect(prefixed.lines, ["import 'package:t/t.dart' as a hide X, Y;"]);
+    });
+
+    test('overlong imports wrap before each combinator (dart format shape)',
+        () {
+      final imports = ImportCollector()
+        ..add(
+          'package:flutter_shadcn_kit/flutter_shadcn_kit.dart',
+          hide: const [
+            'Column',
+            'Expanded',
+            'Flex',
+            'Flexible',
+            'Positioned',
+            'Row',
+            'Stack',
+            'Theme',
+          ],
+        );
+      expect(imports.lines, [
+        "import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart'\n"
+            '    hide Column, Expanded, Flex, Flexible, Positioned, Row,'
+            ' Stack, Theme;',
+      ]);
+    });
+
     test('name allocator is unique, sanitized, digit-guarded', () {
       final names = NameAllocator();
       expect(names.allocate('emailController'), 'emailController');

@@ -58,6 +58,16 @@ import 'widget_emitter.dart';
 /// (the §8.1 package-dep contract — cf. §4.2's `flutter_shadcn_kit` shape).
 const kG3KitImport = 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart';
 
+/// Shared `collectImports` for the ten G3 emitters: the global barrel
+/// (with the kit-side hide list) plus this [kind]'s Flutter-side hides.
+void _collectG3KitImport(EmitContext ctx, String kind) {
+  ctx.imports.add(kG3KitImport, hide: kKitImportHide);
+  final flutterHide = kG3FlutterHideByKind[kind];
+  if (flutterHide != null) {
+    ctx.imports.add('package:flutter/material.dart', hide: flutterHide);
+  }
+}
+
 /// Lenient string prop: missing/non-string values fall back (never crash).
 String g3Str(Map<String, dynamic> props, String key, String fallback) {
   final value = props[key];
@@ -130,16 +140,18 @@ class ChipEmitter extends AstEmitter {
     List<Expression> children,
     EmitContext ctx,
   ) =>
-      leaf("Chip(child: Text(${g3Quote(g3Str(item.props, 'label', 'Chip'))}))");
+      leaf(
+          "const Chip(child: Text(${g3Quote(g3Str(item.props, 'label', 'Chip'))}))");
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
 /// `alert`: title / content `Text`s + `destructive` (mirrors
-/// `buildAlertEntry`).
+/// `buildAlertEntry`). All-const args + const kit ctor → `const` (gate 4
+/// `prefer_const_constructors`).
 class AlertEmitter extends AstEmitter {
   const AlertEmitter();
 
@@ -153,18 +165,18 @@ class AlertEmitter extends AstEmitter {
     List<Expression> children,
     EmitContext ctx,
   ) =>
-      refer('Alert').newInstance([], {
+      constOf(refer('Alert').newInstance([], {
         'title': g3Text(g3Str(item.props, 'title', 'Alert')),
         'content': g3Text(
           g3Str(item.props, 'content', 'Something happened.'),
         ),
         'destructive':
             leaf(g3Bool(item.props, 'destructive', false) ? 'true' : 'false'),
-      });
+      }));
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -184,12 +196,12 @@ class CircularProgressEmitter extends AstEmitter {
     EmitContext ctx,
   ) {
     final value = formatPrimNum(g3Double(item.props, 'value', 0.6, 0.0, 1.0));
-    return leaf('CircularProgressIndicator(value: $value)');
+    return leaf('const CircularProgressIndicator(value: $value)');
   }
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -209,12 +221,12 @@ class LinearProgressEmitter extends AstEmitter {
     EmitContext ctx,
   ) {
     final value = formatPrimNum(g3Double(item.props, 'value', 0.6, 0.0, 1.0));
-    return leaf('LinearProgressIndicator(value: $value)');
+    return leaf('const LinearProgressIndicator(value: $value)');
   }
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -234,12 +246,12 @@ class TripleDotsEmitter extends AstEmitter {
     EmitContext ctx,
   ) {
     final count = g3Int(item.props, 'count', 3, 1, 9);
-    return leaf('MoreDots(count: $count)');
+    return leaf('const MoreDots(count: $count)');
   }
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -261,15 +273,15 @@ class DotIndicatorEmitter extends AstEmitter {
   ) {
     final length = g3Int(item.props, 'length', 3, 1, 9);
     final index = g3Int(item.props, 'index', 0, 0, length - 1);
-    return refer('DotIndicator').newInstance([], {
+    return constOf(refer('DotIndicator').newInstance([], {
       'index': leaf('$index'),
       'length': leaf('$length'),
-    });
+    }));
   }
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -288,16 +300,16 @@ class EmptyStateEmitter extends AstEmitter {
     List<Expression> children,
     EmitContext ctx,
   ) =>
-      refer('EmptyState').newInstance([], {
+      constOf(refer('EmptyState').newInstance([], {
         'title': g3Text(g3Str(item.props, 'title', 'No results')),
         'description': g3Text(
           g3Str(item.props, 'description', 'Try adjusting your search.'),
         ),
-      });
+      }));
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -316,17 +328,21 @@ class CodeSnippetEmitter extends AstEmitter {
     List<Expression> children,
     EmitContext ctx,
   ) =>
-      leaf("CodeSnippet(code: Text(${g3Quote(g3Str(item.props, 'code', 'const x = 1;'))}))");
+      leaf(
+          "const CodeSnippet(code: Text(${g3Quote(g3Str(item.props, 'code', 'const x = 1;'))}))");
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
 /// `number_ticker`: plain integer formatter pinned, value `num`-parsed
 /// (mirrors `buildNumberTickerEntry`). Static snapshot: initial value +
 /// pure formatter closure, never a dangling builder reference.
+/// Deliberately NON-const: the `formatter` closure is never a constant
+/// expression, so no `const` invocation is legal here (gate 4
+/// `prefer_const_constructors` cannot fire on it).
 class NumberTickerEmitter extends AstEmitter {
   const NumberTickerEmitter();
 
@@ -347,7 +363,7 @@ class NumberTickerEmitter extends AstEmitter {
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 
@@ -356,6 +372,10 @@ class NumberTickerEmitter extends AstEmitter {
 /// catalog builder's caption rhythm). Static snapshot with no controller
 /// reference — the `{Page}Model` shell owns the controller (see
 /// `planModelFields`, which already allocates `text_area` controllers).
+/// Const-correct (gate 4): the field takes only const-evaluable args
+/// (placeholder `Text`, `enabled` bool) and the kit ctor is const, so it
+/// emits `const` — including inside the label caption's non-const `Column`
+/// children, where a const element is still legal and still lint-clean.
 class TextAreaEmitter extends AstEmitter {
   const TextAreaEmitter();
 
@@ -369,28 +389,35 @@ class TextAreaEmitter extends AstEmitter {
     List<Expression> children,
     EmitContext ctx,
   ) {
-    final field = refer('TextArea').newInstance([], {
-      'placeholder':
-          g3Text(g3Str(item.props, 'placeholder', 'Type here')),
-      'enabled':
-          leaf(g3Bool(item.props, 'disabled', false) ? 'false' : 'true'),
-    });
+    final field = constOf(refer('TextArea').newInstance([], {
+      'placeholder': g3Text(g3Str(item.props, 'placeholder', 'Type here')),
+      'enabled': leaf(g3Bool(item.props, 'disabled', false) ? 'false' : 'true'),
+    }));
     final label = g3Str(item.props, 'label', '');
     if (label.isEmpty) return field;
-    return refer('Column').newInstance([], {
+    // The caption Column consts unconditionally (gate 4 canonical-const
+    // rule): its children are const-eligible by construction (literal label
+    // Text, const separator, const field), so their keywords are absorbed
+    // into the caption's const context — never spelled nested.
+    final captionKids = <Expression>[
+      leaf('const Text(${g3Quote(label)})'),
+      gapLeaf(6, true),
+      field,
+    ];
+    final joined =
+        captionKids.map((k) => stripConst(k).accept(DartEmitter())).join(',\n');
+    return constOf(refer('Column').newInstance([], {
       'mainAxisSize': leaf('MainAxisSize.min'),
       'crossAxisAlignment': leaf('CrossAxisAlignment.start'),
       // Trailing comma after the last element: canonical multi-element list
       // form (the G2 trailing-comma policy — a formatter fixpoint, gate 3).
-      'children': leaf(
-        "[Text(${g3Quote(label)}),\nconst SizedBox(height: 6),\n${field.accept(DartEmitter())},\n]",
-      ),
-    });
+      'children': leaf('[$joined,\n]'),
+    }));
   }
 
   @override
   void collectImports(EmitContext ctx) {
-    ctx.imports.add(kG3KitImport);
+    _collectG3KitImport(ctx, type);
   }
 }
 

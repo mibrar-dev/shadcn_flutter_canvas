@@ -4,6 +4,7 @@
 /// out/
 /// ├─ pubspec.yaml              # flutter_shadcn_kit + only what's used
 /// ├─ analysis_options.yaml     # flutter_lints
+/// ├─ web/                      # index.html + manifest.json + icons (gate 5)
 /// ├─ lib/
 /// │  ├─ main.dart              # MaterialApp.router + theme
 /// │  ├─ theme/app_theme.dart   # tokens from the doc's theme
@@ -27,15 +28,33 @@
 /// and no golden is ever generated from an emitter.
 library;
 
+import 'package:archive/archive.dart';
+
 import '../screen_doc.dart';
 import 'emit_context.dart';
 
 /// One file of the emitted project.
+///
+/// Text files carry [content]; binary files (web icons) carry [bytes] with
+/// an empty [content] — writers branch on [isBinary]. The constructor stays
+/// positional for text so every existing call site is untouched.
 class ProjectOutFile {
   final String path;
   final String content;
-  const ProjectOutFile(this.path, this.content);
+
+  /// Raw bytes for binary files (see [isBinary]).
+  final List<int>? bytes;
+
+  const ProjectOutFile(this.path, this.content, {this.bytes});
+
+  /// Whether this file must be written as bytes, not text.
+  bool get isBinary => bytes != null;
 }
+
+/// The §8.4 Flutter import owned by the page shell (never by the collector).
+/// The shell skips collector lines starting with `import '<this>'` — the
+/// bare line and every combinator variant share that prefix.
+const _kFlutterMaterial = 'package:flutter/material.dart';
 
 /// Kinds whose presence anywhere on a page forces a `{Page}Model`
 /// (StatefulWidget + initState/dispose — §8.4).
@@ -147,21 +166,38 @@ typedef EmittedPage = ({ProjectOutFile page, ProjectOutFile? model});
 /// emitters wrote to — priority (a)) supplies every header line beyond the
 /// shell-owned material import; [modelPlan] (or an empty plan) feeds the
 /// model shell. Stateless pages get NO model file (no empty-model ceremony).
+///
+/// Clash hygiene (gates 4–5 DEFECT-1): the shell owns the single material
+/// import, but the HIDES on it come from the collector (kit-wins names the
+/// used G3 kinds registered via `ImportCollector.add(..., hide:)`), read via
+/// [ImportCollector.hideFor] — the collector stays the single source of
+/// clash knowledge; callers never hand-merge hide lists. [includeMaterial]
+/// drops the material import entirely on pages where every used name also
+/// resolves through the kit barrel (the analyzer's `unnecessary_import`
+/// rule — the walker computes this from the closed body vocabulary, see
+/// `expr_emitter`); it defaults to true so bare-collector callers keep the
+/// historical header byte-identically.
 EmittedPage emitPage({
   required String slug,
   required Iterable<String> kinds,
   required String body,
   ImportCollector? imports,
   PageModelPlan? modelPlan,
+  bool includeMaterial = true,
 }) {
   final flag = needsModel(kinds);
   final importLines = <String>[];
+  var flutterHide = const <String>[];
   if (imports != null) {
+    flutterHide = imports.hideFor(_kFlutterMaterial).toList()..sort();
     for (final line in imports.lines) {
       // The shell owns the material import (see buildPageFile); the
-      // collector still declares it (adapters add it) so Directive
-      // rendering and kind-level auditing stay complete.
-      if (line == "import 'package:flutter/material.dart';") continue;
+      // collector still declares it (adapters add it, G3 kinds add hides
+      // to it) so Directive rendering and kind-level auditing stay
+      // complete. Prefix-match: the collector line may carry combinators
+      // (this prefix matches only the material URL's own lines — every
+      // other URL sorts elsewhere in the collector).
+      if (line.startsWith("import '$_kFlutterMaterial'")) continue;
       importLines.add(line);
     }
   }
@@ -172,6 +208,8 @@ EmittedPage emitPage({
       needsModelFlag: flag,
       body: body,
       importLines: importLines,
+      flutterHide: flutterHide,
+      includeMaterial: includeMaterial,
     ),
   );
   if (!flag) return (page: page, model: null);
@@ -272,13 +310,15 @@ String buildAnalysisOptions() =>
 
 /// Emitted theme shell: tokens come from the doc's theme in G2
 /// (`CanvasTheme.paletteKey/dark/shape/motion`); G1 pins the structure.
+/// Const-correct (gate 4 `prefer_const_declarations`): the scheme binds
+/// with `const`, not `final … = const …`.
 String buildAppTheme(CanvasTheme theme) => '''
 import 'package:flutter/material.dart';
 
 /// Generated theme shell (tokens from palette `${theme.paletteKey}`,
 /// ${theme.dark ? 'dark' : 'light'}). G2 binds real token values.
 ThemeData buildAppTheme() {
-  final scheme = ${theme.dark ? 'const ColorScheme.dark()' : 'const ColorScheme.light()'};
+  const scheme = ${theme.dark ? 'ColorScheme.dark()' : 'ColorScheme.light()'};
   return ThemeData(colorScheme: scheme, useMaterial3: true);
 }
 ''';
@@ -315,35 +355,62 @@ String buildAppRouter(List<CanvasScreen> screens) {
 }
 
 /// Emitted main.dart shell: `MaterialApp.router` + theme (§8.4).
-String buildMainDart({required bool hasRouter}) => '''
-import 'package:flutter/material.dart';
-
-import 'theme/app_theme.dart';
-${hasRouter ? "import 'routes/app_router.dart';" : ''}
-void main() => runApp(const GeneratedApp());
-
-class GeneratedApp extends StatelessWidget {
-  const GeneratedApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    ${hasRouter ? 'return MaterialApp.router(routerConfig: appRouter, theme: buildAppTheme());' : 'return MaterialApp(theme: buildAppTheme());'}
-  }
+/// Format-canonical (gate 3): a blank line separates the import block from
+/// `void main()` in BOTH variants (the router import is conditional, so the
+/// blank line is structural, not templated adjacency — DEFECT-3).
+String buildMainDart({required bool hasRouter}) {
+  final buffer = StringBuffer()
+    ..writeln("import 'package:flutter/material.dart';")
+    ..writeln()
+    ..writeln("import 'theme/app_theme.dart';");
+  if (hasRouter) buffer.writeln("import 'routes/app_router.dart';");
+  buffer
+    ..writeln()
+    ..writeln('void main() => runApp(const GeneratedApp());')
+    ..writeln()
+    ..writeln('class GeneratedApp extends StatelessWidget {')
+    ..writeln('  const GeneratedApp({super.key});')
+    ..writeln()
+    ..writeln('  @override')
+    ..writeln('  Widget build(BuildContext context) {')
+    ..writeln(
+      hasRouter
+          ? '    return MaterialApp.router(routerConfig: appRouter, theme: buildAppTheme());'
+          : '    return MaterialApp(theme: buildAppTheme());',
+    )
+    ..writeln('  }')
+    ..writeln('}');
+  return buffer.toString();
 }
-''';
 
 /// Page shell. [body] is the emitted widget tree (G2 supplies it via the
 /// emitter registry); [needsModel] selects Stateless vs Stateful+Model.
 /// Stateless pages get NO model file (§8.4 — no empty-model ceremony).
+/// [flutterHide] renders the `hide` clause on the shell-owned material
+/// import (kit-wins names from the used kinds — gates 4–5 DEFECT-1); empty
+/// keeps the bare import byte-identical. [includeMaterial] false omits the
+/// material import (kit-covered pages — the analyzer flags the leftover as
+/// `unnecessary_import`, so the shell must not emit it).
 String buildPageFile({
   required String slug,
   required bool needsModelFlag,
   required String body,
   required List<String> importLines,
+  List<String> flutterHide = const [],
+  bool includeMaterial = true,
 }) {
   final page = pageClassName(slug);
-  final buffer = StringBuffer()
-    ..writeln("import 'package:flutter/material.dart';");
+  final buffer = StringBuffer();
+  if (includeMaterial) {
+    if (flutterHide.isEmpty) {
+      buffer.writeln("import 'package:flutter/material.dart';");
+    } else {
+      final sorted = [...flutterHide]..sort();
+      buffer.writeln(
+        "import 'package:flutter/material.dart' hide ${sorted.join(', ')};",
+      );
+    }
+  }
   for (final line in importLines) {
     buffer.writeln(line);
   }
@@ -428,7 +495,8 @@ String buildModelFile({
 }
 
 /// Assembles the static project shells (G1): pubspec, analysis options,
-/// main, theme, router. Page files arrive in G2 with emitter bodies.
+/// main, theme, router, plus the `web/` scaffold (gate 5 — see
+/// [buildWebScaffold]). Page files arrive in G2 with emitter bodies.
 List<ProjectOutFile> scaffoldProject({
   required String appName,
   required ScreenDoc doc,
@@ -456,5 +524,201 @@ List<ProjectOutFile> scaffoldProject({
     ProjectOutFile('lib/theme/app_theme.dart', buildAppTheme(doc.theme)),
     if (hasRouter)
       ProjectOutFile('lib/routes/app_router.dart', buildAppRouter(screens)),
+    ...buildWebScaffold(appName: package),
   ];
+}
+
+// ---------------------------------------------------------------------------
+// web/ scaffold (gate 5 — DEFECT-4).
+// ---------------------------------------------------------------------------
+
+/// `web/` scaffold mirror: the exact file SET `flutter create --platforms
+/// web` produces on the measured SDK (Flutter 3.47.2) — `index.html`,
+/// `manifest.json`, `favicon.png`, and the four `icons/Icon-*.png` files
+/// the manifest references — so raw writer output runs `flutter build web`
+/// with no extra `flutter create` step.
+///
+/// `index.html`/`manifest.json` mirror the tool-author shape with the
+/// project [appName] interpolated (title, apple-touch title, manifest
+/// name/short_name). Icons are deterministic solid-color PNGs synthesized
+/// by [webIconPng] at the manifest-declared sizes in the manifest's own
+/// theme blue (`#0175C2` — full-bleed solid is maskable-safe); they are
+/// launch placeholders, not brand assets, exactly like the tool's
+/// Flutter-logo defaults. `flutter_bootstrap.js` is deliberately NOT
+/// emitted — the build generates it (everything the tool derives at build
+/// time stays out of the writer).
+List<ProjectOutFile> buildWebScaffold({required String appName}) => [
+      ProjectOutFile(
+        'web/index.html',
+        buildWebIndexHtml(appName: appName),
+      ),
+      ProjectOutFile(
+        'web/manifest.json',
+        buildWebManifest(appName: appName),
+      ),
+      ProjectOutFile('web/favicon.png', '', bytes: webIconPng(16)),
+      ProjectOutFile(
+        'web/icons/Icon-192.png',
+        '',
+        bytes: webIconPng(192),
+      ),
+      ProjectOutFile(
+        'web/icons/Icon-512.png',
+        '',
+        bytes: webIconPng(512),
+      ),
+      ProjectOutFile(
+        'web/icons/Icon-maskable-192.png',
+        '',
+        bytes: webIconPng(192),
+      ),
+      ProjectOutFile(
+        'web/icons/Icon-maskable-512.png',
+        '',
+        bytes: webIconPng(512),
+      ),
+    ];
+
+/// `web/index.html`: the tool-author bootstrap shape
+/// (`$FLUTTER_BASE_HREF` placeholder, `flutter_bootstrap.js` loader),
+/// with the project name + generated description interpolated.
+String buildWebIndexHtml({required String appName}) => '''
+<!DOCTYPE html>
+<html>
+<head>
+  <!--
+    If you are serving your web app in a path other than the root, change the
+    href value below to reflect the base path you are serving from.
+
+    The path provided below has to start and end with a slash "/" in order for
+    it to work correctly.
+
+    For more details:
+    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+
+    This is a placeholder for base href that will be replaced by the value of
+    the `--base-href` argument provided to `flutter build`.
+  -->
+  <base href="\$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description" content="Generated by the Canvas visual builder.">
+
+  <!-- iOS meta tags & icons -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="$appName">
+  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- Favicon -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>$appName</title>
+  <link rel="manifest" href="manifest.json">
+</head>
+<body>
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
+''';
+
+/// `web/manifest.json`: the tool-author manifest shape (standalone,
+/// portrait-primary, theme blue `#0175C2`) with the project name +
+/// generated description interpolated. Icon entries reference the
+/// [buildWebScaffold] PNGs at their declared sizes.
+String buildWebManifest({required String appName}) => '''
+{
+    "name": "$appName",
+    "short_name": "$appName",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#0175C2",
+    "theme_color": "#0175C2",
+    "description": "Generated by the Canvas visual builder.",
+    "orientation": "portrait-primary",
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
+''';
+
+/// Deterministic solid-color PNG (8-bit RGBA, filter-none scanlines,
+/// zlib IDAT via `package:archive` — the dependency `codegen_bundle.dart`
+/// already uses, so no new dependency and no `dart:io`, keeping
+/// `canvas_core` web-safe) at [size]×[size] for the web icons. The default
+/// color is the manifest theme blue. Validated by the format's own
+/// structure (signature + IHDR dimensions are test-pinned).
+List<int> webIconPng(int size, {int r = 0x01, int g = 0x75, int b = 0xC2}) {
+  final raw = <int>[];
+  for (var y = 0; y < size; y++) {
+    raw.add(0);
+    for (var x = 0; x < size; x++) {
+      raw.addAll([r, g, b, 0xFF]);
+    }
+  }
+  final compressed = const ZLibEncoder().encode(raw);
+
+  final ihdr = <int>[
+    ..._u32be(size),
+    ..._u32be(size),
+    8, // bit depth
+    6, // color type: truecolor with alpha
+    0, // compression: deflate
+    0, // filter: adaptive (scanlines already carry filter 0)
+    0, // interlace: none
+  ];
+  return [
+    137, 80, 78, 71, 13, 10, 26, 10, // PNG signature
+    ..._pngChunk('IHDR', ihdr),
+    ..._pngChunk('IDAT', compressed),
+    ..._pngChunk('IEND', const []),
+  ];
+}
+
+/// Big-endian 4-byte encoding for PNG length/CRC/IHDR fields.
+List<int> _u32be(int v) =>
+    [(v >> 24) & 0xFF, (v >> 16) & 0xFF, (v >> 8) & 0xFF, v & 0xFF];
+
+/// One PNG chunk: length + type + data + CRC32 over type+data.
+List<int> _pngChunk(String type, List<int> data) {
+  final typeBytes = type.codeUnits;
+  final crc = _crc32([...typeBytes, ...data]);
+  return [..._u32be(data.length), ...typeBytes, ...data, ..._u32be(crc)];
+}
+
+/// Bitwise CRC32 (IEEE): table-free so the encoder stays dependency-free;
+/// generation is a one-shot per export, so the bitwise cost (~1M simple
+/// ops for the 512px icon) never sits on a hot path.
+int _crc32(List<int> bytes) {
+  var crc = 0xFFFFFFFF;
+  for (final byte in bytes) {
+    crc ^= byte;
+    for (var i = 0; i < 8; i++) {
+      crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xEDB88320 : crc >> 1;
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
 }

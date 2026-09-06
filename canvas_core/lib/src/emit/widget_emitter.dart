@@ -44,8 +44,10 @@ abstract class WidgetEmitter {
 /// Placeholders are honest (`Text('…')` + doc comment at the call site,
 /// never a crash) and counted: gate 7 (§11) requires this set to be empty.
 /// G3 closes it structurally via §8.2 unified entries, not one-off
-/// functions.
-String placeholderFor(String kind) => "Text('$kind (not yet bridged)')";
+/// functions. Const (gate 4 `prefer_const_constructors`): the invocation
+/// takes only a string literal, so `const` is always legal — including as
+/// a `children:` element, where a const element needs no const context.
+String placeholderFor(String kind) => "const Text('$kind (not yet bridged)')";
 
 /// Registry of emitters by type key, plus the §8.2 unified-entry shape.
 ///

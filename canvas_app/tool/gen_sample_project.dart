@@ -64,11 +64,20 @@ Map<String, dynamic> _remapG3(
       ...n,
       'id': '${prefix}_${n['id']}',
       'screenId': '${prefix}_s',
-      if (n.containsKey('parentId'))
-        'parentId': '${prefix}_${n['parentId']}',
+      if (n.containsKey('parentId')) 'parentId': '${prefix}_${n['parentId']}',
       'items': [
         for (final it in items)
-          {...it, 'id': '${prefix}_${it['id']}'},
+          {
+            ...it,
+            // Prefix item ids for page-level uniqueness, but never
+            // double-prefix (fixture id `bio` under prefix `bio` stays
+            // `bio`, so `planModelFields` allocates `bioController`, not
+            // `bio_bioController` — the generator reads ids verbatim).
+            'id': it['id'] == prefix ||
+                    (it['id'] as String).startsWith('${prefix}_')
+                ? it['id']
+                : '${prefix}_${it['id']}',
+          },
       ],
     });
   }
@@ -174,13 +183,17 @@ void main(List<String> args) {
     exit(2);
   }
 
-  // 5. Write the tree.
+  // 5. Write the tree (binary files — web icons — as bytes).
   final outDir = Directory(out);
   outDir.createSync(recursive: true);
   for (final f in rewritten) {
     final target = File('${outDir.path}/${f.path}');
     target.parent.createSync(recursive: true);
-    target.writeAsStringSync(f.content);
+    if (f.isBinary) {
+      target.writeAsBytesSync(f.bytes!);
+    } else {
+      target.writeAsStringSync(f.content);
+    }
   }
 
   stdout.writeln('gen_sample_project: wrote ${rewritten.length} files '

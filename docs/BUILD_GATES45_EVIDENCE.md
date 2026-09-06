@@ -325,3 +325,214 @@ flutter build web        # exit 1 until gate 4 green (log: /tmp/gates45_buildweb
 
 Re-run after the DEFECT-1 fix for the green-evidence update; this doc's
 §§2–4 then become the PASS record with the same commands.
+
+## 9. Resolution (2026-09-06, branch `feat/canvas-p3` @ `f5e5805b` + this work)
+
+All four §5 defects fixed in priority order, single owner, sequential.
+Allowlist honored: writes only to `canvas_core/lib/src/emit/*`,
+`canvas_core/test/**`, `canvas_app/tool/gen_sample_project.dart`, and this
+doc. `codegen_bundle.dart`, `codegen_single.dart`, `canvas_app/lib/**`,
+pubspecs, `.github/`, `main.dart` untouched. `flutter pub get` / `flutter
+build` ran ONLY in `/tmp` (baseline repro `/tmp/genproj_baseline`, proof
+`/tmp/genproj_verify`).
+
+### 9.1 Per-defect fixes (file:line + mechanism)
+
+* **DEFECT-1 (blocker).** `ImportCollector` learned combinators
+  (`emit_context.dart:38` — `add(url, {asPrefix, hide, show})` with
+  union-on-readd, `hideFor(url)` reader, `_render` at `:91` emitting
+  canonical `as`→`show`→`hide` order and pre-wrapping >80-col lines
+  exactly as `dart format` splits long imports — gate 3). Clash tables
+  live in `emit_context.dart:147,160` (`kKitImportHide`: the 8
+  Flutter-shadowed names the global barrel re-declares — `Column`,
+  `Expanded`, `Flex`, `Flexible`, `Positioned`, `Row`, `Stack`, `Theme`,
+  audit in §9.2; `kG3FlutterHideByKind`: `Chip`,
+  `CircularProgressIndicator`, `LinearProgressIndicator` hidden on the
+  Flutter import, scoped to using pages). **Choice documented:** keep the
+  GLOBAL barrel (one import, §8.1 package-dep contract, no per-kind path
+  table to drift) + computed dual hide lists, porting + extending the
+  legacy H2 convention (legacy never imports the global barrel, so the
+  kit-side rows are new). Every G3 `collectImports` calls
+  `_collectG3KitImport(ctx, type)` (`g3_emitters.dart`). `emitPage` reads
+  the material hides off the collector (`project_writer.dart`) and the
+  walker collects imports ONLY for kinds used on the page
+  (`expr_emitter.dart` — the primitives page no longer imports the kit
+  barrel at all) and omits the shell material import when the body uses
+  no Flutter-wins/material-only name (`_bodyNeedsMaterial`, closed
+  vocabulary — otherwise the leftover reads as `unnecessary_import`).
+* **DEFECT-2.** Const-canonical emission: all-const G3 leaves emit
+  `const` (`Chip`, `Alert`, both progress indicators, `MoreDots`,
+  `DotIndicator`, `EmptyState`, `CodeSnippet`, `TextArea` field +
+  caption; `NumberTicker` deliberately stays bare — closure arg, pinned
+  by test), placeholders emit `const Text` (`widget_emitter.dart`),
+  `buildAppTheme` binds `const scheme` (`project_writer.dart`). Parents
+  propagate bottom-up where own-args are unconditionally const-eligible
+  (`Column`/`Row`/`Stack`/`Expanded`/caption/root/composite via
+  `isConstExpr` + `stripConst` + `constAwareColumn` +
+  `childrenList(strip:)`, `expr_emitter.dart:166-188,344`). Canonical
+  rule enforced: **`const` outermost-only** (`prefer_const_constructors`
+  + `unnecessary_const` together demand exactly that; consting parents
+  absorb children's keywords). Boundary documented in code: composites
+  with prop-dependent own-args (`Container`, `Padding`, `Align`,
+  childful `Center`/`SizedBox`) stay non-const — the `/tmp` proof is the
+  detector if a future all-const instance surfaces.
+* **DEFECT-3.** `buildMainDart` rebuilt with `StringBuffer`
+  (`project_writer.dart`): the blank line before `void main()` is
+  structural now, both variants are formatter fixpoints (pinned by test).
+* **DEFECT-4.** Writer owns `web/`: `buildWebScaffold(appName:)`
+  (`project_writer.dart`) emits the exact tool-author file SET measured
+  on this SDK (`flutter create --platforms web` output inspected:
+  `index.html`, `manifest.json`, `favicon.png`, 4 × `icons/Icon-*.png`)
+  with app-name interpolation; icons are deterministic solid PNGs
+  (`webIconPng`, 8-bit RGBA, zlib IDAT via `package:archive` — already a
+  dependency, no `dart:io`, canvas_core stays web-safe; manifest theme
+  blue `#0175C2`). `flutter_bootstrap.js` deliberately NOT emitted (the
+  build generates it). `ProjectOutFile` gained `bytes`/`isBinary`; the
+  driver writes bytes for binary files. (Side note found while
+  implementing: `dart:convert` on this SDK has NO zlib codec —
+  `share_codec.dart` already documents this; `package:archive` is the
+  sanctioned path.)
+* **Driver artifact (non-defect):** `_remapG3` no longer double-prefixes
+  item ids (`gen_sample_project.dart` — `bio` under prefix `bio` stays
+  `bio` → `bioController`, verified in output).
+
+### 9.2 Kit audit (why the hide lists are complete for generated bodies)
+
+Global-barrel declarations shadowing Flutter with DIFFERENT elements:
+kit `flex.dart` parts declare `Column`/`Row`/`Stack`/`Flex`/`Flexible`/
+`Expanded`/`Positioned` (verified in `_impl/core/*.dart`, re-exported
+via the global barrel); `shared/theme/theme.dart` declares `Theme` (the
+kit's own `alert.dart` hides it on ITS material import — same trap).
+Generated bodies reference no other kit-declared shadow (`Text`:
+no kit declaration; `Container`/`SizedBox`/etc.: kit re-exports the SAME
+elements, so no ambiguity). Reverse direction (kit ctors colliding with
+material): `Chip`, `CircularProgressIndicator`,
+`LinearProgressIndicator` (all `const` ctors verified, enabling
+DEFECT-2). Every hide clause names a verified export — a stale entry
+would warn `undefined_hidden_name`, caught by gate 4 itself.
+
+### 9.3 Proof (all in `/tmp`, never in the repo — §12 rule 9)
+
+```
+cd canvas/canvas_app
+dart run tool/gen_sample_project.dart --out /tmp/genproj_verify
+  → exit 0, wrote 16 files (the §8.4 nine + 7 web/ files, §9.4)
+cd /tmp/genproj_verify
+flutter pub get     → exit 0, Changed 48 dependencies! (log /tmp/verify_pubget.log)
+flutter analyze     → exit 0, "No issues found!" (log /tmp/verify_analyze.log)
+dart format --output=none --set-exit-if-changed lib
+                    → exit 0, 0 changed (log /tmp/verify_format.log)
+flutter build web   → exit 0, "✓ Built build/web" (log /tmp/verify_buildweb.log)
+```
+
+NO `flutter create` step: `web/` came from the writer (DEFECT-4
+closed as preferred — emitted, not documented-around). Build warnings
+(non-fatal, recorded honestly): kit transitives (`skeletonizer`,
+`country_flags`) note `uses-material-design` unset, and an expected
+MaterialIcons/Cupertino/Lucide/Radix font notice — the generated app
+uses no `Icons`, tree-shaking proceeds, exit stays 0. Placeholder scan:
+8 × `(not yet bridged)` (the known v1 non-defects, unchanged —
+`scaffold`/`avatar`/`text`/`badge`/`card`); row→column, gap separators,
+no-`home:` stay as documented non-defects (§5). Model file shows the
+driver fix live: `final bioController = TextEditingController();`.
+Sample page header (chip page — kit-only, material correctly omitted):
+
+```dart
+import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart'
+    hide Column, Expanded, Flex, Flexible, Positioned, Row, Stack, Theme;
+```
+
+### 9.4 Verdicts
+
+* **Gate 4 (`flutter analyze`, zero issues): PASS** — exit 0, `No
+  issues found!` (baseline was exit 1, 19 errors + 14 infos).
+* **Gate 5 (`flutter build web` succeeds): PASS** — exit 0, `✓ Built
+  build/web`, from raw writer output with no scaffolding workaround.
+* **Gates 4+5: CLOSED.** The `continue-on-error` + `flutter create`
+  lines in the §6 CI snippet can go (updated snippet below).
+
+### 9.5 Golden/test churn (all hand-written-verified, §6.5)
+
+* 10 × `test/fixtures/g3_*.expected.dart`: wrapped kit import with the
+  hide list; `const` bodies (except `number_ticker`: import only —
+  closure); 9 kit-only pages drop the material import; `text_area`
+  caption is `const Column` with bare (absorbed) children.
+* `test/fixtures/g2_model_split.expected.dart`: 2 placeholders → const.
+* `test/g3_gap_test.dart`: edge bodies gain `const`; kit-import
+  assertion matches the wrapped hide form.
+* `test/g2_migration_test.dart`: `_norm` strips `const` on both sides —
+  parity stays a same-PROGRAM check (const is semantically null; the
+  legacy path is frozen, the AST path is gated).
+* NEW `test/gates45_regression_test.dart` (14 tests): hide lists on
+  every G3 page shape, no bare barrel, material omission + hide
+  scoping, const-canonical leaves + outermost-only, `main.dart`
+  fixpoints + blank line, web/ file set + manifest JSON + PNG
+  structure (signature/IHDR dims/determinism; CRC + zlib payload
+  additionally verified out-of-band via python: 16/192/512 all OK).
+* `test/g1_contract_test.dart` (+2): hide/show rendering, union
+  re-adds, prefix-conflict rule, >80-col wrap shape.
+
+### 9.6 Repo verification (exact outputs)
+
+* `flutter analyze --no-pub` in `canvas_core/`: `No issues found!`
+* `flutter analyze --no-pub` in `canvas_app/`: `No issues found!`
+* `flutter test` in `canvas_core/`: **all 486 pass** (baseline 469 +
+  14 new regression + 2 new collector + 1 split = 486; zero failures).
+* App consumer set
+  (`gen_registry_drift`, `catalog`, `f3_primitives_render`,
+  `export_panel`, `h0_diff_harness`, `h_final_gates`): **all 181 pass**.
+* Box load: no step skipped; nothing claimed without its log above.
+* `git status`: exactly the allowlist — `canvas_core/lib/src/emit/*`
+  (5 files), `canvas_core/test/**` (10 fixtures + 3 tests + 1 new),
+  `canvas_app/tool/gen_sample_project.dart`, this doc. One reverted
+  incidental: a whole-dir `dart format` touched
+  `value_codecs.dart` (formatter-version drift, pre-existing repo-wide
+  under this SDK) — reverted; remaining diffs are semantic-only
+  (spot-verified hunk by hunk; new lines kept formatter-shaped).
+
+### 9.7 Updated CI snippet (replaces §6 — blocking, no create step)
+
+```yaml
+  genproj-gates45:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # kit checkout must be present for the path dep; either check out
+          # the kit repo beside canvas/ or vendor it on the runner so that
+          # ../shadcn_flutter_kit/flutter_shadcn_kit exists.
+          path: shadcn_copy_paste
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+      - name: generate §8.4 sample project (§7.5 + G3 pages)
+        run: >
+          dart run tool/gen_sample_project.dart
+          --out /tmp/genproj
+          --kit ../shadcn_flutter_kit/flutter_shadcn_kit
+        working-directory: shadcn_copy_paste/canvas/canvas_app
+      - name: gate 4 — flutter analyze on generated output
+        run: flutter analyze
+        working-directory: /tmp/genproj
+      - name: gate 5 — flutter build web on generated output
+        run: flutter build web
+        working-directory: /tmp/genproj
+```
+
+### 9.8 Leftovers (honest, non-blocking)
+
+* Const boundary (§9.1): all-const `Container`/`Padding`/`Align`/
+  childful `Center`/`SizedBox` instances would re-surface
+  `prefer_const` — none exist in any exercised corpus; the proof
+  runbook above is the detector.
+* Material-font warnings in the gate-5 log (§9.3): kit transitives
+  expect `uses-material-design`; generated apps use no `Icons` — if a
+  future emitter emits `Icons`, `buildPubspec` should add the flag.
+* The repo tree is format-dirty under THIS SDK's `dart_style`
+  (pre-existing, repo-wide, format-check is non-blocking): this wave
+  kept diffs semantic-only rather than migrating.
+* Non-defects unchanged (§5): `isRow`→`Column`, gap separators, no
+  `home:` on single-screen, 8 v1 placeholders (gate 7 owns them).

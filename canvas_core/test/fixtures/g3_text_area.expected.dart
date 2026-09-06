@@ -15,7 +15,8 @@
 library;
 
 import 'package:flutter/material.dart';
-import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart';
+import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart'
+    hide Column, Expanded, Flex, Flexible, Positioned, Row, Stack, Theme;
 import 'home_model.dart';
 
 class HomePage extends StatefulWidget {
@@ -42,12 +43,12 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    return const Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('About'),
-        const SizedBox(height: 6),
+        SizedBox(height: 6),
         TextArea(
           placeholder: Text('Bio'),
           enabled: true,

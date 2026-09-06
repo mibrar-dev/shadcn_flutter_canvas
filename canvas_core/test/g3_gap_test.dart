@@ -135,11 +135,17 @@ void main() {
           files.single.content,
         );
         // The kit umbrella rides the collector (the §8.1 package-dep
-        // contract), behind the shell-owned material import.
+        // contract), behind the shell-owned material import — carrying the
+        // kit-side hide list (gates 4–5 DEFECT-1: the barrel re-declares
+        // Flutter layout names, so Flutter-wins names hide here). The line
+        // overflows 80 columns, so it arrives pre-wrapped exactly as
+        // `dart format` splits long imports (gate 3).
         expect(
           files.single.content,
           contains(
-            "import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart';",
+            "import 'package:flutter_shadcn_kit/flutter_shadcn_kit.dart'\n"
+            '    hide Column, Expanded, Flex, Flexible, Positioned, Row,'
+            ' Stack, Theme;',
           ),
         );
       });
@@ -280,12 +286,12 @@ void main() {
       expect(
         _bundleBodyOf(_doc('chip', const {})),
         "// chip 'chip'.\n"
-        "Chip(child: Text('Chip')),",
+        "const Chip(child: Text('Chip')),",
       );
       expect(
         _bundleBodyOf(_doc('chip', {'label': "O'Brien \$5"})),
         "// chip 'O'Brien \$5'.\n"
-        "Chip(child: Text('O\\'Brien \\\$5')),",
+        "const Chip(child: Text('O\\'Brien \\\$5')),",
       );
     });
 
@@ -293,7 +299,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('alert', const {})),
         "// alert 'alert'.\n"
-        'Alert(\n'
+        'const Alert(\n'
         "  title: Text('Alert'),\n"
         "  content: Text('Something happened.'),\n"
         '  destructive: false,\n'
@@ -308,13 +314,13 @@ void main() {
         ),
         "// circular_progress_indicator "
         "'circular_progress_indicator' (value 9.9).\n"
-        'CircularProgressIndicator(value: 1),',
+        'const CircularProgressIndicator(value: 1),',
       );
       expect(
         _bundleBodyOf(_doc('linear_progress_indicator', {'value': 1})),
         "// linear_progress_indicator "
         "'linear_progress_indicator' (value 1).\n"
-        'LinearProgressIndicator(value: 1),',
+        'const LinearProgressIndicator(value: 1),',
       );
     });
 
@@ -322,12 +328,12 @@ void main() {
       expect(
         _bundleBodyOf(_doc('triple_dots', {'count': 0})),
         "// triple_dots 'triple_dots' (count 0).\n"
-        'MoreDots(count: 1),',
+        'const MoreDots(count: 1),',
       );
       expect(
         _bundleBodyOf(_doc('triple_dots', {'count': 'many'})),
         "// triple_dots 'triple_dots' (count many).\n"
-        'MoreDots(count: 3),',
+        'const MoreDots(count: 3),',
       );
     });
 
@@ -335,7 +341,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('dot_indicator', {'index': 9, 'length': 3})),
         "// dot_indicator 'dot_indicator' (index 9, length 3).\n"
-        'DotIndicator(index: 2, length: 3),',
+        'const DotIndicator(index: 2, length: 3),',
       );
     });
 
@@ -343,7 +349,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('empty_state', const {})),
         "// empty_state 'empty_state'.\n"
-        'EmptyState(\n'
+        'const EmptyState(\n'
         "  title: Text('No results'),\n"
         "  description: Text('Try adjusting your search.'),\n"
         '),',
@@ -351,7 +357,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('code_snippet', const {})),
         "// code_snippet 'code_snippet'.\n"
-        "CodeSnippet(code: Text('const x = 1;')),",
+        "const CodeSnippet(code: Text('const x = 1;')),",
       );
     });
 
@@ -367,7 +373,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('text_area', {'placeholder': 'Bio'})),
         "// text_area 'Bio'.\n"
-        "TextArea(placeholder: Text('Bio'), enabled: true),",
+        "const TextArea(placeholder: Text('Bio'), enabled: true),",
       );
       expect(
         _bundleBodyOf(

@@ -166,6 +166,32 @@ extension TaggedValueExpr on TaggedValue {
 Expression constOf(Expression inner) =>
     CodeExpression(Code('const ${inner.accept(DartEmitter())}'));
 
+/// Whether [e] renders const-eligible source (gate 4 viral-const rule):
+/// structured `code_builder` invocations never spell `const` (no const
+/// model — see [constOf]), so a leading `const ` prefix marks EXACTLY the
+/// const leaves (const templates + [constOf] results). Not heuristic: every
+/// const emitter in this layer spells through those paths, so parents can
+/// decide their own constness exactly from it. See [stripConst] for the
+/// other half: a consting parent absorbs the keyword, children go bare.
+bool isConstExpr(Expression e) =>
+    e.accept(DartEmitter()).toString().startsWith('const ');
+
+/// Strips the leading `const ` from a const-eligible source (gate 4
+/// canonical-const rule): a consting parent absorbs the keyword into its
+/// own const context, where the nested keyword would read as
+/// `unnecessary_const` — `const` belongs on the OUTERMOST eligible
+/// invocation only (`prefer_const_constructors` + `unnecessary_const`
+/// together demand exactly that). Only the leading keyword goes: inner
+/// keywords are absent by construction (composites strip-then-const
+/// bottom-up, so an eligible composite's interior is already bare).
+/// Non-const sources pass through untouched.
+Expression stripConst(Expression e) {
+  const prefix = 'const ';
+  final src = e.accept(DartEmitter()).toString();
+  if (!src.startsWith(prefix)) return e;
+  return CodeExpression(Code(src.substring(prefix.length)));
+}
+
 /// Canonical source for [expression] at depth 0: single [DartEmitter] pass
 /// wrapped in a dummy `final` so [DartFormatter] (= `dart format`) lays it
 /// out, then unwrapped.
@@ -194,13 +220,26 @@ String formatExpression(Expression expression) {
 
 /// Renders [collector] as `code_builder` import directives in collector
 /// order (dart → package → relative, each sorted — the [ImportCollector.lines]
-/// contract, G1-pinned). `as` prefixes survive (the `tabs` barrel case).
+/// contract, G1-pinned). `as` prefixes survive (the `tabs` barrel case), as
+/// do `show`/`hide` combinators (the §8.4 clash-hygiene case; overlong
+/// lines arrive pre-wrapped and are flattened before parsing).
 List<Directive> importDirectives(ImportCollector collector) {
   final out = <Directive>[];
   for (final line in collector.lines) {
-    final match = RegExp(r"^import '([^']+)'( as (\w+))?;$").firstMatch(line);
+    final flat = line.split(RegExp(r'\s+')).join(' ');
+    final match = RegExp(
+      r"^import '([^']+)'( as (\w+))?( show ([\w, ]+?))?( hide ([\w, ]+?))?;$",
+    ).firstMatch(flat);
     if (match == null) continue;
-    out.add(Directive.import(match.group(1)!, as: match.group(3)));
+    List<String> names(String? raw) => [
+          for (final n in (raw ?? '').split(',')) n.trim(),
+        ]..removeWhere((n) => n.isEmpty);
+    out.add(Directive.import(
+      match.group(1)!,
+      as: match.group(3),
+      show: names(match.group(5)),
+      hide: names(match.group(7)),
+    ));
   }
   return out;
 }
@@ -274,29 +313,70 @@ List<Expression> withSeparators(
 /// Single-slot `child:` composition (COMPOSITION.md §2.1, mirrors the legacy
 /// `_bundlePrimChildArg` shapes): no child → omit; one → `child:`; several
 /// → a min-Column with 12-gap separators (the below-fallback rhythm).
+/// Const-propagating (gate 4 viral-const rule): the min-Column's own args
+/// are unconditionally const-eligible (fixed enums), so an all-const child
+/// set yields `const` exactly (see [constAwareColumn]).
 Map<String, Expression> childArg(List<Expression> children) {
   if (children.isEmpty) return const {};
   if (children.length == 1) return {'child': children.single};
   return {
-    'child': refer('Column').newInstance([], {
-      'mainAxisSize': leaf('MainAxisSize.min'),
-      'crossAxisAlignment': leaf('CrossAxisAlignment.start'),
-      'children': leaf(
-        '[${withSeparators(children, 12, true).map((c) => c.accept(DartEmitter())).join(',\n')}]',
-      ),
-    }),
+    'child': constAwareColumn(
+      children,
+      gap: 12,
+      extraArgs: {
+        'mainAxisSize': leaf('MainAxisSize.min'),
+        'crossAxisAlignment': leaf('CrossAxisAlignment.start'),
+      },
+    ),
   };
 }
 
+/// Const-propagating multi-child `Column(children:)` over [blocks]
+/// (gate 4 viral-const rule): the Column's own args are [extraArgs] (fixed
+/// const-eligible enums at every call site) plus the children list, so an
+/// all-const child set ([isConstExpr]) yields `const` exactly — now-const
+/// children would otherwise make the eligible parent fire
+/// `prefer_const_constructors`. The list itself stays BARE (implicitly const
+/// inside the const invocation); consting absorbs the children's keywords
+/// via [stripConst] so no nested `const` reads as `unnecessary_const`.
+/// [gap] interleaves const gap separators (null = bare join, for
+/// already-separated sources).
+Expression constAwareColumn(
+  List<Expression> blocks, {
+  double? gap,
+  bool vertical = true,
+  Map<String, Expression> extraArgs = const {},
+}) {
+  final allConst = blocks.every(isConstExpr);
+  var parts = gap == null ? blocks : withSeparators(blocks, gap, vertical);
+  if (allConst) parts = [for (final p in parts) stripConst(p)];
+  final joined = parts.map((b) => b.accept(DartEmitter())).join(',\n');
+  var column = refer('Column').newInstance([], {
+    ...extraArgs,
+    'children': leaf('[$joined]'),
+  });
+  if (allConst) column = constOf(column);
+  return column;
+}
+
 /// `children:` list composition with [gap] separators (column/row bodies).
+/// Always a bare list: inside a consting parent it is implicitly const;
+/// in a non-const parent an all-const list never arises (Column/Row const
+/// themselves exactly when their children are all const — see below).
+/// [strip] absorbs every part keyword (children AND gap separators) into
+/// the consting parent's context ([stripConst] is idempotent, so
+/// pre-stripped children pass through untouched).
 Expression childrenList(
   List<Expression> children,
   double gap,
-  bool vertical,
-) =>
-    leaf(
-      '[${withSeparators(children, gap, vertical).map((c) => c.accept(DartEmitter())).join(',\n')}]',
-    );
+  bool vertical, {
+  bool strip = false,
+}) {
+  var parts = withSeparators(children, gap, vertical);
+  if (strip) parts = [for (final p in parts) stripConst(p)];
+  final joined = parts.map((c) => c.accept(DartEmitter())).join(',\n');
+  return leaf('[$joined]');
+}
 
 /// LinearGradient as AST (mirrors the [primGradient] rule: null when absent,
 /// empty, or ANY stop unparseable — never a partial gradient; `stops` only
@@ -370,10 +450,7 @@ void containerDecoration({
   final shadows = props['shadow'] is List ? shadowsExpr(props['shadow']) : null;
   final gradient =
       props['gradient'] is Map ? gradientExpr(props['gradient']) : null;
-  if (border == null &&
-      radius == null &&
-      shadows == null &&
-      gradient == null) {
+  if (border == null && radius == null && shadows == null && gradient == null) {
     final color = primColor(props['color']);
     if (color != null) args['color'] = leaf(color.code);
     return;
@@ -457,12 +534,15 @@ class ContainerEmitter extends AstEmitter {
     if (alignment != null) args['alignment'] = leaf(alignment);
     containerDecoration(args: args, props: item.props);
     args.addAll(childArg(children));
-    if (args.isEmpty) return leaf('Container()');
+    if (args.isEmpty) return leaf('const Container()');
     return refer('Container').newInstance([], args);
   }
 }
 
 /// `column`: axes + gap-separated children (gap 12 default).
+/// Const-propagating (gate 4 viral-const rule): the axes are fixed enums
+/// (unconditionally const-eligible), so an all-const child set yields
+/// `const` exactly.
 class ColumnEmitter extends AstEmitter {
   const ColumnEmitter();
 
@@ -481,14 +561,26 @@ class ColumnEmitter extends AstEmitter {
     if (main != null) args['mainAxisAlignment'] = leaf(main);
     final cross = primCrossAxis(item.props['crossAxis']);
     if (cross != null) args['crossAxisAlignment'] = leaf(cross);
+    // Const-absorb (gate 4 canonical-const rule): an all-const child set
+    // consts the Column, and every part keyword (children + separators)
+    // moves into its context via the stripped list.
+    final allConst = children.every(isConstExpr);
     args['children'] = children.isEmpty
-        ? leaf('[]')
-        : childrenList(children, primGap(item.props, 12), true);
-    return refer('Column').newInstance([], args);
+        ? leaf('const []')
+        : childrenList(
+            children,
+            primGap(item.props, 12),
+            true,
+            strip: allConst,
+          );
+    var column = refer('Column').newInstance([], args);
+    if (allConst) column = constOf(column);
+    return column;
   }
 }
 
 /// `row`: axes + gap-separated children (gap 8 default).
+/// Const-propagating (gate 4 viral-const rule — same shape as [ColumnEmitter]).
 class RowEmitter extends AstEmitter {
   const RowEmitter();
 
@@ -507,14 +599,26 @@ class RowEmitter extends AstEmitter {
     if (main != null) args['mainAxisAlignment'] = leaf(main);
     final cross = primCrossAxis(item.props['crossAxis']);
     if (cross != null) args['crossAxisAlignment'] = leaf(cross);
+    // Const-absorb (gate 4 canonical-const rule — same shape as Column).
+    final allConst = children.every(isConstExpr);
     args['children'] = children.isEmpty
-        ? leaf('[]')
-        : childrenList(children, primGap(item.props, 8), false);
-    return refer('Row').newInstance([], args);
+        ? leaf('const []')
+        : childrenList(
+            children,
+            primGap(item.props, 8),
+            false,
+            strip: allConst,
+          );
+    var row = refer('Row').newInstance([], args);
+    if (allConst) row = constOf(row);
+    return row;
   }
 }
 
 /// `stack`: alignment + fit + unseparated children.
+/// Const-propagating (gate 4 viral-const rule): alignment leaves and the
+/// fit enum are unconditionally const-eligible, so an all-const child set
+/// yields `const` exactly.
 class StackEmitter extends AstEmitter {
   const StackEmitter();
 
@@ -537,12 +641,18 @@ class StackEmitter extends AstEmitter {
       _ => null,
     };
     if (fit != null) args['fit'] = leaf(fit);
-    args['children'] = children.isEmpty
-        ? leaf('[]')
+    // Const-absorb (gate 4 canonical-const rule — same shape as Column).
+    final allConst = children.every(isConstExpr);
+    final parts =
+        allConst ? [for (final c in children) stripConst(c)] : children;
+    args['children'] = parts.isEmpty
+        ? leaf('const []')
         : leaf(
-            '[${children.map((c) => c.accept(DartEmitter())).join(',\n')}]',
+            '[${parts.map((c) => c.accept(DartEmitter())).join(',\n')}]',
           );
-    return refer('Stack').newInstance([], args);
+    var stack = refer('Stack').newInstance([], args);
+    if (allConst) stack = constOf(stack);
+    return stack;
   }
 }
 
@@ -589,7 +699,7 @@ class CenterEmitter extends AstEmitter {
     EmitContext ctx,
   ) {
     final args = childArg(children);
-    if (args.isEmpty) return leaf('Center()');
+    if (args.isEmpty) return leaf('const Center()');
     return refer('Center').newInstance([], args);
   }
 }
@@ -616,6 +726,8 @@ class AlignEmitter extends AstEmitter {
 }
 
 /// `expanded`: flex (omitted when 1) + child (`SizedBox.shrink` default).
+/// Const-propagating (gate 4 viral-const rule): the flex int is
+/// unconditionally const-eligible, so a const child yields `const` exactly.
 class ExpandedEmitter extends AstEmitter {
   const ExpandedEmitter();
 
@@ -630,12 +742,20 @@ class ExpandedEmitter extends AstEmitter {
     EmitContext ctx,
   ) {
     final flex = primFlex(item.props['flex']);
-    return refer('Expanded').newInstance([], {
+    final resolved =
+        children.isEmpty ? [leaf('const SizedBox.shrink()')] : children;
+    // Const-absorb (gate 4 canonical-const rule): the flex int is
+    // unconditionally const-eligible, so a const child consts the Expanded
+    // and its keyword moves into that context.
+    final allConst = resolved.every(isConstExpr);
+    final parts =
+        allConst ? [for (final c in resolved) stripConst(c)] : resolved;
+    var expanded = refer('Expanded').newInstance([], {
       if (flex != 1) 'flex': leaf('$flex'),
-      ...childArg(
-        children.isEmpty ? [leaf('SizedBox.shrink()')] : children,
-      ),
+      ...childArg(parts),
     });
+    if (allConst) expanded = constOf(expanded);
+    return expanded;
   }
 }
 
@@ -726,7 +846,8 @@ class SpacerEmitter extends AstEmitter {
   ) {
     final flex = primFlex(item.props['flex']);
     if (flex == 1) return leaf('const Spacer()');
-    return refer('Spacer').newInstance([], {'flex': leaf('$flex')});
+    // The flex int is unconditionally const-eligible: always const.
+    return leaf('const Spacer(flex: $flex)');
   }
 }
 
@@ -869,11 +990,14 @@ List<ProjectOutFile> emitPrimitivePageFiles({
     for (final e in primitiveEmitters) e.type: e,
     for (final e in extraEmitters) e.type: e,
   };
-  for (final e in primitiveEmitters) {
-    e.collectImports(ctx);
-  }
-  for (final e in extraEmitters) {
-    e.collectImports(ctx);
+  // Imports come ONLY from kinds the page actually uses (gates 4–5
+  // DEFECT-1): collecting every extra emitter unconditionally drags the kit
+  // barrel onto pages with zero kit widgets (whose `Column`/`Theme` uses
+  // then read as ambiguous). Primitives declare only the shell-owned
+  // material import, so primitive-only pages collect no extra lines at all.
+  final kinds = pageKindsFor(doc, screen.id);
+  for (final kind in kinds) {
+    byType[kind]?.collectImports(ctx);
   }
   final nodeIds = {for (final n in doc.nodes) n.id};
   final screenNodes = [
@@ -928,13 +1052,9 @@ List<ProjectOutFile> emitPrimitivePageFiles({
         blocks.add(compositeOf(k, {...ancestors}));
       }
     }
-    if (blocks.isEmpty) return leaf('SizedBox.shrink()');
+    if (blocks.isEmpty) return leaf('const SizedBox.shrink()');
     if (blocks.length == 1) return blocks.single;
-    return refer('Column').newInstance([], {
-      'children': leaf(
-        '[${blocks.map((b) => b.accept(DartEmitter())).join(',\n')}]',
-      ),
-    });
+    return constAwareColumn(blocks);
   }
 
   // Root-level blocks WITH trace comments. Rule mirrors [compositeOf], but
@@ -1011,23 +1131,39 @@ List<ProjectOutFile> emitPrimitivePageFiles({
   } else {
     // Root-level trace comments ride the children list (B-shape raw: each
     // comment pre-indented at list-item level so the format pass keeps it
-    // with its item — column-0 comments misplace, see G2 notes). Nested
-    // composites stay comment-free (see compositeOf).
-    body = refer('Column').newInstance([], {
-      'children': leaf(
-        '[${annotated.map((b) => '\n  ${b.comment}\n  ${b.expr.accept(DartEmitter())}').join(',')}\n]',
-      ),
+    // with its item — column-0 comments misplace, see G2 notes).
+    // Const-absorb (gate 4 canonical-const rule): comments are
+    // formatter-whitespace, so an all-const block set still yields `const`
+    // exactly, with the block keywords absorbed into its context.
+    final allConst = annotated.every((b) => isConstExpr(b.expr));
+    final blockSources = [
+      for (final b in annotated)
+        '\n  ${b.comment}\n  ${(allConst ? stripConst(b.expr) : b.expr).accept(DartEmitter())}',
+    ];
+    var root = refer('Column').newInstance([], {
+      'children': leaf('[${blockSources.join(',')}\n]'),
     });
+    if (allConst) root = constOf(root);
+    body = root;
   }
 
-  final kinds = pageKindsFor(doc, screen.id);
   final plan = planModelFields(doc, screen.id, ctx.names);
+  final pageBody = _shiftForReturn(formatExpression(body));
+  // The shell material import is unnecessary (analyzer info) when every
+  // name the body uses also resolves through the kit barrel as the SAME
+  // element (the kit re-exports the Flutter framework wholesale): drop it
+  // then, keep it otherwise. Kit-free pages always keep it (their only
+  // Flutter source). The scan vocabulary is closed — bodies are generated.
+  final hasKit = ctx.imports.lines.any(
+    (l) => l.startsWith("import 'package:flutter_shadcn_kit/"),
+  );
   final emitted = emitPage(
     slug: slugifyScreen(screen.name),
     kinds: kinds,
-    body: _shiftForReturn(formatExpression(body)),
+    body: pageBody,
     imports: ctx.imports,
     modelPlan: plan,
+    includeMaterial: !hasKit || _bodyNeedsMaterial(pageBody),
   );
   final slug = slugifyScreen(screen.name);
   return [
@@ -1041,6 +1177,17 @@ List<ProjectOutFile> emitPrimitivePageFiles({
 /// corrupt docs behave identically on both paths).
 String _bundleCycleNote(String nodeId) =>
     'cycle: node $nodeId is its own ancestor (skipped)';
+
+/// Whether an emitted page [body] references a Flutter-SDK name that keeps
+/// the shell material import necessary on a kit-importing page: the
+/// kit-hidden set ([kKitImportHide] — hidden on the kit import, so only
+/// material provides them) plus `Icons` (material-only; no kit barrel
+/// re-exports it). Every OTHER body name is either a kit constructor or
+/// re-exported by the kit barrel as the same element. Closed vocabulary —
+/// bodies are generated, never hand-written.
+bool _bodyNeedsMaterial(String body) => RegExp(
+      "\\b(${kKitImportHide.join('|')}|Icons)\\b",
+    ).hasMatch(body);
 
 /// Shifts canonical depth-0 [body] for the `return` site: first line bare
 /// (follows `return `), every later line +4 (see [emitPage], which owns the

@@ -39,9 +39,9 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Column(children: [
       // text_field 'email'.
-      Text('text_field (not yet bridged)'),
+      const Text('text_field (not yet bridged)'),
       // switch 'rememberMe'.
-      Text('switch (not yet bridged)'),
+      const Text('switch (not yet bridged)'),
       // container 'c1'.
       Container(color: Theme.of(context).colorScheme.secondary)
     ]);

@@ -36,6 +36,9 @@ String _taggedRaw(Map<String, Object?> envelope, [String theme = 'T']) =>
 /// then trailing commas before closers removed on BOTH sides (the legacy
 /// path hand-shapes full splits with trailing commas; the AST path lets
 /// `dart_style` lay out — without them both collapse/split identically),
+/// then `const` keywords stripped on BOTH sides (gates 4–5: the AST path
+/// emits const-canonical code while the frozen legacy path does not — const
+/// is semantically null, so parity stays a same-PROGRAM check),
 /// wrapped in the same stub and formatted.
 String _norm(String src) {
   final uncommented = src
@@ -51,7 +54,10 @@ String _norm(String src) {
         (m) => m.group(1)!,
       )
       .replaceAll(RegExp(r',\s*$'), '');
-  return DartFormatter().format('final _v = $uncomma;\n');
+  // Relative comparison: identical literals on both sides stay identical,
+  // so stripping inside string contents cannot produce a false pass.
+  final unconst = uncomma.replaceAll(RegExp(r'\bconst\s+'), '');
+  return DartFormatter().format('final _v = $unconst;\n');
 }
 
 ScreenDoc _doc(
