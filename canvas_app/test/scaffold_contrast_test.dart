@@ -334,9 +334,14 @@ void main() {
       }
     });
 
-    testWidgets('card keeps its kit-bound foreground (no catalog change)', (
+    testWidgets('card keeps kit-bound foregrounds (Z2 muted description)', (
       tester,
     ) async {
+      // Track Z2 beauty cause: the description now binds `mutedForeground`
+      // (the kit card preview's own `.muted().small()` idiom) while the
+      // title stays on `cardForeground`. Both roles are kit scheme roles —
+      // never hardcoded — and both still clear the 4.5 floor in this split
+      // (title ~17.5:1, description ~15.9:1 at the time of the change).
       await _pumpNode(
         tester,
         buildCatalogItem('card', const {
@@ -348,13 +353,20 @@ void main() {
         components: _componentsLight,
       );
       final scheme = _componentsScheme(tester);
-      for (final label in ['CardT', 'CardD']) {
-        final fg = _effectiveTextColor(tester, label);
-        final ratio = _contrastRatio(fg, _surfaceBehind(tester, label));
-        debugPrint('K2 card "$label" contrast = ${ratio.toStringAsFixed(2)}:1');
-        expect(fg, scheme.cardForeground);
-        expect(ratio, greaterThanOrEqualTo(_kMinContrast));
-      }
+      final titleFg = _effectiveTextColor(tester, 'CardT');
+      final titleRatio = _contrastRatio(
+        titleFg,
+        _surfaceBehind(tester, 'CardT'),
+      );
+      debugPrint('K2 card "CardT" contrast = ${titleRatio.toStringAsFixed(2)}:1');
+      expect(titleFg, scheme.cardForeground);
+      expect(titleRatio, greaterThanOrEqualTo(_kMinContrast));
+
+      final descFg = _effectiveTextColor(tester, 'CardD');
+      final descRatio = _contrastRatio(descFg, _surfaceBehind(tester, 'CardD'));
+      debugPrint('K2 card "CardD" contrast = ${descRatio.toStringAsFixed(2)}:1');
+      expect(descFg, scheme.mutedForeground);
+      expect(descRatio, greaterThanOrEqualTo(_kMinContrast));
     });
   });
 }

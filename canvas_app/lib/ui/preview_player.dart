@@ -582,17 +582,30 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// [visibleItems], per-item tap actions), so nested actions navigate and
   /// nested overrides apply exactly like roots. Node w/h pin via
   /// [applyNodeSizeValues] (same helper as the editor canvas).
+  ///
+  /// Track Z1 full-bleed parity: fixed-w wraps in [Align] left so the pinned
+  /// [SizedBox] keeps exact pixels inside the stretch-tight list (bare
+  /// SizedBox would be forced full width); auto fills via stretch columns.
   Widget _buildPreviewNode(
     CanvasNode node,
     String tierName,
     double stageWidth,
     bool Function(CanvasNode) hidden,
     Set<String> ancestors,
-  ) =>
-      applyNodeSize(
-        node,
-        _buildPreviewNodeInner(node, tierName, stageWidth, hidden, ancestors),
-      );
+  ) {
+    final inner = _buildPreviewNodeInner(
+      node,
+      tierName,
+      stageWidth,
+      hidden,
+      ancestors,
+    );
+    if (node.w == null) return applyNodeSize(node, inner);
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: applyNodeSize(node, inner),
+    );
+  }
 
   Widget _buildPreviewNodeInner(
     CanvasNode node,
@@ -607,8 +620,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     final items = visibleItems(node, tierName);
     final kids = _previewChildren(node, hidden, ancestors);
     if (kids.isEmpty) {
+      // Track Z1 full-bleed parity: stretch so auto nodes fill the stage
+      // width (fixed-w keeps pixels via [applyNodeSize]'s SizedBox win).
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [for (final item in items) _previewItem(item)],
       );
@@ -633,8 +648,9 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
               onTap: () => _onItemTap(first),
               child: built,
             );
+      // Track Z1 full-bleed parity: container + fallback columns stretch.
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [
           container,
@@ -643,7 +659,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       );
     }
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         for (final item in items) _previewItem(item),
@@ -671,8 +687,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     final next = {...ancestors, node.id};
     final kids = _previewChildren(node, hidden, ancestors);
     if (kids.isEmpty) {
+      // Track Z1: empty-row placeholder column stretches (no children, but
+      // keeps parity; rows themselves are unchanged).
       return const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
         children: [],
       );

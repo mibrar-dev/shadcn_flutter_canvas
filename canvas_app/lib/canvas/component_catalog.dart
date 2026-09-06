@@ -187,62 +187,89 @@ Widget _buildButton(Map<String, dynamic> props) {
   final variant = (props['variant'] ?? 'primary') as String;
   final size = _buttonSize(props['size'] as String?);
   final disabled = (props['disabled'] ?? false) as bool;
-  final child = Text(label);
+  // Track Z2 beauty: 15px semibold label for primary-CTA presence (the
+  // 14-16px brief). Color stays inherited so variant/disabled states keep
+  // their kit styling — size/weight only, never a hardcoded color.
+  final child = Text(
+    label,
+    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+  );
   // `enabled: false` renders the disabled state; onPressed stays non-null.
+  late final Widget button;
   switch (variant) {
     case 'secondary':
-      return shadcn.SecondaryButton(
+      button = shadcn.SecondaryButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'outline':
-      return shadcn.OutlineButton(
+      button = shadcn.OutlineButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'ghost':
-      return shadcn.GhostButton(
+      button = shadcn.GhostButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'destructive':
-      return shadcn.DestructiveButton(
+      button = shadcn.DestructiveButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'link':
-      return shadcn.LinkButton(
+      button = shadcn.LinkButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'text':
       // `ButtonVariance.text` / `TextButton` exist in the kit, though the
       // button canvas block's variant enum omits `text` (reported follow-up).
-      return shadcn.TextButton(
+      button = shadcn.TextButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
     case 'primary':
     default:
-      return shadcn.PrimaryButton(
+      button = shadcn.PrimaryButton(
         onPressed: () {},
         enabled: !disabled,
         size: size,
         child: child,
       );
+      break;
   }
+  // Track Z2 beauty: comfortable 48px CTA touch target. Width is
+  // intentionally left unconstrained (minWidth 0, maxWidth pass-through) so
+  // the parent stretch owns full-width: this shell only floors the height and
+  // never collapses or forces the width (no Center/shrinkwrap).
+  // STRETCH INTERPLAY: relies on the parent (phone_frame tight sizing box)
+  // for full width; guarantees the 48px height itself.
+  // NOTE: top-level shape is now ConstrainedBox-over-variant (childless
+  // output change, expected this track) — catalog_test unwraps one level and
+  // keeps every variant-wiring assertion intact.
+  return ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 48),
+    child: button,
+  );
 }
 
 Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]) {
@@ -254,21 +281,44 @@ Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]
   final title = (props['title'] ?? 'Title') as String;
   final description = (props['description'] ?? 'Description') as String;
   final showFooter = (props['showFooter'] ?? false) as bool;
+  // Track Z2 beauty: kit card-preview idiom (`preview.dart`: title
+  // `.semiBold()`, description `.muted().small()`, 6px title-desc gap, 20px+
+  // before actions). Canvas keeps the 16px padding per the brief; title
+  // 17/700 inherits the foreground (kit `Card` merges `cardForeground`), the
+  // 14px description binds `mutedForeground` explicitly (same role the
+  // `.muted()` modifier resolves — never a hardcoded color).
   return shadcn.Card(
     padding: const EdgeInsets.all(16),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(title),
-        const SizedBox(height: 4),
-        Text(description),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Builder(
+          builder: (context) {
+            final scheme = shadcn.Theme.of(context).colorScheme;
+            return Text(
+              description,
+              style: TextStyle(
+                fontSize: 14,
+                color: scheme.mutedForeground,
+              ),
+            );
+          },
+        ),
         if (children.isNotEmpty) ...[
           const SizedBox(height: kFlowScreenGap),
           ..._nestedStack(children),
         ],
         if (showFooter) ...[
-          const SizedBox(height: 12),
+          const SizedBox(height: 16),
           shadcn.PrimaryButton(
             size: shadcn.ButtonSize.small,
             onPressed: () {},
@@ -291,12 +341,22 @@ Widget _buildInput(Map<String, dynamic> props) {
   final obscure = (props['obscure'] ?? false) as bool;
   final initialValue = (props['initialValue'] ?? '') as String;
   final readOnly = (props['readOnly'] ?? false) as bool;
-  final field = shadcn.TextField(
-    placeholder: Text(placeholder),
-    enabled: !disabled,
-    obscureText: obscure,
-    initialValue: initialValue.isEmpty ? null : initialValue,
-    readOnly: readOnly,
+  // Track Z2 beauty: comfortable 48px touch target. The shell floors only
+  // the height (minWidth 0, maxWidth pass-through): width stays owned by the
+  // parent stretch (phone_frame tight sizing box), and the shell adds no
+  // shrink-wrap that could fight it — nor a forced full width that could
+  // crash unbounded parents (rows, scrolls).
+  // STRETCH INTERPLAY: relies on the parent for full width; guarantees the
+  // 48px height itself.
+  final field = ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 48),
+    child: shadcn.TextField(
+      placeholder: Text(placeholder),
+      enabled: !disabled,
+      obscureText: obscure,
+      initialValue: initialValue.isEmpty ? null : initialValue,
+      readOnly: readOnly,
+    ),
   );
   if (label.isEmpty) return field;
   return Column(
@@ -304,7 +364,7 @@ Widget _buildInput(Map<String, dynamic> props) {
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
       Text(label),
-      const SizedBox(height: 6),
+      const SizedBox(height: 8),
       field,
     ],
   );
@@ -315,17 +375,31 @@ Widget _buildBadge(Map<String, dynamic> props) {
   final variant = (props['variant'] ?? 'primary') as String;
   final child = Text(label);
   // No generic `Badge` class exists — one widget per style.
+  late final Widget badge;
   switch (variant) {
     case 'secondary':
-      return shadcn.SecondaryBadge(child: child);
+      badge = shadcn.SecondaryBadge(child: child);
+      break;
     case 'destructive':
-      return shadcn.DestructiveBadge(child: child);
+      badge = shadcn.DestructiveBadge(child: child);
+      break;
     case 'outline':
-      return shadcn.OutlineBadge(child: child);
+      badge = shadcn.OutlineBadge(child: child);
+      break;
     case 'primary':
     default:
-      return shadcn.PrimaryBadge(child: child);
+      badge = shadcn.PrimaryBadge(child: child);
+      break;
   }
+  // Track Z2 beauty: vertical breathing room so badge/stat rows breathe.
+  // Vertical-only on purpose: horizontal padding would shrink the badge paint
+  // inside fixed-width row cells (the X1 stretch proof pins 92px), while
+  // vertical padding keeps that width intact. Row gaps (parent-owned) handle
+  // the horizontal rhythm.
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: badge,
+  );
 }
 
 /// Local toggle state for the catalog switch (builders are stateless).
@@ -923,8 +997,22 @@ Widget _buildBasic(Map<String, dynamic> props) {
   final content = (props['content'] ?? 'Content') as String;
   final showLeading = (props['showLeading'] ?? true) as bool;
   final showTrailing = (props['showTrailing'] ?? true) as bool;
+  // Track Z2 beauty: the leading rides a 40px box so icon rows line up with
+  // avatar rows (avatar default 40); row/column gaps sit in the 8-12px brief
+  // band (12 leading/trailing, 10 content). The title-subtitle 2px gap stays
+  // kit-owned (hardcoded `baseGap * 0.25` inside `Basic`, no builder param).
+  // No outer padding here: `Basic` already owns its (zero-default) padding,
+  // so any wrapper would compound into double spacing.
   return shadcn.Basic(
-    leading: showLeading ? const Icon(Icons.person) : null,
+    contentSpacing: 12,
+    titleSpacing: 10,
+    leading: showLeading
+        ? const SizedBox(
+            width: 40,
+            height: 40,
+            child: Center(child: Icon(Icons.person, size: 24)),
+          )
+        : null,
     title: _textOrNull(title),
     subtitle: _textOrNull(subtitle),
     content: _textOrNull(content),
@@ -936,17 +1024,33 @@ Widget _buildBasic(Map<String, dynamic> props) {
 /// centered glyph. The kit's own preview uses `Image.network` (a 404 trap on
 /// canvas — the triage screenshot's broken-image box), so the catalog never
 /// uses network/asset images here.
+/// Text-block budget for the card-image shell below: the `Gap(12)` plus the
+/// `Basic` title block plus the kit button's internal padding at default
+/// text scales. The shell converts node width into height as
+/// `width * 9/16 + budget`; over-estimating is safe (the loose `Flexible`
+/// centers the exact-ratio art and long titles shrink it proportionally
+/// instead of overflowing), under-estimating would clip. Tuned against the
+/// 320px narrow suite (defaults + 60-char stress titles, light + dark).
+const double _kCardImageTextBudget = 76;
+
 class _CardImageArt extends StatelessWidget {
   const _CardImageArt();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return Container(
-      height: 120,
-      color: scheme.surfaceContainerHighest,
-      child: Center(
-        child: Icon(Icons.image, size: 32, color: scheme.onSurfaceVariant),
+    // Track Z2 beauty: true 16:9 tonal art that fills the card width.
+    // `AspectRatio` sizes from the bounded width; it lives under the kit's
+    // loose `Flexible`, so it keeps the exact ratio at default text scales
+    // and shrinks proportionally (never overflows) when long titles grow the
+    // text block. Tonal container + glyph only — never network/asset images.
+    return AspectRatio(
+      aspectRatio: 16 / 9,
+      child: Container(
+        color: scheme.surfaceContainerHighest,
+        child: Center(
+          child: Icon(Icons.image, size: 32, color: scheme.onSurfaceVariant),
+        ),
       ),
     );
   }
@@ -957,17 +1061,30 @@ Widget _buildCardImage(Map<String, dynamic> props) {
   // subtitle (the required `image` slot is the theme-token art above). The
   // real `CardImage` builds bare; its vertical `Flex` holds a `Flexible`
   // image, which needs bounded height — root canvas columns are unbounded,
-  // so the catalog pins a fixed height exactly like the drawer builder pins
-  // a fixed width.
+  // so the catalog derives the height from the width (16:9 art plus the text
+  // budget above) exactly like the divider builder reads the real node width
+  // (row slices included; unbounded fallback is the viewport width,
+  // defaulting narrow-safe).
+  // STRETCH INTERPLAY: the parent owns the width; this shell converts that
+  // width into a proportional height so the art actually fills wide phones
+  // instead of sitting in a fixed 240px box.
   final title = (props['title'] ?? 'Card title') as String;
   final subtitle = (props['subtitle'] ?? 'Card subtitle') as String;
-  return SizedBox(
-    height: 240,
-    child: shadcn.CardImage(
-      image: const _CardImageArt(),
-      title: _textOrNull(title),
-      subtitle: _textOrNull(subtitle),
-    ),
+  return LayoutBuilder(
+    builder: (context, constraints) {
+      final max = constraints.maxWidth;
+      final width = max.isFinite
+          ? max
+          : (MediaQuery.maybeSizeOf(context)?.width ?? 320.0);
+      return SizedBox(
+        height: width * 9 / 16 + _kCardImageTextBudget,
+        child: shadcn.CardImage(
+          image: const _CardImageArt(),
+          title: _textOrNull(title),
+          subtitle: _textOrNull(subtitle),
+        ),
+      );
+    },
   );
 }
 
@@ -2060,15 +2177,27 @@ class _NavigationBarCellState extends State<_NavigationBarCell> {
 
   @override
   Widget build(BuildContext context) {
+    // Track Z2 beauty: the bar spreads four destinations across the full
+    // width as equal shares — `expands: true` wraps every child in `Expanded`
+    // and `center` adds no inter-item spacers (the spaceBetween/Around/Evenly
+    // alignments would). Both match the kit defaults; passing them explicitly
+    // pins the spread against theme drift. The bar itself fills the parent
+    // width (kit `Container` max-width); the selected highlight and label
+    // legibility stay kit-owned. Per-item label overflow stays the kit
+    // default (`NavigationOverflow.marquee`), so long labels scroll instead
+    // of overflowing 320px viewports (narrow-width track).
+    // STRETCH INTERPLAY: relies on the parent for full width (no forced
+    // `double.infinity`, which would crash unbounded parents); guarantees
+    // the equal-share split itself.
     return shadcn.NavigationBar(
       index: _index,
       // Labels always show: the kit default (`labelType: none`) renders an
       // icon-only strip, but the canvas kind models a labeled bottom tab bar
       // (Home/Search/Saved/You) — documented, like the menubar builder's
-      // explicit params. Per-item label overflow stays the kit default
-      // (`NavigationOverflow.marquee`), so long labels scroll instead of
-      // overflowing 320px viewports (narrow-width track).
+      // explicit params.
       labelType: shadcn.NavigationLabelType.all,
+      alignment: shadcn.NavigationBarAlignment.center,
+      expands: true,
       onSelected: (i) =>
           setState(() => _index = i.clamp(0, widget.labels.length - 1)),
       children: [

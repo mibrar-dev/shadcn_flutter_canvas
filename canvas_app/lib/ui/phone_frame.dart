@@ -753,15 +753,20 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Effective (rendered) height of [node] (see [_effW]).
   double? _effH(CanvasNode node) => _dragSizes[node.id]?.h ?? node.h;
 
-  /// Track X1 fill axis for a node's own content column: a pinned dim
-  /// (live drag size wins, like the chrome) stretches the column so kit
-  /// surfaces paint at the pinned width instead of shrinking to intrinsic
-  /// top-left. Auto nodes keep `start` — today's behavior, so badges stay
-  /// intrinsic and the row squeeze fix is untouched.
+  /// Track Z1 full-bleed fill axis for a node's own content column: ALWAYS
+  /// [CrossAxisAlignment.stretch] so auto-width nodes fill the flow width
+  /// (cards/inputs paint full-bleed instead of intrinsic top-left —
+  /// FlutterFlow behavior: root widgets stretch full width by default).
+  /// Fixed-w nodes keep exact pixels via the left-aligned wrapper in
+  /// [_nodeChrome] (a bare [SizedBox] would be forced full width by the
+  /// tight stretch parent, so the wrapper converts tight to loose when the
+  /// pin fits and left-aligns it; oversized pins shrink to the cell with no
+  /// flex-overflow report). Row equal-share flex ([wrapRowChild]) is
+  /// untouched — cells still share via tight [Flexible]; only the inner
+  /// paint now fills its cell (badges stretch to the share instead of
+  /// staying intrinsic; see row_flex_test Z1 note).
   CrossAxisAlignment _contentCrossAxis(CanvasNode node) =>
-      (_effW(node) != null || _effH(node) != null)
-          ? CrossAxisAlignment.stretch
-          : CrossAxisAlignment.start;
+      CrossAxisAlignment.stretch;
 
   /// Measured render size of [id]'s chrome, or null before first layout.
   Size? _measuredSize(String id) {
@@ -1394,11 +1399,20 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     );
   }
 
-  /// Screen content: padded top-left column of root nodes (doc order).
+  /// Screen content: padded full-bleed column of root nodes (doc order).
   /// Root leaves ignore `expand`/`flex` (W3): they render unwrapped.
   /// Tier-hidden nodes are skipped (see [_visibleNodes]). Every root builds
   /// through [_buildNodeWidget] so nesting applies at any depth; childless
   /// nodes take the exact pre-composition path.
+  ///
+  /// Track Z1 full-bleed (FlutterFlow behavior: root widgets stretch full
+  /// width by default): the flow column uses [CrossAxisAlignment.stretch] so
+  /// every root wrapper fills the flow width (stage minus screen padding).
+  /// Auto-width nodes fill via their stretch content columns (see
+  /// [_contentCrossAxis]); fixed-w nodes keep exact pixels via the
+  /// left-aligned wrapper in [_nodeChrome] (outer chrome fills, pinned box
+  /// sits top-left). Row internals are untouched (horizontal flex shares via
+  /// [wrapRowChild]; only the vertical cross-axis changes).
   ///
   /// D3 drop preview: when [ghost] targets the screen root (`parentId ==
   /// null`), the ghost splices into the root column at the hover index (same
@@ -1419,7 +1433,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       padding: const EdgeInsets.all(kFlowScreenPadding),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (var i = 0; i < items.length; i++) ...[
             if (i > 0) const SizedBox(height: kFlowScreenGap),
@@ -1693,7 +1707,11 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       }
       body = row;
     }
-    return _withHandles(
+    // Track Z1: fixed-w rows keep exact pixels left-aligned inside the
+    // stretch flow (bare width would be forced full-bleed by the tight
+    // parent); auto rows fill via double.infinity. The Align converts tight
+    // to loose for the pinned box only.
+    final rowChrome = _withHandles(
       node,
       GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -1718,6 +1736,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         ),
       ),
     );
+    if (_effW(node) == null) return rowChrome;
+    return Align(alignment: Alignment.centerLeft, child: rowChrome);
   }
 
   /// One leaf node: today's `ConstrainedBox` content (the clamp stays —
@@ -1743,8 +1763,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        // Track X1 fill: pinned dims stretch so the paint fills the box
-        // (see [_contentCrossAxis]); auto keeps `start`.
+        // Track Z1 full-bleed: always stretch (see [_contentCrossAxis]) so
+        // auto nodes fill the flow width; fixed-w keeps pixels via SizedBox.
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
@@ -1759,6 +1779,14 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// [GestureDetector], key, padding, selection ring, content clamp) around
   /// [content]. Keeps nested nodes' tap/selection/clamp semantics identical
   /// to roots — the "same builder path" rule.
+  ///
+  /// Track Z1 full-bleed: `width: double.infinity` so the chrome fills its
+  /// parent in LOOSE contexts too (nested inside catalog builder slots whose
+  /// inner `Column(start)` — builder-owned, untouched here — would otherwise
+  /// shrink-wrap the child to intrinsic). In TIGHT parents (root flow
+  /// stretch, fallback stretch, row flex shares) the width is already tight
+  /// so behavior is identical; fixed-w keeps pixels because the inner
+  /// [applyNodeSizeValues] [SizedBox] wins and left-aligns.
   Widget _nodeChrome(CanvasNode node, EditorColors colors, Widget content) {
     void select() {
       if (!widget.panMode) widget.onSelectNode?.call(node.id);
@@ -1775,6 +1803,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           onTap: select,
           child: Container(
             key: _flowKey(node.id),
+            width: double.infinity,
             padding: const EdgeInsets.all(4),
             decoration: node.id == widget.selectedNodeId
                 ? BoxDecoration(
@@ -1799,7 +1828,25 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               // Track U2: explicit sizes pin the content (inside the legacy
               // max clamp, which keeps guarding far-edge drops); auto passes
               // through untouched.
-              child: applyNodeSizeValues(_effW(node), _effH(node), content),
+              // Track Z1: fixed-w keeps exact pixels left-aligned via this
+              // [Align] — a bare [SizedBox] would be forced full width by the
+              // tight stretch parent. `heightFactor: 1.0` sizes the Align to
+              // its child vertically so it never expands to the 709px
+              // maxHeight under the unbounded scroll (which pushed handles
+              // off-screen); width still fills so the pin left-aligns, and
+              // oversized pins shrink to the cell with no flex-overflow
+              // report. Auto stays direct so it fills.
+              child: _effW(node) == null
+                  ? applyNodeSizeValues(null, _effH(node), content)
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      heightFactor: 1.0,
+                      child: applyNodeSizeValues(
+                        _effW(node),
+                        _effH(node),
+                        content,
+                      ),
+                    ),
             ),
           ),
         ),
@@ -1812,6 +1859,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// items stack below the chrome (see [kContainerKinds]). Children build
   /// through [_buildNodeWidget] (props/tier/hidden semantics apply
   /// recursively) and stack vertically with [kFlowScreenGap] separators.
+  ///
+  /// Track Z1 full-bleed: the children column stretches so nested children
+  /// fill the container width (with [_nodeChrome]'s `double.infinity` the
+  /// fill holds even inside builder-owned `start` slots).
   ///
   /// D3 drop preview: when [ghost] targets this container, the ghost splices
   /// into the slot's child list at the hover index, so it renders inside the
@@ -1840,7 +1891,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        // Track X1 fill (see [_contentCrossAxis]).
+        // Track Z1 full-bleed: stretch (see [_contentCrossAxis]).
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           buildCatalogItem(items.first.kind, items.first.props, builtKids),
@@ -1854,7 +1905,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// One leaf-with-children node (kind NOT in [kContainerKinds]): the §1
   /// fallback `Column([ownWidget, ...children])` — children stack BELOW the
   /// parent's own widget with [kFlowScreenGap] separators, never inside
-  /// chrome. D3 drop preview: [ghost] forwards to the children (a targeted
+  /// chrome. Track Z1 full-bleed: stretch so below-stacked children fill.
+  /// D3 drop preview: [ghost] forwards to the children (a targeted
   /// container may nest under a leaf via the below-fallback).
   Widget _buildLeafFallback(
     CanvasNode node,
@@ -1869,7 +1921,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        // Track X1 fill (see [_contentCrossAxis]).
+        // Track Z1 full-bleed: stretch (see [_contentCrossAxis]).
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))

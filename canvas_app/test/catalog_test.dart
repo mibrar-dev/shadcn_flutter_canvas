@@ -97,40 +97,39 @@ void main() {
   });
 
   test('button builder maps variants to real widgets', () {
-    const base = {'label': 'Go', 'size': 'md', 'disabled': false};
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'primary'}),
-      isA<shadcn.PrimaryButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'secondary'}),
-      isA<shadcn.SecondaryButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'outline'}),
-      isA<shadcn.OutlineButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'ghost'}),
-      isA<shadcn.GhostButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'destructive'}),
-      isA<shadcn.DestructiveButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'link'}),
-      isA<shadcn.LinkButton>(),
-    );
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'text'}),
-      isA<shadcn.TextButton>(),
-    );
+    // Track Z2 beauty cause: the builder now returns a min-height (48px)
+    // ConstrainedBox shell over the variant button (childless shape change,
+    // expected this track). Wiring assertions unwrap exactly one level, so
+    // every variant mapping stays pinned.
+    void expectVariant(String variant, Type type) {
+      final built = buildCatalogItem('button', {
+        'label': 'Go',
+        'size': 'md',
+        'disabled': false,
+        'variant': variant,
+      });
+      expect(built, isA<ConstrainedBox>(), reason: 'Z2 48px shell ($variant)');
+      expect(
+        (built as ConstrainedBox).child.runtimeType,
+        type,
+        reason: 'variant wiring ($variant)',
+      );
+      expect(
+        built.constraints.minHeight,
+        48,
+        reason: 'Z2 touch target ($variant)',
+      );
+    }
+
+    expectVariant('primary', shadcn.PrimaryButton);
+    expectVariant('secondary', shadcn.SecondaryButton);
+    expectVariant('outline', shadcn.OutlineButton);
+    expectVariant('ghost', shadcn.GhostButton);
+    expectVariant('destructive', shadcn.DestructiveButton);
+    expectVariant('link', shadcn.LinkButton);
+    expectVariant('text', shadcn.TextButton);
     // Unknown variants fall back to primary, never crash.
-    expect(
-      buildCatalogItem('button', {...base, 'variant': 'bogus'}),
-      isA<shadcn.PrimaryButton>(),
-    );
+    expectVariant('bogus', shadcn.PrimaryButton);
   });
 
   testWidgets('button renders label for every variant', (tester) async {
