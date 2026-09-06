@@ -3,6 +3,12 @@
 /// Uses [EditorMetrics] / [EditorColors] for every size and color.
 /// Tiles source from [kRegistry] (grouped by [kRegistrySectionOrder]) and
 /// stay draggable by kind, so drop/drop-target behavior is unchanged.
+///
+/// Track FF4 (BUILD_SPEC §9.2 row 3b): FlutterFlow-style list rows — one
+/// full-width row per kind (small preview affordance + kind name) with the
+/// "Layout Primitives" section first. The DnD payload contract
+/// (`Draggable<String>` data = kind) and the search behavior
+/// ([registryMatchesQuery] word-start matching) are unchanged.
 library;
 
 import 'package:flutter/material.dart';
@@ -115,7 +121,9 @@ class _PartsPaletteState extends State<PartsPalette> {
     }
 
     return Container(
-      color: colors.surface,
+      // FF4: the palette is a full-height panel — the host gives the width,
+      // this container owns the panel background.
+      color: colors.panelBg,
       padding: const EdgeInsets.only(
         top: 16,
         left: EditorMetrics.panelInset,
@@ -247,7 +255,8 @@ class _PartsPaletteState extends State<PartsPalette> {
   }
 }
 
-/// One collapsible section with a 2-column tile grid body.
+/// One collapsible section with a full-width list-row body (FF4: the tile
+/// grid becomes FlutterFlow-style rows — kind preview + name per kind).
 class _Section extends StatelessWidget {
   final String name;
   final List<RegistryEntry> entries;
@@ -284,7 +293,7 @@ class _Section extends StatelessWidget {
                   child: Text(
                     name,
                     style: EditorType.sectionHeader.copyWith(
-                      color: colors.onSurface,
+                      color: colors.groupHeaderFg,
                     ),
                   ),
                 ),
@@ -307,25 +316,29 @@ class _Section extends StatelessWidget {
         if (!collapsed)
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 16),
-            child: Wrap(
-              spacing: EditorMetrics.tileGap,
-              runSpacing: EditorMetrics.tileGap,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 for (final entry in entries)
                   Draggable<String>(
+                    // DnD payload contract (unchanged): the kind string —
+                    // the canvas accept path resolves it via the catalog.
                     data: entry.kind,
                     feedback: Material(
                       type: MaterialType.transparency,
                       child: Opacity(
                         opacity: 0.9,
-                        child: _TileContent(entry: entry),
+                        child: SizedBox(
+                          width: EditorMetrics.ffPanelWidth,
+                          child: _PaletteRowContent(entry: entry),
+                        ),
                       ),
                     ),
                     childWhenDragging: Opacity(
                       opacity: 0.4,
-                      child: _TileContent(entry: entry),
+                      child: _PaletteRowContent(entry: entry),
                     ),
-                    child: _PressableTile(entry: entry),
+                    child: _PaletteRow(entry: entry),
                   ),
               ],
             ),
@@ -335,30 +348,26 @@ class _Section extends StatelessWidget {
   }
 }
 
-/// Tile with hover lift and press scale per the reference motion spec.
-class _PressableTile extends StatefulWidget {
+/// Hoverable list row around [_PaletteRowContent].
+///
+/// Draggable swaps `child` for `childWhenDragging` when a drag starts,
+/// unmounting this row mid-gesture; the trailing pointer-exit event then
+/// arrives post-dispose. Guard everything (DDC-proven crash:
+/// "setState() called after dispose" on every web drop).
+class _PaletteRow extends StatefulWidget {
   final RegistryEntry entry;
 
-  const _PressableTile({required this.entry});
+  const _PaletteRow({required this.entry});
 
   @override
-  State<_PressableTile> createState() => _PressableTileState();
+  State<_PaletteRow> createState() => _PaletteRowState();
 }
 
-class _PressableTileState extends State<_PressableTile> {
+class _PaletteRowState extends State<_PaletteRow> {
   bool _hovered = false;
-  bool _pressed = false;
 
-  // Draggable swaps `child` for `childWhenDragging` when a drag starts,
-  // unmounting this tile mid-gesture; the trailing pointer-up/exit events
-  // then arrive post-dispose. Guard everything (DDC-proven crash:
-  // "setState() called after dispose" on every web drop).
   void _setHovered(bool v) {
     if (mounted) setState(() => _hovered = v);
-  }
-
-  void _setPressed(bool v) {
-    if (mounted) setState(() => _pressed = v);
   }
 
   @override
@@ -366,62 +375,71 @@ class _PressableTileState extends State<_PressableTile> {
     return MouseRegion(
       onEnter: (_) => _setHovered(true),
       onExit: (_) => _setHovered(false),
-      child: Listener(
-        onPointerDown: (_) => _setPressed(true),
-        onPointerUp: (_) => _setPressed(false),
-        onPointerCancel: (_) => _setPressed(false),
-        child: AnimatedSlide(
-          offset: _hovered && !_pressed ? const Offset(0, -0.014) : Offset.zero,
-          duration: const Duration(milliseconds: 140),
-          curve: Curves.easeOutCubic,
-          child: AnimatedScale(
-            scale: _pressed ? 0.96 : 1.0,
-            duration: const Duration(milliseconds: 140),
-            curve: Curves.easeOutCubic,
-            child: _TileContent(entry: widget.entry),
-          ),
-        ),
-      ),
+      cursor: SystemMouseCursors.grab,
+      child: _PaletteRowContent(entry: widget.entry, hovered: _hovered),
     );
   }
 }
 
-/// Fixed 114x72 tile: centered icon over the part label.
-class _TileContent extends StatelessWidget {
+/// One full-width palette row (FF4): a small preview affordance (the kind
+/// icon on a token tile) beside the kind name, with a drag-hint glyph.
+///
+/// The kind label text is exactly [_tileLabel] of the kind, so one row
+/// carries one label — search tests keep counting it.
+class _PaletteRowContent extends StatelessWidget {
   final RegistryEntry entry;
 
-  const _TileContent({required this.entry});
+  /// Hover state (drives the row wash + preview tile).
+  final bool hovered;
+
+  const _PaletteRowContent({required this.entry, this.hovered = false});
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
     return shadcn.Tooltip(
-      tooltip: (context) =>
-          shadcn.TooltipContainer(child: Text(entry.label)),
+      tooltip: (context) => shadcn.TooltipContainer(child: Text(entry.label)),
       child: Container(
-        width: EditorMetrics.tileWidth,
-        height: EditorMetrics.tileHeight,
         decoration: BoxDecoration(
-          color: colors.surfaceContainer,
-          borderRadius: BorderRadius.circular(EditorMetrics.tileRadius),
+          color: hovered ? colors.surfaceContainerHigh : Colors.transparent,
+          borderRadius: BorderRadius.circular(EditorMetrics.segmentInnerRadius),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        padding: const EdgeInsets.symmetric(
+          horizontal: EditorMetrics.panelInset,
+          vertical: EditorMetrics.tileGap,
+        ),
+        child: Row(
           children: [
-            Icon(
-              entry.icon,
-              size: 20,
-              color: colors.onSurfaceVariant,
-            ),
-            const SizedBox(height: EditorMetrics.toolbarButtonGap),
-            Text(
-              _tileLabel(entry.kind),
-              style: EditorType.tileLabel.copyWith(
-                color: colors.onSurface,
+            Container(
+              width: EditorMetrics.ffCompactButtonSize,
+              height: EditorMetrics.ffCompactButtonSize,
+              decoration: BoxDecoration(
+                color: hovered ? colors.panelBg : colors.surfaceContainerHigh,
+                borderRadius:
+                    BorderRadius.circular(EditorMetrics.segmentInnerRadius),
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+              child: Icon(
+                entry.icon,
+                size: EditorMetrics.ffRailIconSize,
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: EditorMetrics.panelInset),
+            Expanded(
+              child: Text(
+                _tileLabel(entry.kind),
+                style: EditorType.tileLabel.copyWith(
+                  color: colors.onSurface,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.start,
+              ),
+            ),
+            Icon(
+              Icons.drag_indicator,
+              size: EditorMetrics.ffRailIconSize,
+              color: colors.disabled,
             ),
           ],
         ),

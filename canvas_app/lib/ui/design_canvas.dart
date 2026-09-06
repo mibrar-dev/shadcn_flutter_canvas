@@ -32,8 +32,8 @@ const double kCanvasMaxZoom = 4.0;
 const double kWheelZoomGain = 0.002;
 
 /// Clamps [zoom] into the supported viewport range.
-double clampZoom(double zoom) => zoom.clamp(kCanvasMinZoom, kCanvasMaxZoom)
-    .toDouble();
+double clampZoom(double zoom) =>
+    zoom.clamp(kCanvasMinZoom, kCanvasMaxZoom).toDouble();
 
 /// Viewport pan for a wheel event: plain wheel pans vertically, Shift+wheel
 /// pans horizontally (both native components feed the horizontal axis so
@@ -80,48 +80,6 @@ double wheelZoomFactor(double scrollDeltaY) =>
 /// Outer frame width of [screen]: device stage width plus the bezel.
 double screenOuterWidth(CanvasScreen screen) =>
     specForScreenDevice(screen.device).width + EditorMetrics.phoneBezel * 2;
-
-/// Dotted canvas background painter (Track Y4, FORGE.md §1-3d, §2).
-///
-/// Dot grid: spacing APPROXIMATE ~18px, radius APPROXIMATE ~1px. The color is
-/// token-derived ([EditorColors.onSurfaceVariant] at low alpha via
-/// `withValues`, the existing idiom) so no new token is needed and the dots
-/// read in both chrome modes. Custom paint is a documented exception to the
-/// kit dogfood rule (FORGE.md §2 — no kit dotted-box exists; same exception
-/// class as the existing `_DashedOutline` in `phone_frame.dart`).
-class ForgeDotsPainter extends CustomPainter {
-  /// Token-derived dot color (pass the `withValues(alpha: …)` variant).
-  final Color color;
-
-  /// Grid spacing in logical px. APPROXIMATE ~18px (FORGE.md §2).
-  final double spacing;
-
-  /// Dot radius in logical px. APPROXIMATE ~1px (FORGE.md §2).
-  final double radius;
-
-  const ForgeDotsPainter({
-    required this.color,
-    this.spacing = 18,
-    this.radius = 1,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final paint = Paint()..color = color;
-    for (var y = spacing / 2; y < size.height; y += spacing) {
-      for (var x = spacing / 2; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), radius, paint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(ForgeDotsPainter oldDelegate) =>
-      oldDelegate.color != color ||
-      oldDelegate.spacing != spacing ||
-      oldDelegate.radius != radius;
-}
 
 /// First-run hint pill (Track Y4, FORGE.md §1-3c, §3).
 ///
@@ -615,6 +573,7 @@ class _DesignCanvasState extends State<DesignCanvas> {
       setState(() => _pan = applyMiddlePan(_pan, event.delta));
     }
   }
+
   @override
   void initState() {
     super.initState();
@@ -742,18 +701,15 @@ class _DesignCanvasState extends State<DesignCanvas> {
             ),
           ),
         );
-        // Y4 Forge canvas chrome (FORGE.md §1-3c–3d): the dotted background
-        // paints behind the viewport and the dismissible hint pill floats
-        // top-center above it. Both are pure overlays — pan/zoom/gesture code
-        // above is untouched.
+        // FF5 FlutterFlow canvas chrome (BUILD_SPEC §9.2 row 4a): the neutral
+        // [EditorColors.canvasBackdrop] fills behind the viewport and the
+        // dismissible hint pill floats top-center above it. Both are pure
+        // overlays — pan/zoom/gesture code above is untouched. The Forge dot
+        // grid is dropped with the Forge chrome.
         return Stack(
           children: [
             Positioned.fill(
-              child: CustomPaint(
-                painter: ForgeDotsPainter(
-                  color: colors.onSurfaceVariant.withValues(alpha: 0.35),
-                ),
-              ),
+              child: ColoredBox(color: colors.canvasBackdrop),
             ),
             viewport,
             if (_hintVisible)

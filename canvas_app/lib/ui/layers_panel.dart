@@ -28,6 +28,12 @@
 /// directly underneath (read-only `slot → child` labels — tap selects the
 /// child, dangling refs show `missing`). The header delete-set skips locked
 /// ids (they survive; see [_LayersBodyState._onDeletePressed]).
+///
+/// Track FF4 (BUILD_SPEC §9.2 row 3a): full-height panel skin over the
+/// unchanged tree. The panel fills with [EditorColors.panelBg], screen +
+/// selection headers read [EditorColors.groupHeaderFg], and nested rows gain
+/// one indent guide rail per depth level. Every store path (select / toggle /
+/// range / reorder / cascade-delete / lock / group / rename) is untouched.
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -108,11 +114,11 @@ class LayersPanel extends StatelessWidget {
   /// selection cannot round-trip through the single-id [onSelectNode]).
   final VoidCallback? onUngroupSelection;
 
-/// Header "Delete selection" action. Null falls back to one
-/// `store.deleteNode` per selected id plus [onSelectNode] `(null)`.
-/// Track DD: the fallback skips locked ids (they survive; the selection
-/// collapses onto the first skipped lock, or clears when nothing was
-/// skipped).
+  /// Header "Delete selection" action. Null falls back to one
+  /// `store.deleteNode` per selected id plus [onSelectNode] `(null)`.
+  /// Track DD: the fallback skips locked ids (they survive; the selection
+  /// collapses onto the first skipped lock, or clears when nothing was
+  /// skipped).
   final VoidCallback? onDeleteSelection;
 
   @override
@@ -190,59 +196,63 @@ class _LayersBodyState extends State<_LayersBody> {
         }
         final selected = _effectiveSelection();
         final primary = _primaryId(doc, selected);
-        return ListView(
-          padding: const EdgeInsets.all(EditorMetrics.panelInset),
-          children: [
-            if (selected.isNotEmpty)
-              _selectionHeader(context, doc, selected),
-            for (final screen in doc.screens) ...[
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      screen.name,
-                      style: EditorType.sectionHeader
-                          .copyWith(color: colors.onSurfaceVariant),
+        // FF4: the tree is a full-height panel — the host gives the width,
+        // this container owns the panel background.
+        return Container(
+          color: colors.panelBg,
+          child: ListView(
+            padding: const EdgeInsets.all(EditorMetrics.panelInset),
+            children: [
+              if (selected.isNotEmpty) _selectionHeader(context, doc, selected),
+              for (final screen in doc.screens) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        screen.name,
+                        style: EditorType.sectionHeader
+                            .copyWith(color: colors.groupHeaderFg),
+                      ),
                     ),
-                  ),
-                  _LayerAction(
-                    tooltip: 'Rename screen',
-                    icon: Icons.edit,
-                    onPressed: () => _renameScreen(context, screen),
-                  ),
-                  _LayerAction(
-                    tooltip: 'Delete screen',
-                    icon: Icons.delete_outline,
-                    onPressed: () => _deleteScreen(context, screen),
-                  ),
-                ],
-              ),
-              const SizedBox(height: EditorMetrics.tileGap),
-              Builder(
-                builder: (_) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: _treeRows(
-                      doc,
-                      screen,
-                      null,
-                      0,
-                      const {},
-                      selected,
-                      primary,
+                    _LayerAction(
+                      tooltip: 'Rename screen',
+                      icon: Icons.edit,
+                      onPressed: () => _renameScreen(context, screen),
                     ),
-                  );
-                },
-              ),
-              if (!_hasNodes(doc, screen))
-                Text(
-                  'Empty',
-                  style: EditorType.tileLabel
-                      .copyWith(color: colors.onSurfaceVariant),
+                    _LayerAction(
+                      tooltip: 'Delete screen',
+                      icon: Icons.delete_outline,
+                      onPressed: () => _deleteScreen(context, screen),
+                    ),
+                  ],
                 ),
-              const SizedBox(height: EditorMetrics.tileGap),
+                const SizedBox(height: EditorMetrics.tileGap),
+                Builder(
+                  builder: (_) {
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: _treeRows(
+                        doc,
+                        screen,
+                        null,
+                        0,
+                        const {},
+                        selected,
+                        primary,
+                      ),
+                    );
+                  },
+                ),
+                if (!_hasNodes(doc, screen))
+                  Text(
+                    'Empty',
+                    style: EditorType.tileLabel
+                        .copyWith(color: colors.onSurfaceVariant),
+                  ),
+                const SizedBox(height: EditorMetrics.tileGap),
+              ],
             ],
-          ],
+          ),
         );
       },
     );
@@ -300,9 +310,8 @@ class _LayersBodyState extends State<_LayersBody> {
   ) {
     final colors = EditorTheme.of(context);
     final canGroup = canGroupNodes(doc, selected);
-    final canUngroup =
-        ungroupTargetRow(doc, selected) != null &&
-            widget.onUngroupSelection != null;
+    final canUngroup = ungroupTargetRow(doc, selected) != null &&
+        widget.onUngroupSelection != null;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -313,7 +322,7 @@ class _LayersBodyState extends State<_LayersBody> {
               child: Text(
                 '${selected.length} selected',
                 style: EditorType.sectionHeader
-                    .copyWith(color: colors.onSurface),
+                    .copyWith(color: colors.groupHeaderFg),
               ),
             ),
             _LayerAction(
@@ -324,8 +333,7 @@ class _LayersBodyState extends State<_LayersBody> {
             _LayerAction(
               tooltip: 'Ungroup',
               icon: Icons.call_split,
-              onPressed:
-                  canUngroup ? widget.onUngroupSelection : null,
+              onPressed: canUngroup ? widget.onUngroupSelection : null,
             ),
             _LayerAction(
               tooltip: 'Delete selection',
@@ -336,8 +344,7 @@ class _LayersBodyState extends State<_LayersBody> {
         ),
         Text(
           'Tip: Ctrl/Cmd+click toggles, Shift+click selects a range',
-          style: EditorType.tileLabel
-              .copyWith(color: colors.onSurfaceVariant),
+          style: EditorType.tileLabel.copyWith(color: colors.onSurfaceVariant),
         ),
         const SizedBox(height: EditorMetrics.tileGap),
       ],
@@ -380,8 +387,7 @@ class _LayersBodyState extends State<_LayersBody> {
       return;
     }
     try {
-      final rowId =
-          widget.store.groupIntoRow(_effectiveSelection().toList());
+      final rowId = widget.store.groupIntoRow(_effectiveSelection().toList());
       widget.onSelectNode(rowId);
     } on StateError catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -544,6 +550,13 @@ class _LayersBodyState extends State<_LayersBody> {
   ///
   /// Track DD: rows carry a lock toggle writing through the undoable
   /// `store.setNodeLocked` (locked rows show the filled lock glyph).
+  ///
+  /// Track FF4: nested rows gain one indent guide rail per [depth] level — a
+  /// fixed [EditorMetrics.panelInset] lane with a right-edge rule in
+  /// [EditorColors.groupHeaderFg] — so the tree reads as a full-height panel.
+  /// The guides are pure decoration (no tap targets, no store paths); the
+  /// row itself ([_LayerRow] selection, lock, duplicate/delete, reorder,
+  /// expand/collapse) is untouched.
   Widget _layerRow(
     CanvasNode node,
     int groupLength,
@@ -553,41 +566,61 @@ class _LayersBodyState extends State<_LayersBody> {
     required Set<String> selected,
     required String? primary,
   }) {
-    return Padding(
-      padding: EdgeInsets.only(left: depth * EditorMetrics.panelInset),
-      child: _LayerRow(
-        node: node,
-        selected: selected.contains(node.id),
-        primary: node.id == primary,
-        locked: node.locked,
-        onTap: () => _onRowTap(node.id),
-        onToggleLock: () =>
-            widget.store.setNodeLocked(node.id, !node.locked),
-        onDuplicate: () => widget.store.duplicateNode(node.id),
-        onDelete: () => widget.store.deleteNode(node.id),
-        // Displayed frontmost-first: group-relative doc index of this row is
-        // groupLength-1-visualIndex; up moves toward the front (+1).
-        onMoveUp: visualIndex == 0
-            ? null
-            : () => widget.store.reorderNode(
-                  node.id,
-                  groupLength - visualIndex,
+    final colors = EditorTheme.of(context);
+    // IntrinsicHeight: the guide rails stretch to the row height while the
+    // list scrolls unbounded (a bare stretch Row asserts in a ListView).
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var i = 0; i < depth; i++)
+            Container(
+              width: EditorMetrics.panelInset,
+              decoration: BoxDecoration(
+                border: Border(
+                  right: BorderSide(
+                    color: colors.groupHeaderFg.withValues(alpha: 0.35),
+                  ),
                 ),
-        onMoveDown: visualIndex == groupLength - 1
-            ? null
-            : () => widget.store.reorderNode(
-                  node.id,
-                  groupLength - 2 - visualIndex,
-                ),
-        hasChildren: hasChildren,
-        expanded: !_collapsed.contains(node.id),
-        onToggleExpanded: hasChildren
-            ? () => setState(() {
-                  if (!_collapsed.remove(node.id)) {
-                    _collapsed.add(node.id);
-                  }
-                })
-            : null,
+              ),
+            ),
+          Expanded(
+            child: _LayerRow(
+              node: node,
+              selected: selected.contains(node.id),
+              primary: node.id == primary,
+              locked: node.locked,
+              onTap: () => _onRowTap(node.id),
+              onToggleLock: () =>
+                  widget.store.setNodeLocked(node.id, !node.locked),
+              onDuplicate: () => widget.store.duplicateNode(node.id),
+              onDelete: () => widget.store.deleteNode(node.id),
+              // Displayed frontmost-first: group-relative doc index of this row is
+              // groupLength-1-visualIndex; up moves toward the front (+1).
+              onMoveUp: visualIndex == 0
+                  ? null
+                  : () => widget.store.reorderNode(
+                        node.id,
+                        groupLength - visualIndex,
+                      ),
+              onMoveDown: visualIndex == groupLength - 1
+                  ? null
+                  : () => widget.store.reorderNode(
+                        node.id,
+                        groupLength - 2 - visualIndex,
+                      ),
+              hasChildren: hasChildren,
+              expanded: !_collapsed.contains(node.id),
+              onToggleExpanded: hasChildren
+                  ? () => setState(() {
+                        if (!_collapsed.remove(node.id)) {
+                          _collapsed.add(node.id);
+                        }
+                      })
+                  : null,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -708,8 +741,7 @@ class _LayerAction extends StatelessWidget {
     final colors = EditorTheme.of(context);
     final enabled = onPressed != null;
     return shadcn.Tooltip(
-      tooltip: (context) =>
-          shadcn.TooltipContainer(child: Text(tooltip)),
+      tooltip: (context) => shadcn.TooltipContainer(child: Text(tooltip)),
       child: SizedBox(
         width: _kActionButtonSize,
         height: _kActionButtonSize,
@@ -815,9 +847,8 @@ class _LayerRowState extends State<_LayerRow> {
               if (widget.hasChildren)
                 _LayerAction(
                   tooltip: widget.expanded ? 'Collapse' : 'Expand',
-                  icon: widget.expanded
-                      ? Icons.expand_more
-                      : Icons.chevron_right,
+                  icon:
+                      widget.expanded ? Icons.expand_more : Icons.chevron_right,
                   onPressed: widget.onToggleExpanded,
                 )
               else

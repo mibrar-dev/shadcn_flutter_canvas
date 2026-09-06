@@ -161,19 +161,13 @@ class PhoneFrame extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.bezel,
         borderRadius: BorderRadius.circular(EditorMetrics.phoneOuterRadius),
-        // Track X1 frame polish: a soft drop shadow grounds the device on the
-        // canvas well. The shadow paints outside the measured box without
-        // changing layout (a decoration *border* would deflate the child by
-        // its width and shift the screen origin — never add one here; the
-        // drop math subtracts exactly [_kFrameBezel]).
+        // Track FF5 plain device frame (BUILD_SPEC §9.2 row 4b): the bezel is
+        // a flat frame — no drop shadow. Geometry is untouched (same outer
+        // box, same radii, same [_kFrameBezel] screen inset below, so the
+        // screen origin and every drop/hit-test conversion is identical); a
+        // decoration *border* would still deflate the child by its width and
+        // shift the screen origin, so never add one here.
         // Token colors only — no hardcoded hex.
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.28),
-            blurRadius: 28,
-            offset: const Offset(0, 10),
-          ),
-        ],
       ),
       padding: const EdgeInsets.all(_kFrameBezel),
       child: ClipRRect(
@@ -191,8 +185,7 @@ const double _kDynamicIslandWidth = 110.0;
 const double _kDynamicIslandHeight = 28.0;
 
 /// Finder for the Dynamic Island overlay (used by forge-canvas tests).
-const ValueKey<String> kDynamicIslandKey =
-    ValueKey<String>('dynamic-island');
+const ValueKey<String> kDynamicIslandKey = ValueKey<String>('dynamic-island');
 
 /// Track X1 phone status bar: overlaid strip with the classic `9:41` time on
 /// the left and signal/wifi/battery glyphs on the right. Token-styled
@@ -336,8 +329,7 @@ class ScreenLabel extends StatelessWidget {
       right: Radius.circular(last ? 14 : 4),
     );
     return shadcn.Tooltip(
-      tooltip: (context) =>
-          shadcn.TooltipContainer(child: Text(device.label)),
+      tooltip: (context) => shadcn.TooltipContainer(child: Text(device.label)),
       child: Container(
         width: 28,
         height: EditorMetrics.screenLabelHeight,
@@ -404,10 +396,9 @@ class _FillOrShrink extends SingleChildRenderObjectWidget {
   const _FillOrShrink({required super.child, this.fixedWidth, this.looseWidth});
 
   @override
-  RenderObject createRenderObject(BuildContext context) =>
-      _RenderFillOrShrink()
-        ..fixedWidth = fixedWidth
-        ..looseWidth = looseWidth;
+  RenderObject createRenderObject(BuildContext context) => _RenderFillOrShrink()
+    ..fixedWidth = fixedWidth
+    ..looseWidth = looseWidth;
 
   @override
   void updateRenderObject(
@@ -719,6 +710,22 @@ ValueKey<String> resizeHandleKey(String nodeId, String edge) =>
 ValueKey<String> resizeReadoutKey(String nodeId) =>
     ValueKey<String>('resize-readout:$nodeId');
 
+/// Finder key for the FF5 floating selection kind label (BUILD_SPEC §9.2 row
+/// 4c): the accent tag over the selected node's top-left (used by ff5
+/// canvas tests).
+ValueKey<String> selectionLabelKey(String nodeId) =>
+    ValueKey<String>('selection-label:$nodeId');
+
+/// Capitalized kind of the node's first item, 'Row' for row containers, or
+/// 'Empty' when it has none — the floating selection label text.
+String _selectionKindLabel(CanvasNode node) {
+  if (node.isRow) return 'Row';
+  if (node.items.isEmpty) return 'Empty';
+  final kind = node.items.first.kind;
+  if (kind.isEmpty) return 'Empty';
+  return kind[0].toUpperCase() + kind.substring(1);
+}
+
 /// Maps a [_flowHit] child index into a rendered-splice index: the hit
 /// counts every visible `parentId` child, but slot-assigned children are
 /// withheld from the splice (slot wins — see [_slotWidgets]) while still
@@ -811,7 +818,7 @@ Color _screenBackground(
 /// Tapping empty screen area calls [onSelectScreen] (node taps are claimed
 /// by the inner leaf/row detectors, so they select the node instead); while
 /// [selected] the frame carries a highlight ring in
-/// [EditorColors.toolbarActive].
+/// [EditorColors.selectionOutline] (FF5 — was toolbarActive).
 class ScreenSurface extends StatefulWidget {
   final CanvasScreen screen;
   final List<CanvasNode> nodes;
@@ -954,8 +961,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// ancestors are skipped, never selected.
   CanvasNode? _nearestSelectableAncestor(CanvasNode node) {
     final byId = {for (final n in widget.nodes) n.id: n};
-    CanvasNode? cursor =
-        node.parentId == null ? null : byId[node.parentId];
+    CanvasNode? cursor = node.parentId == null ? null : byId[node.parentId];
     final seen = <String>{node.id};
     while (cursor != null && seen.add(cursor.id)) {
       if (!cursor.locked) return cursor;
@@ -1102,7 +1108,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Cancels a resize gesture: tentative state is dropped, the store is
   /// untouched, and the node snaps back to its stored size.
   void _cancelResize(String nodeId) {
-    if (_dragSizes.remove(nodeId) != null || _resizeStarts.remove(nodeId) != null) {
+    if (_dragSizes.remove(nodeId) != null ||
+        _resizeStarts.remove(nodeId) != null) {
       setState(() {});
     }
   }
@@ -1147,9 +1154,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// host) render nothing — the same honesty rule as unreachable `parentId`
   /// cycles, which never render either.
   Set<String> get _slotAssignedIds => {
-    for (final n in widget.nodes)
-      for (final id in n.slotNodes.values) id,
-  };
+        for (final n in widget.nodes)
+          for (final id in n.slotNodes.values) id,
+      };
 
   /// Builds [node]'s named-slot widgets (Track AA generic injection): for each
   /// [CanvasNode.slotNodes] entry whose child id resolves to a visible
@@ -1233,8 +1240,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// as the preview player, applied per level). Empty overrides return the
   /// items untouched, so docs without overrides render exactly as before.
   List<CanvasItem> _nodeItems(CanvasNode node) {
-    final overrides =
-        node.breakpointValues[tierForWidth(_innerWidth).name];
+    final overrides = node.breakpointValues[tierForWidth(_innerWidth).name];
     if (overrides == null || overrides.isEmpty) return node.items;
     return [
       for (final item in node.items)
@@ -1291,12 +1297,11 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       if (!node.isRow && !_isContainerNode(node)) continue;
       final rectVp = _nodeRect(node.id, screenBox);
       if (rectVp == null) continue;
-      final rect =
-          Rect.fromLTWH(rectVp.left, rectVp.top + scrollY, rectVp.width, rectVp.height);
+      final rect = Rect.fromLTWH(
+          rectVp.left, rectVp.top + scrollY, rectVp.width, rectVp.height);
       if (!rect.contains(pointerDoc)) continue;
       if (hitRectVp == null ||
-          rect.width * rect.height <
-              hitRectVp.width * hitRectVp.height) {
+          rect.width * rect.height < hitRectVp.width * hitRectVp.height) {
         hitTarget = node;
         hitRectVp = rectVp;
       }
@@ -1512,8 +1517,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                     pointer,
                     _visibleNodes,
                     centerX: _innerWidth / 2,
-                    centerY:
-                        scrollY + EditorMetrics.phoneInnerHeight / 2,
+                    centerY: scrollY + EditorMetrics.phoneInnerHeight / 2,
                   );
                   hover = _flowHit(pointer, box);
                 }
@@ -1641,63 +1645,63 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                         ),
                       ),
                     ),
-                  if (candidate.isNotEmpty && !hoveringTarget)
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: colors.railActive.withValues(alpha: 0.25),
+                    if (candidate.isNotEmpty && !hoveringTarget)
+                      Positioned.fill(
+                        child: ColoredBox(
+                          color: colors.railActive.withValues(alpha: 0.25),
+                        ),
                       ),
-                    ),
-                  if (hoverRect != null)
-                    Positioned.fromRect(
-                      rect: hoverRect,
-                      child: ColoredBox(
-                        color: colors.railActive.withValues(alpha: 0.25),
+                    if (hoverRect != null)
+                      Positioned.fromRect(
+                        rect: hoverRect,
+                        child: ColoredBox(
+                          color: colors.railActive.withValues(alpha: 0.25),
+                        ),
                       ),
-                    ),
-                  if (widget.nodes.isEmpty && candidate.isEmpty)
-                    Positioned.fill(
-                      child: Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            'Drag a part here to start',
-                            textAlign: TextAlign.center,
-                            style: EditorType.field
-                                .copyWith(color: colors.onSurfaceVariant),
+                    if (widget.nodes.isEmpty && candidate.isEmpty)
+                      Positioned.fill(
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(32),
+                            child: Text(
+                              'Drag a part here to start',
+                              textAlign: TextAlign.center,
+                              style: EditorType.field
+                                  .copyWith(color: colors.onSurfaceVariant),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                  // 2px index line spanning the hovered container's cross
-                  // axis. Gated on `candidate` via `hover`, so it vanishes
-                  // on drop/leave with the guides. Hidden while an FF1 slot
-                  // preview is active (see [slotPreview] above).
-                  if (hoverHit != null && slotPreview == null)
-                    _buildInsertLine(hoverHit, colors),
-                  if (guides.x != null)
-                    Positioned(
-                      key: kDragGuideVerticalKey,
-                      left: guides.x,
-                      top: 0,
-                      bottom: 0,
-                      child: Container(
-                        width: 1,
-                        color: colors.toolbarActive.withValues(alpha: 0.5),
+                    // 2px index line spanning the hovered container's cross
+                    // axis. Gated on `candidate` via `hover`, so it vanishes
+                    // on drop/leave with the guides. Hidden while an FF1 slot
+                    // preview is active (see [slotPreview] above).
+                    if (hoverHit != null && slotPreview == null)
+                      _buildInsertLine(hoverHit, colors),
+                    if (guides.x != null)
+                      Positioned(
+                        key: kDragGuideVerticalKey,
+                        left: guides.x,
+                        top: 0,
+                        bottom: 0,
+                        child: Container(
+                          width: 1,
+                          color: colors.toolbarActive.withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
-                  if (guides.y != null)
-                    Positioned(
-                      key: kDragGuideHorizontalKey,
-                      // Guides resolve in doc coords (see [_flowHit]); shift
-                      // back to viewport for the overlay.
-                      top: guides.y! - scrollY,
-                      left: 0,
-                      right: 0,
-                      child: Container(
-                        height: 1,
-                        color: colors.toolbarActive.withValues(alpha: 0.5),
+                    if (guides.y != null)
+                      Positioned(
+                        key: kDragGuideHorizontalKey,
+                        // Guides resolve in doc coords (see [_flowHit]); shift
+                        // back to viewport for the overlay.
+                        top: guides.y! - scrollY,
+                        left: 0,
+                        right: 0,
+                        child: Container(
+                          height: 1,
+                          color: colors.toolbarActive.withValues(alpha: 0.5),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               );
@@ -1718,7 +1722,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             child: Container(
               key: screenSelectedKey(widget.screen.id),
               decoration: BoxDecoration(
-                border: Border.all(color: colors.toolbarActive, width: 2),
+                border: Border.all(color: colors.selectionOutline, width: 2),
                 borderRadius: BorderRadius.circular(
                   EditorMetrics.phoneOuterRadius + 2,
                 ),
@@ -1763,8 +1767,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       ];
       final splicedIds = {for (final root in roots) root.id};
       items.insert(
-        _spliceIndex(flowIds, splicedIds, ghost.index)
-            .clamp(0, items.length),
+        _spliceIndex(flowIds, splicedIds, ghost.index).clamp(0, items.length),
         _DropGhostBox(colors: colors, kind: ghost.kind),
       );
     }
@@ -1806,7 +1809,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     Set<String> ancestors, {
     _DropGhostSpec? ghost,
   }) {
-    if (node.isRow) return _buildRow(node, colors, ancestors: ancestors, ghost: ghost);
+    if (node.isRow)
+      return _buildRow(node, colors, ancestors: ancestors, ghost: ghost);
     final kids = _childNodes(node.id, ancestors);
     if (kids.isEmpty) {
       if (ghost != null &&
@@ -1854,10 +1858,38 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   Widget _withHandles(CanvasNode node, Widget chrome) {
     if (node.locked) return chrome;
     if (node.id != widget.selectedNodeId) return chrome;
+    final colors = EditorTheme.of(context);
     final tentative = _dragSizes[node.id];
     return Stack(
       children: [
         chrome,
+        // FF5 floating kind label (BUILD_SPEC §9.2 row 4c): an accent tag at
+        // the chrome's top-left naming the selected kind. Pure overlay —
+        // `IgnorePointer`d and inside the chrome box (never a negative
+        // offset, so no clipping and no layout shift) — so taps, drops, and
+        // hit-testing are identical with or without it.
+        Positioned(
+          top: 0,
+          left: 0,
+          child: IgnorePointer(
+            child: Container(
+              key: selectionLabelKey(node.id),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: colors.selectionOutline,
+                borderRadius: BorderRadius.circular(
+                  EditorMetrics.segmentInnerRadius,
+                ),
+              ),
+              child: Text(
+                _selectionKindLabel(node),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: EditorType.readout.copyWith(color: colors.onAccent),
+              ),
+            ),
+          ),
+        ),
         // Edge strips stop one hit-size short of the corner so the three
         // pads never overlap (overlapping pads let the later sibling steal
         // the gesture and pin the wrong axis).
@@ -1971,7 +2003,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             width: _kHandleVisualSize,
             height: _kHandleVisualSize,
             decoration: BoxDecoration(
-              color: colors.toolbarActive,
+              // FF5: handles paint in the selection accent (was
+              // toolbarActive) — same hit pads, same visuals otherwise.
+              color: colors.selectionOutline,
               borderRadius: BorderRadius.circular(3),
               border: Border.all(color: colors.surface, width: 1),
             ),
@@ -1980,6 +2014,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       ),
     );
   }
+
   /// One row container: full-width tap target (selects the row for gap
   /// editing) around a `Row` of its children (doc order, node `gap`
   /// separators) with W3 alignment (`mainAxis` null → start, `crossAxis`
@@ -2079,27 +2114,27 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             fixedWidth: _effW(node),
             looseWidth: _innerWidth,
             child: Container(
-          key: _flowKey(node.id),
-          // Track U2: a fixed `w` pins the container (cells share the pinned
-          // width); auto keeps full-bleed. A fixed `h` pins the body height;
-          // auto stays intrinsic. FF1: under shrink-wrap chrome (see
-          // [_FillOrShrink]) an auto row caps at the stage width — flex cells
-          // need a finite bound even when loose.
-          padding: const EdgeInsets.all(4),
-          decoration: node.id == widget.selectedNodeId
-              ? BoxDecoration(
-                  border: Border.all(
-                    color: colors.toolbarActive,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                )
-              : null,
-          child: applyNodeSizeValues(null, _effH(node), body),
-            ),
+              key: _flowKey(node.id),
+              // Track U2: a fixed `w` pins the container (cells share the pinned
+              // width); auto keeps full-bleed. A fixed `h` pins the body height;
+              // auto stays intrinsic. FF1: under shrink-wrap chrome (see
+              // [_FillOrShrink]) an auto row caps at the stage width — flex cells
+              // need a finite bound even when loose.
+              padding: const EdgeInsets.all(4),
+              decoration: node.id == widget.selectedNodeId
+                  ? BoxDecoration(
+                      border: Border.all(
+                        color: colors.selectionOutline,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              child: applyNodeSizeValues(null, _effH(node), body),
             ),
           ),
         ),
+      ),
     );
     if (_effW(node) == null) return rowChrome;
     return Align(alignment: Alignment.topLeft, child: rowChrome);
@@ -2181,54 +2216,54 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           onTap: () {},
           child: _FillOrShrink(
             child: Container(
-            key: _flowKey(node.id),
-            padding: const EdgeInsets.all(4),
-            decoration: node.id == widget.selectedNodeId
-                ? BoxDecoration(
-                    border: Border.all(
-                      color: colors.toolbarActive,
-                      width: 2,
-                    ),
-                    borderRadius: BorderRadius.circular(8),
-                  )
-                : null,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: math.max(
-                  _kMinNodeExtent,
-                  _innerWidth - node.x,
+              key: _flowKey(node.id),
+              padding: const EdgeInsets.all(4),
+              decoration: node.id == widget.selectedNodeId
+                  ? BoxDecoration(
+                      border: Border.all(
+                        color: colors.selectionOutline,
+                        width: 2,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                    )
+                  : null,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: math.max(
+                    _kMinNodeExtent,
+                    _innerWidth - node.x,
+                  ),
+                  maxHeight: math.max(
+                    _kMinNodeExtent,
+                    EditorMetrics.phoneInnerHeight - node.y,
+                  ),
                 ),
-                maxHeight: math.max(
-                  _kMinNodeExtent,
-                  EditorMetrics.phoneInnerHeight - node.y,
-                ),
+                // Track U2: explicit sizes pin the content (inside the legacy
+                // max clamp, which keeps guarding far-edge drops); auto passes
+                // through untouched.
+                // Track Z1: fixed-w keeps exact pixels top-left via this
+                // [Align] — a bare [SizedBox] would be forced full width by the
+                // tight stretch parent. `heightFactor: 1.0` sizes the Align to
+                // its child vertically so it never expands to the 709px
+                // maxHeight under the unbounded scroll (which pushed handles
+                // off-screen); width still fills so the pin left-aligns, and
+                // oversized pins shrink to the cell with no flex-overflow
+                // report. Track AA: [Alignment.topLeft] (was center-left), so
+                // the pinned box rides the top naturally inside tight-height
+                // slots instead of vertically centering. Auto stays direct so
+                // it fills.
+                child: _effW(node) == null
+                    ? applyNodeSizeValues(null, _effH(node), content)
+                    : Align(
+                        alignment: Alignment.topLeft,
+                        heightFactor: 1.0,
+                        child: applyNodeSizeValues(
+                          _effW(node),
+                          _effH(node),
+                          content,
+                        ),
+                      ),
               ),
-              // Track U2: explicit sizes pin the content (inside the legacy
-              // max clamp, which keeps guarding far-edge drops); auto passes
-              // through untouched.
-              // Track Z1: fixed-w keeps exact pixels top-left via this
-              // [Align] — a bare [SizedBox] would be forced full width by the
-              // tight stretch parent. `heightFactor: 1.0` sizes the Align to
-              // its child vertically so it never expands to the 709px
-              // maxHeight under the unbounded scroll (which pushed handles
-              // off-screen); width still fills so the pin left-aligns, and
-              // oversized pins shrink to the cell with no flex-overflow
-              // report. Track AA: [Alignment.topLeft] (was center-left), so
-              // the pinned box rides the top naturally inside tight-height
-              // slots instead of vertically centering. Auto stays direct so
-              // it fills.
-              child: _effW(node) == null
-                  ? applyNodeSizeValues(null, _effH(node), content)
-                  : Align(
-                      alignment: Alignment.topLeft,
-                      heightFactor: 1.0,
-                      child: applyNodeSizeValues(
-                        _effW(node),
-                        _effH(node),
-                        content,
-                      ),
-                      ),
-            ),
             ),
           ),
         ),
@@ -2271,8 +2306,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       _slotWidgets(node, colors, ancestors, ghost: ghost),
     );
     final builtKids = <Widget>[
-      for (final kid in kids)
-        _buildNodeWidget(kid, colors, next, ghost: ghost),
+      for (final kid in kids) _buildNodeWidget(kid, colors, next, ghost: ghost),
     ];
     // FF1 slot preview (never throws mid-drag: the rule is pure, and any
     // residual failure keeps the classic child splice below).
@@ -2424,28 +2458,28 @@ class _DropGhostBox extends StatelessWidget {
     return IgnorePointer(
       child: _FillOrShrink(
         child: Container(
-        key: kDropPreviewKey,
-        // FF1: fill-or-shrink (see [_FillOrShrink]) so a slot-preview ghost
-        // inside shrink-wrap chrome sizes to its label instead of crashing.
-        // Row strips keep the finite-share path via [horizontal].
-        constraints: BoxConstraints(
-          minHeight: 56,
-          minWidth: horizontal ? 96 : 0,
-        ),
-        child: CustomPaint(
-          painter: _DashedOutline(
-            color: colors.toolbarActive.withValues(alpha: 0.7),
+          key: kDropPreviewKey,
+          // FF1: fill-or-shrink (see [_FillOrShrink]) so a slot-preview ghost
+          // inside shrink-wrap chrome sizes to its label instead of crashing.
+          // Row strips keep the finite-share path via [horizontal].
+          constraints: BoxConstraints(
+            minHeight: 56,
+            minWidth: horizontal ? 96 : 0,
           ),
-          child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Text(
-                'Drop $kind here',
-                style: EditorType.field.copyWith(color: colors.toolbarActive),
+          child: CustomPaint(
+            painter: _DashedOutline(
+              color: colors.toolbarActive.withValues(alpha: 0.7),
+            ),
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  'Drop $kind here',
+                  style: EditorType.field.copyWith(color: colors.toolbarActive),
+                ),
               ),
             ),
           ),
-        ),
         ),
       ),
     );
@@ -2464,25 +2498,25 @@ class _EmptyRowPlaceholder extends StatelessWidget {
   Widget build(BuildContext context) {
     return _FillOrShrink(
       child: Container(
-      // FF1: fill-or-shrink (see [_FillOrShrink]) — an empty row nested in
-      // shrink-wrap chrome sizes to its label instead of crashing.
-      constraints: const BoxConstraints(minHeight: 64),
-      child: CustomPaint(
-        painter: _DashedOutline(
-          color: colors.toolbarActive.withValues(alpha: 0.5),
-        ),
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(12),
-            child: Text(
-              'Drop here',
-              style: EditorType.field.copyWith(
-                color: colors.onSurfaceVariant,
+        // FF1: fill-or-shrink (see [_FillOrShrink]) — an empty row nested in
+        // shrink-wrap chrome sizes to its label instead of crashing.
+        constraints: const BoxConstraints(minHeight: 64),
+        child: CustomPaint(
+          painter: _DashedOutline(
+            color: colors.toolbarActive.withValues(alpha: 0.5),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Drop here',
+                style: EditorType.field.copyWith(
+                  color: colors.onSurfaceVariant,
+                ),
               ),
             ),
           ),
         ),
-      ),
       ),
     );
   }

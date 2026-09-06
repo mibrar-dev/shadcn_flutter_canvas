@@ -1,13 +1,16 @@
 /// Track Y4 (FORGE.md §1-3a–3g, §3): Forge canvas-area chrome.
+/// Track FF5 (BUILD_SPEC §9.2 row 4a): the dotted background is replaced by
+/// the neutral canvas backdrop — the dots group below now pins the backdrop.
 ///
 /// Covers the header breadcrumb trail + taps, the zoom cluster call-through
 /// (zoom math/contracts unchanged), the guides grid toggle, the compact
-/// device strip, the dismissible hint pill, the dotted background, the
-/// Dynamic Island overlay, and the black selection toolbar.
+/// device strip, the dismissible hint pill, the neutral backdrop, the
+/// Dynamic Island overlay, and the selection toolbar.
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_buttons.dart';
+import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:canvas_app/ui/zoom_controls.dart';
@@ -153,8 +156,7 @@ void main() {
       expect(fit, 1);
     });
 
-    testWidgets('zoom clamps disable at the 25% / 400% ends',
-        (tester) async {
+    testWidgets('zoom clamps disable at the 25% / 400% ends', (tester) async {
       await _pumpHeader(tester, _header(zoom: 4.0));
       expect(_chromeButton(tester, Icons.add).onPressed, isNull);
       expect(_chromeButton(tester, Icons.remove).onPressed, isNotNull);
@@ -237,8 +239,7 @@ void main() {
       expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
     });
 
-    testWidgets('up / down / duplicate fire with a selection',
-        (tester) async {
+    testWidgets('up / down / duplicate fire with a selection', (tester) async {
       var up = 0;
       var down = 0;
       var duplicate = 0;
@@ -290,7 +291,7 @@ void main() {
     });
   });
 
-  group('hint pill + dotted background', () {
+  group('hint pill + neutral backdrop (FF5: dots dropped)', () {
     testWidgets('hint shows the reference copy and dismisses via ×',
         (tester) async {
       await _pumpCanvas(tester, CanvasStore());
@@ -308,32 +309,16 @@ void main() {
       expect(find.byType(ForgeHintPill), findsNothing);
     });
 
-    testWidgets('dots paint behind the viewport', (tester) async {
+    testWidgets('neutral backdrop fills behind the viewport, no dots',
+        (tester) async {
       await _pumpCanvas(tester, CanvasStore());
-      expect(
-        find.byWidgetPredicate(
-          (w) => w is CustomPaint && w.painter is ForgeDotsPainter,
-        ),
-        findsOneWidget,
+      // FF5: the Forge dot grid is gone — a plain canvasBackdrop wash fills
+      // behind the viewport instead (no EditorTheme harness, so the dark
+      // default applies).
+      final backdrop = find.byWidgetPredicate(
+        (w) => w is ColoredBox && w.color == EditorColors.dark.canvasBackdrop,
       );
-    });
-
-    test('dots painter repaints only on visual change', () {
-      const painter = ForgeDotsPainter(color: Colors.grey);
-      expect(
-        painter.shouldRepaint(const ForgeDotsPainter(color: Colors.grey)),
-        isFalse,
-      );
-      expect(
-        painter.shouldRepaint(const ForgeDotsPainter(color: Colors.black)),
-        isTrue,
-      );
-      expect(
-        painter.shouldRepaint(
-          const ForgeDotsPainter(color: Colors.grey, spacing: 24),
-        ),
-        isTrue,
-      );
+      expect(backdrop, findsOneWidget);
     });
 
     test('DesignCanvas guides default on and accept an override', () {
@@ -346,8 +331,7 @@ void main() {
   });
 
   group('Dynamic Island', () {
-    testWidgets('present, spec-sized, and pointer-transparent',
-        (tester) async {
+    testWidgets('present, spec-sized, and pointer-transparent', (tester) async {
       await _pumpCanvas(tester, CanvasStore());
       final island = find.byKey(kDynamicIslandKey);
       expect(island, findsOneWidget);
