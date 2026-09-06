@@ -323,11 +323,673 @@ void main() {
     expect(screen, contains("O\\'Brien \\\$5"));
     expect(screen, isNot(contains("Text('O'Brien")));
   });
+
+  test('non-catalog kinds keep the comment plus placeholder byte-identical', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i1', 'kind': 'chip', 'label': 'Hi'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Plain', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, kTestSources);
+    expect(
+      bundle.files['lib/ui/screens/home_screen.dart'],
+      kBundleNonCatalogGolden,
+    );
+  });
+
+  test('barrel comments resolve to real kit entry files', () {
+    // Install categories snapshotted from components.json destination
+    // prefixes; filenames default to `<kind>.dart` with three verified
+    // exceptions (see `_barrelFile` in codegen_bundle.dart — resolved by
+    // reading the pinned kit checkout, NOT assumed; re-verify against a
+    // newer kit on upgrade, then update this table).
+    const categories = {
+      'button': 'control',
+      'card': 'layout',
+      'input': 'form',
+      'badge': 'display',
+      'switch': 'form',
+      'avatar': 'display',
+      'checkbox': 'form',
+      'divider': 'display',
+      'progress': 'display',
+      'tabs': 'navigation',
+      'accordion': 'layout',
+      'select': 'form',
+      'radio_group': 'form',
+      'skeleton': 'display',
+      'breadcrumb': 'navigation',
+      'dialog': 'overlay',
+      'tooltip': 'overlay',
+      'toast': 'overlay',
+      'drawer': 'overlay',
+      'chip': 'display',
+      'alert': 'layout',
+      'circular_progress_indicator': 'display',
+      'linear_progress_indicator': 'display',
+      'triple_dots': 'display',
+      'dot_indicator': 'display',
+      'empty_state': 'display',
+      'code_snippet': 'display',
+      'number_ticker': 'display',
+      'text_area': 'form',
+      'basic': 'layout',
+      'card_image': 'layout',
+      'scaffold': 'layout',
+      'collapsible': 'layout',
+      'steps': 'layout',
+      'timeline': 'layout',
+      'outlined_container': 'layout',
+      'hidden': 'layout',
+      'keyboard_shortcut': 'display',
+      'tracker': 'display',
+      'chat': 'display',
+      'selectable': 'display',
+      'star_rating': 'form',
+      'clickable': 'control',
+      'scrollbar': 'control',
+      'pagination': 'navigation',
+      'alert_dialog': 'overlay',
+      'menu': 'overlay',
+      'popover': 'overlay',
+      'popup': 'overlay',
+      'menubar': 'overlay',
+      'dropdown_menu': 'overlay',
+      'context_menu': 'overlay',
+      'hover_card': 'overlay',
+      'command': 'control',
+      'swiper': 'overlay',
+      'refresh_trigger': 'overlay',
+      'tab_container': 'navigation',
+      'tab_list': 'navigation',
+      'tab_pane': 'navigation',
+      'stepper': 'navigation',
+      'slider': 'form',
+      'input_otp': 'form',
+      'calendar': 'display',
+      'date_picker': 'form',
+      'time_picker': 'form',
+      'carousel': 'display',
+      'tree': 'display',
+      'table': 'layout',
+      'form': 'form',
+      'form_field': 'form',
+      'formatted_input': 'form',
+      'validated': 'form',
+      'color_picker': 'form',
+      'color_input': 'form',
+      'hsl': 'form',
+      'hsv': 'form',
+      'history': 'form',
+      'feature_carousel': 'display',
+    };
+    const entryFile = {
+      'hsl': 'hsl_color_slider.dart',
+      'hsv': 'hsv_color_slider.dart',
+      'tab_list': '_impl/core/tab_list.dart',
+    };
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            for (var i = 0; i < categories.keys.length; i++)
+              {'id': 'i$i', 'kind': categories.keys.elementAt(i)},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'All', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    final emitted = <String, String>{};
+    for (final line in screen.split('\n')) {
+      final match = RegExp(r'^// - (\S+) -> (\S+)$').firstMatch(line);
+      if (match != null) emitted[match.group(1)!] = match.group(2)!;
+    }
+    // Every known kind resolves, and only known kinds resolve.
+    expect(emitted.keys.toSet(), categories.keys.toSet());
+    for (final kind in categories.keys) {
+      final file = entryFile[kind] ?? '$kind.dart';
+      expect(
+        emitted[kind],
+        'lib/ui/shadcn/components/${categories[kind]}/$kind/$file',
+        reason: kind,
+      );
+    }
+    // The three historical bugs (assumed `<kind>/<kind>.dart` paths with no
+    // such file in the kit) now point at real entry files.
+    expect(emitted['hsl'], endsWith('/hsl_color_slider.dart'));
+    expect(emitted['hsv'], endsWith('/hsv_color_slider.dart'));
+    expect(emitted['tab_list'], endsWith('/tab_list/_impl/core/tab_list.dart'));
+  });
+
+  test('bodies mirror catalog props, defaults, and edge handling', () {
+    String screenFor(String kind, [Map<String, dynamic> props = const {}]) {
+      final bundle = buildCleanBundle(_singleKindDoc(kind, props), kTestSources);
+      return bundle.files['lib/ui/screens/home_screen.dart']!;
+    }
+
+    // Seed five: variants, sizes, and footer/label wiring.
+    expect(
+      screenFor('button', {
+        'label': 'Go',
+        'variant': 'secondary',
+        'size': 'sm',
+        'disabled': true,
+      }),
+      contains(
+        'SecondaryButton(\n'
+        '        onPressed: () {},\n'
+        '        enabled: false,\n'
+        '        size: ButtonSize.small,\n'
+        "        child: Text('Go'),",
+      ),
+    );
+    // Unknown variant/size fall back (catalog honesty rule).
+    final fallbackButton = screenFor('button', {
+      'variant': 'weird',
+      'size': 'xxl',
+    });
+    expect(fallbackButton, contains('PrimaryButton('));
+    expect(fallbackButton, contains('ButtonSize.normal'));
+    // The catalog's `text` variant (absent from the block enum) resolves.
+    expect(screenFor('button', {'variant': 'text'}), contains('TextButton('));
+    // Card defaults mirror the catalog ('Title', not single-file's titles).
+    final card = screenFor('card', {'showFooter': true});
+    expect(card, contains("Text('Title')"));
+    expect(card, contains("child: Text('Action')"));
+    expect(screenFor('card'), isNot(contains('Action')));
+    // Input wires the catalog-only props (initialValue empty = uncontrolled).
+    final input = screenFor('input', {
+      'label': 'Name',
+      'initialValue': 'Ada',
+      'readOnly': true,
+    });
+    expect(input, contains("initialValue: 'Ada'"));
+    expect(input, contains('readOnly: true'));
+    expect(screenFor('input'), contains('initialValue: null'));
+    expect(screenFor('badge', {'variant': 'destructive'}), contains('DestructiveBadge('));
+    expect(
+      screenFor('switch', {'disabled': true}),
+      contains('Switch(value: false, onChanged: null),'),
+    );
+    // Unknown select values render unselected instead of crashing.
+    expect(
+      screenFor('select', {'value': 'Bogus'}),
+      contains('value: null,'),
+    );
+    expect(
+      screenFor('select', {'value': 'Option 1'}),
+      contains("value: 'Option 1',"),
+    );
+    // Numeric clamps mirror the catalog domains.
+    expect(screenFor('progress', {'progress': 99}), contains('Progress(progress: 1.0),'));
+    expect(screenFor('avatar', {'size': 1000}), contains('size: 96.0'));
+    expect(screenFor('star_rating', {'max': 99}), contains('max: 10.0'));
+    expect(screenFor('slider', {'value': -1}), contains('Slider(value: 0.0,'));
+    expect(
+      screenFor('pagination', {'page': 99, 'totalPages': 5}),
+      contains('Pagination(page: 5, totalPages: 5,'),
+    );
+    expect(screenFor('tabs', {'index': 7}), contains('index: 1,'));
+    expect(screenFor('stepper', {'step': 9}), contains('currentStep: 2'));
+    // Enum fallbacks mirror the catalog.
+    expect(
+      screenFor('calendar', {'mode': 'bogus'}),
+      contains('CalendarSelectionMode.single'),
+    );
+    expect(
+      screenFor('breadcrumb', {'separator': 'bogus'}),
+      contains('Breadcrumb.arrowSeparator'),
+    );
+    expect(
+      screenFor('drawer', {'position': 'bogus'}),
+      contains('OverlayPosition.end'),
+    );
+    expect(screenFor('tracker', {'level': 'bogus'}), contains('TrackerLevel.fine'));
+    expect(screenFor('hsl', {'mode': 'bogus'}), contains('HSLColorSliderType.hue'));
+    // Malformed hex falls back to the kit-history blue, like the catalog.
+    expect(
+      screenFor('color_input', {'hex': 'zzz'}),
+      contains('Color(0xFF2196F3)'),
+    );
+    expect(
+      screenFor('color_picker', {'hex': '#F00'}),
+      contains('Color(0xFFFF0000)'),
+    );
+    // Wrong-typed props fall back instead of crashing the exporter.
+    expect(screenFor('button', {'label': 5}), contains("child: Text('Button'),"));
+    expect(screenFor('progress', {'progress': 'x'}), contains('Progress(progress: 0.5),'));
+    expect(
+      screenFor('switch', {'value': 'yes'}),
+      contains('Switch(value: false,'),
+    );
+  });
+
+  test('every catalog kind emits its real widget body', () {
+    // One token per catalog kind proving the real body rendered (per-kind
+    // docs, so tokens never cross-match another kind's body).
+    const tokens = {
+      'button': 'PrimaryButton(',
+      'card': 'Card(',
+      'input': 'TextField(',
+      'badge': 'PrimaryBadge(',
+      'switch': 'Switch(',
+      'avatar': 'Avatar(',
+      'checkbox': 'Checkbox(',
+      'divider': 'Divider(',
+      'progress': 'Progress(',
+      'tabs': 'Tabs(',
+      'accordion': 'Accordion(',
+      'select': 'Select<String>(',
+      'radio_group': 'RadioGroup<String>(',
+      'skeleton': '.asSkeleton(',
+      'breadcrumb': 'Breadcrumb(',
+      'dialog': 'ModalContainer(',
+      'tooltip': 'Tooltip(',
+      'toast': 'ToastEntry(',
+      'drawer': 'DrawerWrapper(',
+      'basic': 'Basic(',
+      'card_image': 'CardImage(',
+      'scaffold': 'Scaffold(',
+      'collapsible': 'Collapsible(',
+      'steps': 'Steps(',
+      'timeline': 'Timeline(',
+      'outlined_container': 'OutlinedContainer(',
+      'hidden': 'Hidden(',
+      'keyboard_shortcut': 'KeyboardDisplay(',
+      'tracker': 'Tracker(',
+      'chat': 'ChatBubble(',
+      'selectable': 'SelectableText(',
+      'star_rating': 'StarRating(',
+      'clickable': 'Clickable(',
+      'scrollbar': 'Scrollbar(',
+      'pagination': 'Pagination(',
+      'alert_dialog': 'AlertDialog(',
+      'menu': 'MenuGroup(',
+      'popover': 'Popover title',
+      'popup': 'Sign out',
+      'menubar': 'Menubar(',
+      'dropdown_menu': 'DropdownMenu(',
+      'context_menu': 'ContextMenu(',
+      'hover_card': 'HoverCard(',
+      'command': 'CommandCategory(',
+      'swiper': 'Swiper(',
+      'refresh_trigger': 'RefreshTrigger(',
+      'tab_container': 'TabContainer(',
+      'tab_list': 'TabChild(',
+      'tab_pane': 'TabPane<String>(',
+      'stepper': 'Stepper(',
+      'slider': 'Slider(',
+      'input_otp': 'InputOTP(',
+      'calendar': 'Calendar(',
+      'date_picker': 'DatePicker(',
+      'time_picker': 'TimePicker(',
+      'carousel': 'Carousel(',
+      'tree': 'TreeView<String>(',
+      'table': 'Table(',
+      'form': 'Form(',
+      'form_field': 'ObjectFormField<String>(',
+      'formatted_input': 'FormattedInput(',
+      'validated': 'Validated<String>(',
+      'color_picker': 'ColorPicker(',
+      'color_input': 'ColorInput(',
+      'hsl': 'HSLColorSlider(',
+      'hsv': 'HSVColorSlider(',
+      'history': 'ColorHistoryGrid(',
+      'feature_carousel': 'FeatureCardCarousel(',
+    };
+    expect(tokens, hasLength(68));
+    for (final entry in tokens.entries) {
+      final bundle = buildCleanBundle(
+        _singleKindDoc(entry.key),
+        kTestSources,
+      );
+      final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+      expect(screen, contains(entry.value), reason: entry.key);
+    }
+  });
+
+  test('tap actions wrap the real body in a GestureDetector', () {
+    final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
+    final payScreen = bundle.files['lib/ui/screens/pay_screen.dart']!;
+    expect(payScreen, contains('GestureDetector('));
+    expect(payScreen, contains('child: PrimaryButton('));
+    expect(payScreen, contains("pushNamed('/done')"));
+    final doneScreen = bundle.files['lib/ui/screens/done_screen.dart']!;
+    expect(doneScreen, contains('Card('));
+    expect(doneScreen, isNot(contains('pushNamed')));
+  });
+
+  test('responsive branches carry bodies with statically merged props', () {
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'breakpointValues': {
+            'desktop': {'value': 'Option 2'},
+          },
+          'items': [
+            {'id': 'i1', 'kind': 'select'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Overrides', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    expect(screen, contains('LayoutBuilder'));
+    expect(
+      screen,
+      contains("if (tier == 'desktop') return Select<String>("),
+    );
+    expect(screen, contains("value: 'Option 2',"));
+    expect(screen, contains('return Select<String>('));
+    expect(screen, contains('value: null,'));
+  });
+
+  test('screens import material and services only when bodies need them', () {
+    String screenFor(String kind) {
+      final bundle = buildCleanBundle(_singleKindDoc(kind), kTestSources);
+      return bundle.files['lib/ui/screens/home_screen.dart']!;
+    }
+
+    // Bodies with material-only APIs (Icons/Curves) switch the Flutter
+    // import to material (a widgets superset).
+    final basic = screenFor('basic');
+    expect(basic, contains("import 'package:flutter/material.dart';"));
+    expect(basic, isNot(contains("import 'package:flutter/widgets.dart';")));
+    expect(basic, contains('const Icon(Icons.person)'));
+    // Keyboard shortcuts add the services import for LogicalKeyboardKey.
+    final shortcut = screenFor('keyboard_shortcut');
+    expect(shortcut, contains("import 'package:flutter/widgets.dart';"));
+    expect(shortcut, contains("import 'package:flutter/services.dart';"));
+    expect(shortcut, contains('LogicalKeyboardKey.controlLeft'));
+    // Plain bodies keep the exact old widgets-only header.
+    final badge = screenFor('badge');
+    expect(badge, contains("import 'package:flutter/widgets.dart';"));
+    expect(badge, isNot(contains('material')));
+    expect(badge, isNot(contains('services')));
+    expect(badge, isNot(contains('dart:async')));
+  });
+
+  test('validated screens carry the async import and validator helper', () {
+    final bundle = buildCleanBundle(
+      _singleKindDoc('validated'),
+      kTestSources,
+    );
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    expect(screen, contains("import 'dart:async';"));
+    expect(screen, contains('Validated<String>('));
+    expect(
+      screen,
+      contains("validator: _CanvasRequiredValidator('Required'),"),
+    );
+    expect(screen, contains('class _CanvasRequiredValidator extends Validator<String>'));
+    // Screens without validated fields carry no helper.
+    final badgeBundle = buildCleanBundle(_singleKindDoc('badge'), kTestSources);
+    expect(
+      badgeBundle.files['lib/ui/screens/home_screen.dart']!,
+      isNot(contains('_CanvasRequiredValidator')),
+    );
+  });
+
+  test('shared closure emits referenced files under shared destinations', () {
+    final bundle = buildCleanBundle(_singleKindDoc('button'), kClosureSources);
+    // Exact emitted set: the screen plus the kind barrel, its export, its
+    // part, the referenced shared files, and the part back-edge pair.
+    expect(
+      bundle.files.keys.toSet(),
+      {
+        'lib/ui/screens/home_screen.dart',
+        'lib/ui/shadcn/components/control/button/button.dart',
+        'lib/ui/shadcn/components/control/button/_impl/core/button_widget.dart',
+        'lib/ui/shadcn/components/control/button/_impl/core/button_part.dart',
+        'lib/ui/shadcn/shared/extra/extra_lib.dart',
+        'lib/ui/shadcn/shared/extra/extra_part.dart',
+        'lib/ui/shadcn/shared/theme/theme.dart',
+        'lib/ui/shadcn/shared/theme/_impl/core/theme_part.dart',
+        'lib/ui/shadcn/shared/utils/constants.dart',
+      },
+    );
+    // Manifest files[] carries the closure files with registry sources.
+    final manifest = jsonDecode(bundle.manifestJson) as Map<String, dynamic>;
+    final dests = {
+      for (final f in manifest['files'] as List)
+        (f as Map<String, dynamic>)['destination'] as String,
+    };
+    expect(
+      dests,
+      containsAll([
+        'lib/ui/shadcn/shared/theme/theme.dart',
+        'lib/ui/shadcn/shared/theme/_impl/core/theme_part.dart',
+        'lib/ui/shadcn/shared/utils/constants.dart',
+      ]),
+    );
+    final sources = {
+      for (final f in manifest['files'] as List)
+        (f as Map<String, dynamic>)['source'] as String,
+    };
+    expect(sources, contains('registry/shared/theme/theme.dart'));
+  });
+
+  test('every emitted relative URI resolves within the files map', () {
+    final bundle = buildCleanBundle(_singleKindDoc('button'), kClosureSources);
+    final ref = RegExp(
+      r'''^\s*(?:import|export|part\s+of|part)\s+['"]([^'"]+)['"]''',
+      multiLine: true,
+    );
+    final unresolved = <String>[];
+    for (final entry in bundle.files.entries) {
+      final dir = entry.key.split('/')..removeLast();
+      for (final match in ref.allMatches(entry.value)) {
+        final uri = match.group(1)!;
+        if (uri.startsWith('dart:') ||
+            uri.startsWith('package:') ||
+            uri.startsWith('/')) {
+          continue;
+        }
+        var cur = [...dir];
+        var escapes = false;
+        for (final part in uri.split('/')) {
+          if (part.isEmpty || part == '.') continue;
+          if (part == '..') {
+            if (cur.isEmpty) {
+              escapes = true;
+              break;
+            }
+            cur.removeLast();
+          } else {
+            cur.add(part);
+          }
+        }
+        if (escapes) continue;
+        final target = cur.join('/');
+        if (!bundle.files.containsKey(target)) {
+          unresolved.add('${entry.key} -> $uri');
+        }
+      }
+    }
+    expect(unresolved, isEmpty);
+  });
+
+  test('barrels and parts co-emit in both directions', () {
+    final bundle = buildCleanBundle(_singleKindDoc('button'), kClosureSources);
+    // Library -> part: the barrel's `part` directive pulls the part file.
+    expect(
+      bundle.files.keys,
+      contains('lib/ui/shadcn/components/control/button/_impl/core/button_part.dart'),
+    );
+    // Shared library -> part: the pulled shared barrel's `part` directive
+    // pulls its part too (no orphaned parts).
+    expect(
+      bundle.files.keys,
+      contains('lib/ui/shadcn/shared/theme/_impl/core/theme_part.dart'),
+    );
+    // Part -> library: the referenced part's `part of` pulls a library no
+    // kind prefix and no other body named (it lives outside every prefix).
+    expect(
+      bundle.files.keys,
+      contains('lib/ui/shadcn/shared/extra/extra_lib.dart'),
+    );
+    expect(
+      bundle.files.keys,
+      contains('lib/ui/shadcn/shared/extra/extra_part.dart'),
+    );
+  });
+
+  test('closure skips unresolvable and foreign URIs without crashing', () {
+    const sources = {
+      '{installPath}/components/control/button/button.dart':
+          "import 'dart:async';\n"
+          "import 'package:gap/gap.dart';\n"
+          "import '/absolute/path.dart';\n"
+          "import '../../../../../escape.dart';\n"
+          "import '../missing/missing.dart';\n"
+          'class Button extends StatelessWidget {}\n',
+    };
+    final bundle = buildCleanBundle(_singleKindDoc('button'), sources);
+    expect(
+      bundle.files.keys.toSet(),
+      {
+        'lib/ui/screens/home_screen.dart',
+        'lib/ui/shadcn/components/control/button/button.dart',
+      },
+    );
+  });
+
+  test('pubspec patch covers closure-implied deps', () {
+    // `chip` snapshots gap-only in the kit metadata, but its closure ships
+    // shared barrels importing data_widget (Track G2 dep extension).
+    final chip = buildCleanBundle(_singleKindDoc('chip'), kTestSources);
+    expect(chip.pubspecPatch, contains('data_widget'));
+    expect(chip.pubspecPatch, contains('gap'));
+    // `validated` declares no deps in the kit metadata, but its closure
+    // pulls form (email_validator, data_widget, gap) and checkbox
+    // (animation_kit) bodies.
+    final validated = buildCleanBundle(_singleKindDoc('validated'), const {});
+    for (final dep in ['animation_kit', 'data_widget', 'email_validator', 'gap']) {
+      expect(validated.pubspecPatch, contains(dep));
+    }
+    final manifest = jsonDecode(validated.manifestJson) as Map<String, dynamic>;
+    final deps =
+        (manifest['pubspec'] as Map<String, dynamic>)['dependencies'] as Map;
+    expect(deps.keys.toSet(), {'animation_kit', 'data_widget', 'email_validator', 'gap'});
+  });
 }
+
+/// Stub registry with a shared/part closure: the button barrel exports an
+/// impl file, parts a sibling file, imports the shared theme barrel, and
+/// reaches a deep shared util plus a part back-edge pair — mirroring the
+/// real kit's `{installPath}/shared/…` ≡ `{sharedPath}/…` layout.
+const kClosureSources = {
+  '{installPath}/components/control/button/button.dart':
+      "import '../../../shared/theme/theme.dart';\n"
+      "export '_impl/core/button_widget.dart';\n"
+      "part '_impl/core/button_part.dart';\n"
+      'class Button extends StatelessWidget {}\n',
+  '{installPath}/components/control/button/_impl/core/button_widget.dart':
+      "import '../../../../../shared/utils/constants.dart';\n"
+      "import '../../../../../shared/extra/extra_part.dart';\n"
+      'class ButtonWidget extends StatelessWidget {}\n',
+  '{installPath}/components/control/button/_impl/core/button_part.dart':
+      "part of '../../button.dart';\n"
+      'class ButtonPart {}\n',
+  '{sharedPath}/extra/extra_lib.dart':
+      "part 'extra_part.dart';\n"
+      'class ExtraLib {}\n',
+  '{sharedPath}/extra/extra_part.dart':
+      "part of 'extra_lib.dart';\n"
+      'class Extra {}\n',
+  '{sharedPath}/theme/theme.dart':
+      "part '_impl/core/theme_part.dart';\n"
+      'class Theme {}\n',
+  '{sharedPath}/theme/_impl/core/theme_part.dart':
+      "part of '../../theme.dart';\n"
+      'class ThemePart {}\n',
+  '{sharedPath}/utils/constants.dart':
+      'const kDefaultDuration = Duration(milliseconds: 200);\n',
+};
+
+/// Single-kind doc builder for body/barrel spot tests: one screen, one
+/// node, one item of [kind] with [props].
+ScreenDoc _singleKindDoc(String kind, [Map<String, dynamic> props = const {}]) =>
+    ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i1', 'kind': kind, ...props},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'T', 'brief': ''},
+    });
 
 /// Byte-identical golden for the bundle screen scaffold on a plain doc (no
 /// actions, no responsive fields): responsive/action emission must not alter
 /// output for such docs. Regenerate only by reviewing the exporter diff.
+///
+/// Track F3 rewrite (2026-09-05): the old golden pinned `Text('Pay')` for a
+/// `button` item — the missing-bodies bug itself (screen files were wiring
+/// scaffolds with `Text` placeholders for every known kind). The scaffold,
+/// header, and comment shape are unchanged; only the item expression is now
+/// the real catalog-mirroring body.
 const kBundleScreenGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
 // Screen: Home (id: s1). Component bodies ship
 // separately under lib/ui/shadcn/ — wire them here:
@@ -353,7 +1015,49 @@ class _HomeScreenState extends State<HomeScreen> {
     return Column(
       children: [
       // button 'Pay' (variant primary).
-      Text('Pay'),
+      PrimaryButton(
+        onPressed: () {},
+        enabled: true,
+        size: ButtonSize.normal,
+        child: Text('Pay'),
+      ),
+      ],
+    );
+  }
+}
+''';
+
+/// Byte-identical golden for a known-but-non-catalog kind (`chip` ships
+/// bodies under `lib/ui/shadcn/` but has no catalog builder): the screen
+/// keeps the explicit doc comment plus the `Text` placeholder, widgets-only
+/// import, never a crash. Guards Track F3's "unknown/non-catalog kinds keep
+/// the placeholder" rule.
+const kBundleNonCatalogGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// Screen: Home (id: s1). Component bodies ship
+// separately under lib/ui/shadcn/ — wire them here:
+// - chip -> lib/ui/shadcn/components/display/chip/chip.dart
+import 'package:flutter/widgets.dart';
+
+/// Home screen.
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+      // chip 'Hi'.
+      Text('Hi'),
       ],
     );
   }
