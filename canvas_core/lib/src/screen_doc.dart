@@ -52,6 +52,104 @@ ScreenDoc migrateToFlow(ScreenDoc doc) {
   );
 }
 
+/// Direct children of [nodeId] in document order.
+///
+/// Unknown [nodeId] (or a doc where nothing points at it) yields empty.
+/// Pure structural lookup over `parentId` edges; kind-agnostic (any node
+/// may parent — see COMPOSITION.md §1).
+List<CanvasNode> childrenOf(ScreenDoc doc, String nodeId) => [
+      for (final n in doc.nodes)
+        if (n.parentId == nodeId) n,
+    ];
+
+/// All transitive descendants of [nodeId] (breadth-first, document order
+/// within each level), excluding [nodeId] itself even when a cycle leads
+/// back to it.
+///
+/// Cycle-safe: each id is visited at most once, so `A→B→A` terminates.
+/// Ids are assumed unique (the store's `uid()` enforces this); duplicate
+/// ids collapse to first-seen.
+List<CanvasNode> descendants(ScreenDoc doc, String nodeId) {
+  final seen = <String>{nodeId};
+  final out = <CanvasNode>[];
+  final queue = <CanvasNode>[];
+  for (final child in childrenOf(doc, nodeId)) {
+    if (seen.add(child.id)) {
+      queue.add(child);
+      out.add(child);
+    }
+  }
+  var cursor = 0;
+  while (cursor < queue.length) {
+    final parent = queue[cursor++];
+    for (final child in childrenOf(doc, parent.id)) {
+      if (seen.add(child.id)) {
+        queue.add(child);
+        out.add(child);
+      }
+    }
+  }
+  return out;
+}
+
+/// Whether [ancestorId] is reachable from [nodeId] by following `parentId`
+/// hops (≥1 hop).
+///
+/// Strict in acyclic docs (`isAncestorOf(doc, x, x)` is false). A
+/// self-parented node is its own ancestor by construction (one hop leads
+/// back to itself), which is what makes [validateNesting] cycles detectable
+/// through this helper. Cycle-safe (visited guard) and tolerant: unknown
+/// ids and dangling edges yield false, never a throw (a dangling `parentId`
+/// names no node, so the walk stops instead of claiming it as an ancestor).
+bool isAncestorOf(ScreenDoc doc, String ancestorId, String nodeId) {
+  final byId = {for (final n in doc.nodes) n.id: n};
+  final seen = <String>{nodeId};
+  CanvasNode? cursor = byId[nodeId];
+  while (cursor != null) {
+    final parentId = cursor.parentId;
+    if (parentId == null) return false;
+    final parent = byId[parentId];
+    if (parent == null) return false;
+    if (parentId == ancestorId) return true;
+    if (!seen.add(parentId)) return false;
+    cursor = parent;
+  }
+  return false;
+}
+
+/// Structural nesting problems in document order (at most one per node).
+///
+/// Checks, in order per node: unknown parent (no node carries `parentId`
+/// as its id), self-parent, cross-screen parent (`screenId` mismatch —
+/// moves never change screens), and cycles (the node is its own ancestor,
+/// e.g. `A→B→A`). Roots (`parentId == null`) are always fine.
+///
+/// Kind-agnostic by design: any kind may parent any kind (COMPOSITION.md
+/// §1) — container-ness is an app-side render concern, not a structural
+/// error. Message strings are stable (exact-match tested):
+/// `unknown parent <pid> for node <id>`,
+/// `cross-screen parent <pid> for node <id>`, `self-parent <id>`,
+/// `cycle: node <id> is its own ancestor`.
+List<String> validateNesting(ScreenDoc doc) {
+  final byId = {for (final n in doc.nodes) n.id: n};
+  final problems = <String>[];
+  for (final node in doc.nodes) {
+    final parentId = node.parentId;
+    if (parentId == null) continue;
+    final parent = byId[parentId];
+    if (parent == null) {
+      problems.add('unknown parent $parentId for node ${node.id}');
+    } else if (parentId == node.id) {
+      problems.add('self-parent ${node.id}');
+    } else if (parent.screenId != node.screenId) {
+      problems.add('cross-screen parent $parentId for node ${node.id}');
+    } else if (isAncestorOf(doc, node.id, parentId)) {
+      problems.add('cycle: node ${node.id} is its own ancestor');
+    }
+  }
+  return problems;
+}
+
 /// Top-level canvas document.
 class ScreenDoc {
   final List<CanvasScreen> screens;
@@ -153,10 +251,13 @@ class CanvasScreen {
 /// A flow-layout container of items on a screen.
 ///
 /// `parentId == null` means the node sits in the screen-root vertical flow.
-/// `isRow == true` makes the node a horizontal container whose children are
-/// the nodes with `parentId == id`; `gap` is that row spacing (ignored for
-/// leaves). `x`/`y` are kept as metadata for legacy docs; the flow renderer
-/// ignores them and uses list order instead.
+/// Any node may parent children via `parentId` (composition model — see
+/// `canvas/COMPOSITION.md` §1); `isRow == true` additionally makes the node
+/// a horizontal container whose children lay out in a `Row`. `gap` is the
+/// container spacing (row separators today; column separators for nested
+/// containers), ignored for childless leaves. `x`/`y` are kept as metadata
+/// for legacy docs; the flow renderer ignores them and uses list order
+/// instead.
 ///
 /// W3 container alignment/flex:
 /// `mainAxis` (`start|center|end|spaceBetween|spaceAround|spaceEvenly`,
