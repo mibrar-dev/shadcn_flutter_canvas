@@ -45,8 +45,17 @@ import 'screen_doc.dart';
 /// relative-import prefixes whose target is claimed are stripped
 /// (`shadcn_dialog.X` → `X`); and bare uses of SDK names hidden by kit
 /// declarations ([_kShadowSdk]: `Colors`, `ThemeData`, `Table`) are qualified
-/// with a private alias. `show`/`hide` combinators cannot survive the merge
-/// (documented residual: ambiguous extensions from co-visible copies).
+/// with a private alias. `show`/`hide` combinators cannot survive the merge;
+/// co-visible rival `on Widget` extensions are disambiguated instead by
+/// electing a keeper per (member, on-type) from Widget-typed uses (resolved
+/// type-aware: constructors, typed identifiers, `widget.` paths, field
+/// paths, subscripts, and Widget-extension call chains) and suffixing the
+/// losers' declarations plus their single-exposure uses. Type twins
+/// (classes/mixins/extensions, plus diverged enums/typedefs/functions) home
+/// to one declaration with scope-aware rebinding; identical enums/typedefs
+/// (docs, trailing commas, or positional parameter names aside) unify to a
+/// single declaration, as do strict enum supersets when no `case Name.`
+/// switch exists.
 ///
 /// WIRING (no in-repo call site yet — for the coordinator): the future export
 /// UI should call:
@@ -651,158 +660,1240 @@ String _renameMemberDecls(
   return out.join('\n');
 }
 
-/// How the receiver of a `.m` member use at [dot] (offset of the `.`)
-/// classifies for rival-extension rewriting.
-/// - [ctor]: a bare `Name(` / `const Name(` constructor call with UpperCamel
-///   [name] (or an `as Name` cast tail) — Widget-typed unless [name]'s class
-///   declares the member (checked separately).
-/// - [chained]: a call to an already-renamed (`__sfx`) member — Widget-typed
-///   by construction (renamed members return Widgets).
-/// - null: anything else (identifiers, paths, method calls, spreads,
-///   cascades, literals) — left alone (residual if truly ambiguous).
-class _ReceiverHead {
-  final String? ctor;
-  final bool chain;
+/// Type-aware receiver resolution for rival-extension rewriting (Track I1).
+///
+/// Resolves the static type of the receiver of a `.m` member use at [dot]
+/// (offset of the `.`) as a raw type string, so keeper election and the
+/// rewrite gate can tell Widget uses (which collide) from class-declared,
+/// enum, SDK, and otherwise non-Widget uses (which never collide and must
+/// stay untouched). Shapes handled, recursively with a depth cap:
+///
+/// * postfix `!`/`?` are stripped (`label!`, `widget.title!`);
+/// * bare `Name(`/`const Name(` constructors resolve to [Name] (the
+///   SDK-ctor heuristic: names absent from the class index count as Widget —
+///   pinned by the rival tests — while indexed non-Widget classes do not);
+/// * `as T` cast tails resolve to `T` (same heuristic for absent names);
+/// * bare identifiers resolve through lexical scope — method/function params,
+///   locals (including `for`-loop and `catch` variables and `final x = Ctor(`
+///   inference), field formals via the enclosing class, and class fields —
+///   plus `this` (the enclosing class) and `widget` (the `State<W>` type
+///   argument). UpperCamel identifiers (statics, enum values like
+///   `StepSize.medium`/`Typography.large`) resolve to null, as do `super`,
+///   `dynamic`/untyped names, and names whose type is unknown;
+/// * dotted paths resolve left-to-right through the class field-type map
+///   (`data.title`, `widget.title`, `theme.typography` — the last proving
+///   non-Widget so `Typography` getters are never suffixed);
+/// * subscripts unwrap `List`/`Set`/`Iterable` element and `Map` value types
+///   (`rows[i].label`);
+/// * calls resolve through Widget-extension callees: renamed (`__sfx`)
+///   members by construction, and plain members declared only by
+///   Widget-extensions (never the SDK denylist — `Future.then` — and never
+///   when the callee's own receiver is provably non-Widget or its class
+///   declares the callee). Anything else (function calls, literals,
+///   cascades, spreads, operators) resolves to null.
+///
+/// Resolution is conservative by construction: unknown means "not Widget",
+/// so unresolvable uses stay honest residuals instead of corrupting.
+/// Backwards bracket matching consults a per-file code mask (real code vs
+/// comments/strings, computed forward once), so doc comments inside call
+/// arguments no longer abort constructor classification.
+/// Callee names that exist on SDK types and collide with rival members.
+const _kSdkChainDeny = <String>{
+  'then',
+  'toString',
+  'hashCode',
+  'runtimeType',
+  'noSuchMethod',
+};
 
-  const _ReceiverHead._(this.ctor, this.chain);
-  static _ReceiverHead? ctorName(String name) =>
-      RegExp(r'^[A-Z]').hasMatch(name) ? _ReceiverHead._(name, false) : null;
-  static const _ReceiverHead chained = _ReceiverHead._(null, true);
+/// Declared-but-untyped names resolve to this internally and are treated as
+/// unknown (never Widget) by the gate.
+const _kUntypedName = 'dynamic';
+
+/// One class or mixin span for enclosing-class lookups.
+class _ClassSpan {
+  final String name;
+  final int start;
+  final int end;
+  final String? stateArg;
+
+  const _ClassSpan(this.name, this.start, this.end, this.stateArg);
 }
 
-/// Classifies the receiver of the `.` at [dot] in [body].
-///
-/// Backward scan: skips `!` postfixes (and the `?` of `?.`), balances a
-/// trailing call's parens (aborting on comments/strings anomalies — residual,
-/// never corruption), skips generic argument lists, and reads the head
-/// identifier. [suffixed] are the renamed-member names that mark Widget
-/// chains. Cascades (`..m`), spreads (`...m`), and enum accesses never
-/// classify (returned as null).
-_ReceiverHead? _receiverHead(
-  String body,
-  int dot,
-  Set<String> suffixed,
+/// One function/method/constructor/getter span with its lexical environment.
+class _FuncSpan {
+  final int start;
+  final int end;
+  final String? className;
+  final Map<String, String> params;
+  final Map<String, String> locals;
+
+  /// Untyped declarations (`final x = <expr>`) resolved in a post-pass once
+  /// the whole file environment exists: name plus the absolute exclusive end
+  /// offset of the RHS expression.
+  final inits = <({String name, int rhsEnd})>[];
+
+  _FuncSpan(
+    this.start,
+    this.end,
+    this.className,
+    this.params,
+    this.locals,
+  );
+}
+
+/// Per-file lexical environment for [_receiverType].
+class _FileEnv {
+  final String body;
+  final String clean;
+  final List<bool> code;
+  final List<_ClassSpan> classes;
+  final List<_FuncSpan> funcs;
+
+  const _FileEnv(this.body, this.clean, this.code, this.classes, this.funcs);
+}
+
+/// A resolved receiver type: [raw] is the raw type string and [assumed] is
+/// true only for the SDK-constructor/cast heuristic (absent from the class
+/// index, counted as Widget). Every other shape reports what it knows, so
+/// the gate can tell heuristic-Widget from known-Widget from unknown.
+class _RType {
+  final String raw;
+  final bool assumed;
+
+  const _RType(this.raw, this.assumed);
+}
+
+/// Base name of a raw type string (`Widget?` → `Widget`,
+/// `List<FormField>` → `List`, `a.b.C` → `C`; function types → `''`).
+String _baseOfType(String t) {
+  var s = t.trim();
+  while (s.endsWith('?')) {
+    s = s.substring(0, s.length - 1).trim();
+  }
+  final lt = s.indexOf('<');
+  var head = lt < 0 ? s : s.substring(0, lt);
+  if (head.contains(' ') || head.contains('(') || head.contains(')')) {
+    return '';
+  }
+  final dot = head.lastIndexOf('.');
+  if (dot >= 0) head = head.substring(dot + 1);
+  return head.trim();
+}
+
+/// Top-level generic arguments of a raw type string (`Map<K, V>` → `[K, V]`),
+/// or empty when absent/unbalanced.
+List<String> _typeArgsOf(String t) {
+  final l = t.indexOf('<');
+  if (l < 0) return const [];
+  var depth = 0;
+  for (var i = l; i < t.length; i++) {
+    if (t[i] == '<') depth++;
+    if (t[i] == '>') {
+      depth--;
+      if (depth == 0) {
+        return _splitTopLevel(t.substring(l + 1, i), ',');
+      }
+    }
+  }
+  return const [];
+}
+
+/// Splits [text] on [sep] at depth 0 over `()[]{}<>`.
+List<String> _splitTopLevel(String text, String sep) {
+  final out = <String>[];
+  var dParen = 0;
+  var dSquare = 0;
+  var dCurly = 0;
+  var dAngle = 0;
+  var start = 0;
+  for (var i = 0; i < text.length; i++) {
+    final c = text[i];
+    if (c == '(') dParen++;
+    if (c == ')') dParen--;
+    if (c == '[') dSquare++;
+    if (c == ']') dSquare--;
+    if (c == '{') dCurly++;
+    if (c == '}') dCurly--;
+    if (c == '<') dAngle++;
+    if (c == '>') dAngle--;
+    if (c == sep &&
+        dParen == 0 &&
+        dSquare == 0 &&
+        dCurly == 0 &&
+        dAngle == 0) {
+      out.add(text.substring(start, i));
+      start = i + 1;
+    }
+  }
+  out.add(text.substring(start));
+  return out;
+}
+
+/// Whether raw type [t] is Widget-typed: a Widget root or a class that
+/// transitively extends one. Absent names (SDK types, type variables,
+/// `dynamic`) report false here — the constructor/cast heuristic lives in
+/// [_receiverType], which is the only place absence implies Widget.
+bool _isWidgetTypeName(String t, Map<String, _ClassInfo> index) {
+  final base = _baseOfType(t);
+  if (base.isEmpty) return false;
+  if (base == 'Widget' ||
+      base == 'StatelessWidget' ||
+      base == 'StatefulWidget') {
+    return true;
+  }
+  var cur = base;
+  final seen = <String>{};
+  for (var i = 0; i < 25; i++) {
+    if (!seen.add(cur)) return false;
+    final info = index[cur];
+    if (info == null) return false;
+    final sup = info.superName;
+    if (sup == null) return false;
+    if (sup == 'Widget' ||
+        sup == 'StatelessWidget' ||
+        sup == 'StatefulWidget') {
+      return true;
+    }
+    cur = sup;
+  }
+  return false;
+}
+
+/// Declared type of field [field] on class [base] (instance fields, statics,
+/// and getters), walking superclasses and mixins with a cycle guard, or null
+/// when no declaration is visible.
+String? _fieldTypeOf(
+  String base,
+  String field,
+  Map<String, _ClassInfo> index,
 ) {
-  var i = dot - 1;
-  while (i >= 0 && (body[i] == '!' || body[i] == '?' || body[i] == ' ')) {
+  final stack = <String>[base];
+  final seen = <String>{};
+  for (var i = 0; i < 25 && stack.isNotEmpty; i++) {
+    final cur = stack.removeLast();
+    if (!seen.add(cur)) continue;
+    final info = index[cur];
+    if (info == null) continue;
+    final t = info.fields[field];
+    if (t != null) return t;
+    if (info.superName != null) stack.add(info.superName!);
+    stack.addAll(info.mixins);
+  }
+  return null;
+}
+
+/// Field name → raw declared type for one class body ([inner] is clean text
+/// between its braces). Depth-0 lines only, so locals inside method bodies
+/// never pose as fields. Multi-declarators (`final Widget? a, b;`) share the
+/// last seen type.
+Map<String, String> _classFieldTypes(String inner) {
+  final fields = <String, String>{};
+  var depth = 0;
+  final line = StringBuffer();
+  void flush() {
+    final text = line.toString();
+    line.clear();
+    if (text.trim().isEmpty) return;
+    var lastType = '';
+    for (final part in text.split(';')) {
+      for (final seg in part.split(',')) {
+        final t = seg.trim();
+        if (t.isEmpty) continue;
+        var m = RegExp(
+          r'^(?:static\s+)?(?:late\s+|final\s+|const\s+)?'
+          r'([\w$][\w$<>, ?*\[\].]*?)\s+(\w+)\s*(?:=[^=].*)?$',
+        ).firstMatch(t);
+        if (m != null) {
+          lastType = m.group(1)!;
+          fields[m.group(2)!] = lastType;
+          continue;
+        }
+        m = RegExp(
+          r'^(?:static\s+)?[\w$][\w$<>, ?*\[\].]*?\s+get\s+(\w+)',
+        ).firstMatch(t);
+        if (m != null) {
+          final gm = RegExp(
+            r'^(?:static\s+)?([\w$][\w$<>, ?*\[\].]*?)\s+get\s+\w+',
+          ).firstMatch(t);
+          fields[m.group(1)!] = gm?.group(1) ?? _kUntypedName;
+          continue;
+        }
+        m = RegExp(r'^(\w+)\s*(?:=[^=].*)?$').firstMatch(t);
+        if (m != null && lastType.isNotEmpty) {
+          fields[m.group(1)!] = lastType;
+        }
+      }
+    }
+  }
+
+  var i = 0;
+  while (i < inner.length) {
+    final c = inner[i];
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth < 0) break;
+    }
+    if (c == '\n') {
+      flush();
+    } else if (depth == 0) {
+      line.write(c);
+    }
+    i++;
+  }
+  flush();
+  return fields;
+}
+
+/// Whether [name] is a declaration keyword that can never head a function
+/// span (`if (`, `for (`, `return (`, …).
+bool _isSpanKeyword(String name) => const {
+      'if',
+      'else',
+      'for',
+      'while',
+      'do',
+      'switch',
+      'catch',
+      'return',
+      'assert',
+      'throw',
+      'rethrow',
+      'break',
+      'continue',
+      'yield',
+      'await',
+      'new',
+      'super',
+      'this',
+      'true',
+      'false',
+      'null',
+      'var',
+      'final',
+      'late',
+      'required',
+      'covariant',
+      'extends',
+      'implements',
+      'with',
+      'on',
+      'show',
+      'hide',
+      'async',
+      'sync',
+      'get',
+      'set',
+    }.contains(name);
+
+/// Parses one parameter segment into (name, type): `this.x` formals resolve
+/// through [fieldsOf], bare names are `dynamic`, `Type name` (with defaults
+/// stripped) keeps its type. Returns null for unparseable segments.
+MapEntry<String, String>? _parseParam(
+  String seg,
+  String? Function(String field) fieldsOf,
+) {
+  var s = seg.trim().replaceAll(RegExp(r'^[{}[\]]+|[{}[\]]+$'), '').trim();
+  s = s.replaceAll(RegExp(r'^@\w+(?:\([^()]*\))?\s*'), '');
+  s = s.replaceAll(RegExp(r'^(?:required\s+|covariant\s+)'), '');
+  if (s.isEmpty || s == '_' || s.startsWith('*')) return null;
+  final eq = s.indexOf('=');
+  if (eq >= 0) s = s.substring(0, eq).trim();
+  if (s.startsWith('this.')) {
+    final name = s.substring(5).trim().split(RegExp(r'\s')).first;
+    if (!RegExp(r'^\w+$').hasMatch(name)) return null;
+    return MapEntry(name, fieldsOf(name) ?? _kUntypedName);
+  }
+  if (s.startsWith('super.')) return null;
+  final parts = s.split(RegExp(r'\s+'));
+  if (parts.length == 1) {
+    if (!RegExp(r'^\w+$').hasMatch(parts[0])) return null;
+    return MapEntry(parts[0], _kUntypedName);
+  }
+  final name = parts.last;
+  if (!RegExp(r'^\w+$').hasMatch(name)) return null;
+  final type = parts.sublist(0, parts.length - 1).join(' ');
+  if (type.contains('(') || type.contains('.')) {
+    // Function-typed or prefixed parameters: keep the text (function types
+    // test non-Widget downstream); dotted ones are constructors-ish noise.
+    if (type.contains('(')) return MapEntry(name, type);
+    return MapEntry(name, type);
+  }
+  return MapEntry(name, type);
+}
+
+/// Builds the lexical environment for [body] (a carved or rewritten survivor
+/// body): code mask plus class/function spans with params and locals.
+_FileEnv _fileEnv(
+  String body,
+  Map<String, _ClassInfo> classIndex,
+) {
+  final commentBlanked = _stripComments(body);
+  final clean = _stripStrings(commentBlanked);
+  final code = List<bool>.filled(body.length, true);
+  for (var i = 0; i < body.length; i++) {
+    if (commentBlanked[i] != body[i] || clean[i] != commentBlanked[i]) {
+      code[i] = false;
+    }
+  }
+  final classes = <_ClassSpan>[];
+  for (final m in RegExp(
+    r'^(?:abstract\s+|final\s+|sealed\s+|base\s+|interface\s+)*'
+    r'(?:class|mixin)\s+(\w+)',
+    multiLine: true,
+  ).allMatches(clean)) {
+    var i = m.end;
+    var open = -1;
+    while (i < clean.length) {
+      if (clean[i] == '{') {
+        open = i;
+        break;
+      }
+      if (clean[i] == ';' || clean[i] == '}') break;
+      i++;
+    }
+    if (open < 0) continue;
+    var depth = 0;
+    var close = -1;
+    for (var k = open; k < clean.length; k++) {
+      if (clean[k] == '{') depth++;
+      if (clean[k] == '}') {
+        depth--;
+        if (depth == 0) {
+          close = k + 1;
+          break;
+        }
+      }
+    }
+    if (close < 0) continue;
+    final header = clean.substring(m.start, open);
+    final stateArg =
+        RegExp(r'\bextends\s+State\s*<\s*([\w$][\w$<>?, ]*?)\s*>')
+            .firstMatch(header)
+            ?.group(1);
+    classes.add(_ClassSpan(m.group(1)!, m.start, close, stateArg));
+  }
+  String? classAt(int offset) {
+    for (final c in classes) {
+      if (c.start <= offset && offset < c.end) return c.name;
+    }
+    return null;
+  }
+
+  final funcs = <_FuncSpan>[];
+  void addSpan(int paren, String? fixedName, String? cls) {
+    // Balance backward to the opening paren (clean text: exact).
+    var depth = 0;
+    var p = -1;
+    for (var k = paren; k >= 0; k--) {
+      if (clean[k] == ')') depth++;
+      if (clean[k] == '(') {
+        depth--;
+        if (depth == 0) {
+          p = k;
+          break;
+        }
+      }
+    }
+    if (p < 0) return;
+    var e = p - 1;
+    while (e >= 0 && (clean[e] == ' ' || clean[e] == '\t')) {
+      e--;
+    }
+    String name = fixedName ?? '';
+    if (fixedName == null) {
+      var s = e;
+      while (s >= 0 && _isIdentChar(clean[s])) {
+        s--;
+      }
+      s++;
+      if (s > e) return;
+      name = clean.substring(s, e + 1);
+      if (name.isEmpty || _isSpanKeyword(name)) return;
+      // A `.` immediately before the name means a method call, not a
+      // declaration (`foo.bar() {` never declares).
+      var b = s - 1;
+      while (b >= 0 && (clean[b] == ' ' || clean[b] == '\t')) {
+        b--;
+      }
+      if (b >= 0 && clean[b] == '.') return;
+    }
+    // Body span: `{…}` balance or `=> … ;`.
+    var bs = paren + 1;
+    while (bs < clean.length && (clean[bs] == ' ' || clean[bs] == '\t')) {
+      bs++;
+    }
+    if (bs >= clean.length) return;
+    int spanEnd;
+    if (clean[bs] == '{') {
+      var d = 0;
+      var close = -1;
+      for (var k = bs; k < clean.length; k++) {
+        if (clean[k] == '{') d++;
+        if (clean[k] == '}') {
+          d--;
+          if (d == 0) {
+            close = k + 1;
+            break;
+          }
+        }
+      }
+      if (close < 0) return;
+      spanEnd = close;
+    } else if (clean.startsWith('=>', bs)) {
+      var dParen = 0;
+      var dSquare = 0;
+      var dCurly = 0;
+      var semi = -1;
+      for (var k = bs; k < clean.length; k++) {
+        final c = clean[k];
+        if (c == '(') dParen++;
+        if (c == ')') dParen--;
+        if (c == '[') dSquare++;
+        if (c == ']') dSquare--;
+        if (c == '{') dCurly++;
+        if (c == '}') dCurly--;
+        if (c == ';' && dParen == 0 && dSquare == 0 && dCurly == 0) {
+          semi = k + 1;
+          break;
+        }
+      }
+      if (semi < 0) return;
+      spanEnd = semi;
+    } else {
+      return; // declaration without a body (`;`): no locals to track.
+    }
+    final params = <String, String>{};
+    final clsName = cls ?? classAt(p);
+    String? fieldsOf(String field) {
+      if (clsName == null) return null;
+      return _fieldTypeOf(clsName, field, classIndex);
+    }
+
+    for (final seg in _splitTopLevel(clean.substring(p + 1, paren), ',')) {
+      final parsed = _parseParam(seg, fieldsOf);
+      if (parsed != null) params[parsed.key] = parsed.value;
+    }
+    final locals = <String, String>{};
+    final inner = clean.substring(bs, spanEnd);
+    for (final m in RegExp(
+      r'for\s*\(\s*(?:(?:final|const|late|var)\s+)?'
+      r'([\w$.<>?*\[\] ]+?)\s+(\w+)\s+in\b',
+    ).allMatches(inner)) {
+      locals.putIfAbsent(m.group(2)!, () => m.group(1)!.trim());
+    }
+    for (final m in RegExp(
+      r'catch\s*\(\s*(\w+)(?:\s*,\s*(\w+))?\s*\)',
+    ).allMatches(inner)) {
+      locals.putIfAbsent(m.group(1)!, () => _kUntypedName);
+      if (m.group(2) != null) {
+        locals.putIfAbsent(m.group(2)!, () => _kUntypedName);
+      }
+    }
+    for (final m in RegExp(
+      r'(?:^|[;{}()])\s*(?:(final|const|late|var)\s+)?'
+      r'([\w$.<>?*\[\] ]+?)\s+(\w+)\s*(?=[=;,)])',
+      multiLine: true,
+    ).allMatches(inner)) {
+      var type = m.group(2)!.trim();
+      final vname = m.group(3)!;
+      if (locals.containsKey(vname)) continue;
+      if (RegExp(r'\b(is|as|return|yield|throw|await|else|new|in)\b')
+          .hasMatch(type)) {
+        continue;
+      }
+      if (type == 'final' ||
+          type == 'const' ||
+          type == 'late' ||
+          type == 'var') {
+        // Inferred (`final x = Ctor(`): the constructor name is the type;
+        // otherwise unknown — left out so the initializer post-pass below
+        // may still resolve it (`final data = this.data[i]`).
+        final tail = inner.substring(m.end);
+        final inf = RegExp(r'^\s*=\s*(?:const\s+)?([A-Z][\w$]*)\s*[(\.]')
+            .firstMatch(tail);
+        type = inf?.group(1) ?? _kUntypedName;
+      }
+      if (type == _kUntypedName) continue;
+      locals[vname] = type;
+    }
+    final span = _FuncSpan(bs, spanEnd, clsName, params, locals);
+    // Untyped initializers (`final x = <expr>`, no explicit type): record
+    // the RHS span for the post-pass (anything else — explicit decls,
+    // `for`-`in` headers — is already covered above).
+    for (final m in RegExp(
+      r'(?:^|[;{}()])\s*(?:final|const|late|var)\s+(\w+)\s*=\s*',
+      multiLine: true,
+    ).allMatches(inner)) {
+      final vname = m.group(1)!;
+      if (locals.containsKey(vname)) continue;
+      var dParen = 0;
+      var dSquare = 0;
+      var dCurly = 0;
+      var dAngle = 0;
+      var rhsEnd = -1;
+      var k = bs + m.end;
+      // Collection literals keep their element type unknown.
+      var kk = k;
+      while (kk < spanEnd &&
+          (clean[kk] == ' ' || clean[kk] == '\t' || clean[kk] == '\n')) {
+        kk++;
+      }
+      if (kk < spanEnd && (clean[kk] == '[' || clean[kk] == '{')) continue;
+      for (; k < spanEnd; k++) {
+        final ch = clean[k];
+        if (ch == '(') dParen++;
+        if (ch == '[') dSquare++;
+        if (ch == '{') dCurly++;
+        if (ch == '<') dAngle++;
+        final top =
+            dParen == 0 && dSquare == 0 && dCurly == 0 && dAngle == 0;
+        if (top && (ch == ',' || ch == ';' || ch == ')' || ch == '}')) {
+          rhsEnd = k;
+          break;
+        }
+        // Ternaries, null-aware tails, re-assignments, cascades, and
+        // unbalanced generics/comparisons stay unknown (conservative).
+        if (top &&
+            (ch == '?' ||
+                ch == '=' ||
+                (ch == '.' &&
+                    k + 1 < spanEnd &&
+                    clean[k + 1] == '.') ||
+                (ch == '>' && dAngle == 0))) {
+          break;
+        }
+        if (ch == ')') dParen--;
+        if (ch == ']') dSquare--;
+        if (ch == '}') dCurly--;
+        // Clamped: a bare `>` is a comparison, not a closing angle.
+        if (ch == '>' && dAngle > 0) dAngle--;
+      }
+      if (rhsEnd < 0) continue;
+      span.inits.add((name: vname, rhsEnd: rhsEnd));
+    }
+    funcs.add(span);
+  }
+
+  for (final m in RegExp(r'\)\s*(\{|=>)').allMatches(clean)) {
+    addSpan(m.start, null, null);
+  }
+  for (final m in RegExp(r'\bget\s+(\w+)\s*(=>|\{)').allMatches(clean)) {
+    // Getters carry no params; track the body span for locals/fields.
+    final arrowOrBrace = m.start + m.group(0)!.indexOf(m.group(2)!);
+    int spanEnd;
+    if (m.group(2) == '{') {
+      var d = 0;
+      var close = -1;
+      for (var k = arrowOrBrace; k < clean.length; k++) {
+        if (clean[k] == '{') d++;
+        if (clean[k] == '}') {
+          d--;
+          if (d == 0) {
+            close = k + 1;
+            break;
+          }
+        }
+      }
+      if (close < 0) continue;
+      spanEnd = close;
+    } else {
+      var dParen = 0;
+      var dSquare = 0;
+      var dCurly = 0;
+      var semi = -1;
+      for (var k = arrowOrBrace; k < clean.length; k++) {
+        final c = clean[k];
+        if (c == '(') dParen++;
+        if (c == ')') dParen--;
+        if (c == '[') dSquare++;
+        if (c == ']') dSquare--;
+        if (c == '{') dCurly++;
+        if (c == '}') dCurly--;
+        if (c == ';' && dParen == 0 && dSquare == 0 && dCurly == 0) {
+          semi = k + 1;
+          break;
+        }
+      }
+      if (semi < 0) continue;
+      spanEnd = semi;
+    }
+    funcs.add(
+      _FuncSpan(arrowOrBrace, spanEnd, classAt(m.start), const {}, const {}),
+    );
+  }
+  final env = _FileEnv(body, clean, code, classes, funcs);
+  // Initializer post-pass: untyped `final x = <expr>` declarations resolve
+  // their RHS now that every span exists (the RHS may reference anything in
+  // scope, including later declarations). Chains resolve without extension
+  // knowledge here (empty sets — initializers with Widget-extension chains
+  // stay unknown, conservative); fields, subscripts, constructors, and
+  // plain paths resolve fully (`final data = this.data[i]` → `TimelineData`).
+  for (final f in funcs) {
+    for (final init in f.inits) {
+      if (f.locals.containsKey(init.name)) continue;
+      final t = _receiverType(
+        body,
+        init.rhsEnd,
+        env,
+        classIndex,
+        const {},
+        const {},
+        0,
+      );
+      if (t == null || t.assumed) continue;
+      if (_baseOfType(t.raw).isEmpty) continue;
+      f.locals[init.name] = t.raw;
+    }
+    f.inits.clear();
+  }
+  return env;
+}
+
+/// Enclosing class name at [offset], or null at top level.
+String? _enclosingClass(_FileEnv env, int offset) {
+  for (final c in env.classes) {
+    if (c.start <= offset && offset < c.end) return c.name;
+  }
+  return null;
+}
+
+/// Innermost function span containing [offset], or null.
+_FuncSpan? _enclosingFunc(_FileEnv env, int offset) {
+  _FuncSpan? best;
+  for (final f in env.funcs) {
+    if (f.start <= offset && offset < f.end) {
+      if (best == null || (f.end - f.start) < (best.end - best.start)) {
+        best = f;
+      }
+    }
+  }
+  return best;
+}
+
+/// Lexical type of bare identifier [word] used at [offset]: innermost params,
+/// then locals (inner scopes first), then the enclosing class's fields.
+/// `dynamic` (untyped) and absent names yield null (unknown, never Widget).
+String? _lookupIdent(
+  _FileEnv env,
+  Map<String, _ClassInfo> index,
+  int offset,
+  String word,
+) {
+  final chain = <_FuncSpan>[];
+  var f = _enclosingFunc(env, offset);
+  while (f != null && chain.length < 8) {
+    chain.add(f);
+    _FuncSpan? outer;
+    for (final g in env.funcs) {
+      if (g.start <= f.start &&
+          f.end <= g.end &&
+          (g.start != f.start || g.end != f.end)) {
+        if (outer == null || (g.end - g.start) < (outer.end - outer.start)) {
+          outer = g;
+        }
+      }
+    }
+    f = outer;
+  }
+  for (final scope in chain) {
+    final p = scope.params[word];
+    if (p != null) return p == _kUntypedName ? null : p;
+    final l = scope.locals[word];
+    if (l != null) return l == _kUntypedName ? null : l;
+  }
+  final cls = _enclosingClass(env, offset);
+  if (cls != null) return _fieldTypeOf(cls, word, index);
+  return null;
+}
+
+/// Matches the opening bracket for the closer at [i] ([open]/[close] pair),
+/// skipping non-code offsets. Returns -1 when unbalanced.
+int _matchBack(String body, List<bool> code, int i, String open, String close) {
+  var depth = 0;
+  for (var j = i; j >= 0; j--) {
+    if (!code[j]) continue;
+    if (body[j] == close) depth++;
+    if (body[j] == open) {
+      depth--;
+      if (depth == 0) return j;
+    }
+  }
+  return -1;
+}
+
+/// Resolves the receiver expression ending at [end] (exclusive) to a type, or
+/// null when unknowable. See the [_receiverType] design note above for the
+/// shape table; [widgetExtMembers] are plain member names of Widget
+/// extensions (chain rule) and [suffixed] the renamed ones.
+_RType? _receiverType(
+  String body,
+  int end,
+  _FileEnv env,
+  Map<String, _ClassInfo> index,
+  Set<String> widgetExtMembers,
+  Set<String> suffixed,
+  int depth,
+) {
+  if (depth > 12) return null;
+  var i = end - 1;
+  while (i >= 0 &&
+      (body[i] == ' ' ||
+          body[i] == '\t' ||
+          body[i] == '\n' ||
+          body[i] == '\r' ||
+          body[i] == '!' ||
+          body[i] == '?' ||
+          !env.code[i])) {
     i--;
   }
   if (i < 0) return null;
-  if (body[i] == ')') {
-    // Balance backward to the matching `(`. Strings backward use escape
-    // parity; comments abort (division and comment starts are
-    // indistinguishable backward — residual, never corruption).
-    var depth = 0;
-    var j = i;
-    while (j >= 0) {
-      final c = body[j];
-      if (c == "'" || c == '"') {
-        // Find the string start by escape parity (odd run = escaped).
-        var k = j - 1;
-        var bs = 0;
-        while (k >= 0 && body[k] == '\\') {
-          bs++;
-          k--;
-        }
-        if (bs % 2 == 1) {
-          j--;
-          continue;
-        }
-        // Unescaped quote: skip to its pair going backward (same parity).
-        var q = k;
-        while (q >= 0) {
-          if (body[q] == c) {
-            var b2 = 0;
-            var r = q - 1;
-            while (r >= 0 && body[r] == '\\') {
-              b2++;
-              r--;
-            }
-            if (b2 % 2 == 0) break;
-          }
-          q--;
-        }
-        if (q < 0) return null;
-        j = q - 1;
-        continue;
-      }
-      if (c == '/' && j + 1 < body.length && body[j + 1] == '/') return null;
-      if (c == '/' && j > 0 && body[j - 1] == '/') return null;
-      if (c == '*' && j + 1 < body.length && body[j + 1] == '/') return null;
-      if (c == '/' && j > 0 && body[j - 1] == '*') return null;
-      if (c == ')') depth++;
-      if (c == '(') {
-        depth--;
-        if (depth == 0) break;
-      }
-      j--;
-    }
+  final c = body[i];
+  if (c == ')') {
+    final j = _matchBack(body, env.code, i, '(', ')');
     if (j < 0) return null;
-    // `as Type` cast tail?
-    final content = body.substring(j + 1, i);
-    final cast = RegExp(r'\bas\s+([A-Z][\w$]*)\s*$').firstMatch(content);
-    if (cast != null) return _ReceiverHead.ctorName(cast.group(1)!);
+    final inner = body.substring(j + 1, i);
+    final cast =
+        RegExp(r'\bas\s+([\w$.<>?,\s]+?)\s*$').firstMatch(inner);
+    if (cast != null) {
+      final t = cast.group(1)!.trim();
+      if (t.isEmpty) return null;
+      final base = _baseOfType(t);
+      if (base.isEmpty) return null;
+      // Casts mirror the constructor heuristic for absent (SDK) names.
+      return _RType(t, !index.containsKey(base));
+    }
     var e = j - 1;
-    while (e >= 0 && body[e] == ' ') {
+    while (e >= 0 &&
+        (body[e] == ' ' ||
+            body[e] == '\t' ||
+            body[e] == '\n' ||
+            body[e] == '\r' ||
+            !env.code[e])) {
       e--;
     }
+    var k = e;
     if (e >= 0 && body[e] == '>') {
-      var d = 0;
-      while (e >= 0) {
-        if (body[e] == '>') d++;
-        if (body[e] == '<') {
-          d--;
-          if (d == 0) break;
-        }
-        e--;
-      }
-      if (e < 0) return null;
-      e--;
-      while (e >= 0 && body[e] == ' ') {
-        e--;
+      k = _matchBack(body, env.code, e, '<', '>');
+      if (k < 0) return null;
+      k--;
+      while (k >= 0 &&
+          (body[k] == ' ' ||
+              body[k] == '\t' ||
+              body[k] == '\n' ||
+              body[k] == '\r')) {
+        k--;
       }
     }
-    var s = e;
+    String? callee;
+    var calleeDot = -1;
+    if (k >= 0 && _isIdentChar(body[k])) {
+      var s = k;
+      while (s >= 0 && _isIdentChar(body[s])) {
+        s--;
+      }
+      s++;
+      callee = body.substring(s, k + 1);
+      if (s - 1 >= 0 && body[s - 1] == '.') calleeDot = s - 1;
+    }
+    if (callee == null || callee.isEmpty) {
+      // Grouping parens `(E).m`: the type of E.
+      return _receiverType(
+        body,
+        i,
+        env,
+        index,
+        widgetExtMembers,
+        suffixed,
+        depth + 1,
+      );
+    }
+    if (calleeDot >= 0) {
+      if (suffixed.contains(callee)) return const _RType('Widget', false);
+      if (!widgetExtMembers.contains(callee)) return null;
+      if (_kSdkChainDeny.contains(callee)) return null;
+      final pt = _receiverType(
+        body,
+        calleeDot,
+        env,
+        index,
+        widgetExtMembers,
+        suffixed,
+        depth + 1,
+      );
+      if (pt == null) return null;
+      final pb = _baseOfType(pt.raw);
+      if (pb.isEmpty) return null;
+      final pinfo = index[pb];
+      if (pinfo != null && _classDeclaresIn(index, pb, callee)) return null;
+      return const _RType('Widget', false);
+    }
+    if (!RegExp(r'^[A-Z]').hasMatch(callee)) return null;
+    if (_isWidgetTypeName(callee, index)) return _RType(callee, false);
+    // SDK-constructor heuristic (documented): absent names count as Widget.
+    if (!index.containsKey(callee)) return _RType(callee, true);
+    return null;
+  }
+  if (c == ']') {
+    final j = _matchBack(body, env.code, i, '[', ']');
+    if (j < 0) return null;
+    final t = _receiverType(
+      body,
+      j,
+      env,
+      index,
+      widgetExtMembers,
+      suffixed,
+      depth + 1,
+    );
+    if (t == null || t.assumed) return null;
+    final b = _baseOfType(t.raw);
+    final args = _typeArgsOf(t.raw);
+    if (args.isEmpty) return null;
+    if (b == 'Map') {
+      if (args.length < 2) return null;
+      final v = args.last.trim();
+      return v.isEmpty ? null : _RType(v, false);
+    }
+    // Only list-likes are unwrapped; any other container keeps its element
+    // type unknown (conservative).
+    if (b == 'List' ||
+        b == 'Set' ||
+        b == 'Iterable' ||
+        b == 'Queue' ||
+        b == 'ListBase') {
+      final v = args.first.trim();
+      return v.isEmpty ? null : _RType(v, false);
+    }
+    return null;
+  }
+  if (_isIdentChar(c)) {
+    var s = i;
     while (s >= 0 && _isIdentChar(body[s])) {
       s--;
     }
     s++;
-    if (s > e) return null;
-    final ident = body.substring(s, e + 1);
-    final prev = s > 0 ? body[s - 1] : '';
-    if (prev == '.') {
-      // Dotted call: a renamed-member call chains Widget-typed; anything
-      // else (factories, statics, cascade links) is unknown.
-      if (suffixed.contains(ident)) return _ReceiverHead.chained;
-      return null;
+    final word = body.substring(s, i + 1);
+    if (s - 1 >= 0 && body[s - 1] == '.') {
+      if (s - 2 >= 0 && body[s - 2] == '.') return null; // cascade/spread.
+      final pt = _receiverType(
+        body,
+        s - 1,
+        env,
+        index,
+        widgetExtMembers,
+        suffixed,
+        depth + 1,
+      );
+      if (pt == null || pt.assumed) return null;
+      final pb = _baseOfType(pt.raw);
+      if (pb.isEmpty || !index.containsKey(pb)) return null;
+      final ft = _fieldTypeOf(pb, word, index);
+      return ft == null ? null : _RType(ft, false);
     }
-    if (prev == '#' || prev == ':' || prev == '?') return null;
-    // Bare call: `const` prefix allowed; UpperCamel required.
-    var head = ident;
-    var b = s - 1;
-    while (b >= 0 && body[b] == ' ') {
-      b--;
+    // Statics and enum values (`StepSize.medium`, `Typography.large`) never
+    // qualify — the same gating the member rewrite relies on.
+    if (RegExp(r'^[A-Z]').hasMatch(word)) return null;
+    if (word == 'this') {
+      final cls = _enclosingClass(env, end);
+      return cls == null ? null : _RType(cls, false);
     }
-    if (b >= 4 && body.substring(b - 4, b + 1) == 'const') {
-      final c0 = b - 5;
-      if (c0 < 0 || !_isIdentChar(body[c0])) head = ident;
+    if (word == 'super') return null;
+    if (word == 'widget') {
+      final cls = _enclosingClass(env, end);
+      final w = cls == null ? null : index[cls]?.stateArg;
+      return w == null ? null : _RType(w, false);
     }
-    return _ReceiverHead.ctorName(head);
+    final t = _lookupIdent(env, index, end, word);
+    return t == null ? null : _RType(t, false);
   }
-  // Spread (`...m`) or cascade (`..m`): never classify.
-  if (body[i] == '.') return null;
   return null;
 }
 
-/// Class/member index for the receiver check: class or mixin name →
-/// member names (methods, getters, setters, static and instance fields),
-/// superclass name, and mixed-in names. Built lazily per queried class
-/// over survivors' carved bodies and memoized.
+/// Whether the receiver of the `.` at [dot] is Widget-typed for [member]:
+/// the resolved type tests Widget (or the SDK-constructor heuristic), and a
+/// resolvable class that declares [member] vetoes (class members win over
+/// extensions, so such uses never meant the extension).
+bool _receiverIsWidget(
+  String body,
+  int dot,
+  String member,
+  _FileEnv env,
+  Map<String, _ClassInfo> index,
+  bool Function(String, String) classDeclares,
+  Set<String> widgetExtMembers,
+  Set<String> suffixed,
+) {
+  // Member uses inside strings/comments are never real uses (docs mention
+  // `.small()` freely); the rewrite scanner never reports those, but keeper
+  // election scans raw text and must skip them.
+  if (dot < 0 || dot >= env.code.length || !env.code[dot]) return false;
+  final r = _receiverType(
+    body,
+    dot,
+    env,
+    index,
+    widgetExtMembers,
+    suffixed,
+    0,
+  );
+  if (r == null) return false;
+  final base = _baseOfType(r.raw);
+  if (base.isEmpty) return false;
+  if (!r.assumed && !_isWidgetTypeName(r.raw, index)) return false;
+  if (!r.assumed &&
+      index.containsKey(base) &&
+      classDeclares(base, member)) {
+    return false;
+  }
+  return true;
+}
+
+/// Top-level function and getter names declared by the stripped [body].
+/// Column-0 anchored (members are always indented in formatted code), with
+/// control-flow and declaration keywords excluded so `if (`-style line starts
+/// never pose as declarations.
+Set<String> _topLevelFunctionNames(String body) {
+  final clean = _stripStrings(_stripComments(body));
+  final names = <String>{};
+  for (final m in RegExp(
+    r'^([\w$][\w$<>, ?*\[\].]*?)\s+(\w+)\s*\(',
+    multiLine: true,
+  ).allMatches(clean)) {
+    final typeHead = m.group(1)!.trim().split(RegExp(r'\s+')).first;
+    if (_isSpanKeyword(typeHead)) continue;
+    final name = m.group(2)!;
+    if (_isSpanKeyword(name)) continue;
+    names.add(name);
+  }
+  for (final m in RegExp(
+    r'^[\w$][\w$<>, ?*\[\].]*?\s+get\s+(\w+)',
+    multiLine: true,
+  ).allMatches(clean)) {
+    names.add(m.group(1)!);
+  }
+  return names;
+}
+
+/// Whether renaming top-level [name] in the file with cleaned text [clean]
+/// would be unsafe: the file declares a same-named local, param, field,
+/// method, or function (which shadows the top level), or uses [name] as a
+/// qualifier (`p.name`, e.g. an import prefix or named constructor on a
+/// same-named class). Declaration spans in [exclude] (the renamed
+/// declarations themselves) are blanked first. Conservative: any doubt skips
+/// the file (honest residual, never corruption).
+bool _fileShadowsName(
+  String clean,
+  String name,
+  List<({int s, int e})> exclude,
+) {
+  final work = clean.split('');
+  for (final x in exclude) {
+    for (var k = x.s; k < x.e && k < work.length; k++) {
+      if (work[k] != '\n') work[k] = ' ';
+    }
+  }
+  final text = work.join();
+  // `this.name` / `super.name` are member references, not shadows.
+  final scrubbed = text
+      .replaceAll(RegExp('\\bthis\\s*\\.\\s*' + RegExp.escape(name) + '\\b'),
+          'this ')
+      .replaceAll(RegExp('\\bsuper\\s*\\.\\s*' + RegExp.escape(name) + '\\b'),
+          'super ');
+  final e = RegExp.escape(name);
+  final patterns = [
+    // Method/function declaration (a type position is required, so bare
+    // line-start calls like `name Phonecase(` never match... i.e. `name(`
+    // alone cannot match: the type run needs at least one word char).
+    RegExp('^\\s*[\\w\$][\\w\$<>, ?*\\[\\].]*?\\s+$e\\s*\\(',
+        multiLine: true),
+    RegExp('^\\s*[\\w\$][\\w\$<>, ?*\\[\\].]*?\\s+get\\s+$e\\b',
+        multiLine: true),
+    RegExp('^\\s*[\\w\$][\\w\$<>, ?*\\[\\].]*?\\s+set\\s+$e\\s*\\(',
+        multiLine: true),
+    // Untyped declarations (never calls: `=`, `;`, `,` `)` `:` follow, and a
+    // call's `(` is excluded by the lookahead).
+    RegExp('[(,;{]\\s*(?:final|const|late|var)\\s+$e\\b(?!\\s*\\()'),
+    // Typed params/locals/fields.
+    RegExp('[(,;{]\\s*[\\w\$][\\w\$<>, ?*\\[\\].]*?\\s+$e\\b\\s*(?=[=;,):])'),
+    // Qualifier uses (`p.name`, import prefixes, named constructors).
+    RegExp('\\b$e\\s*\\.(?!\\.)'),
+  ];
+  return patterns.any((p) => p.hasMatch(scrubbed));
+}
+
+/// Structured parts of an enum declaration [text] (already normalized):
+/// [head] is `name|typeparams|ctor|with|implements`, [values] the ordered
+/// `name+args` value strings, and [members] the normalized member section
+/// (after the `;`, empty for plain enums). Returns null when unparseable.
+({String head, List<String> values, String members})? _enumParts(
+  String text,
+) {
+  final norm = _normalizeBody(text);
+  final m = RegExp(
+    r'^enum\s+(\w+)\s*(<[^;{}()]*>)?\s*(\([^;{}]*\))?\s*'
+    r'(with\s+[^{;]+?)?\s*(implements\s+[^{;]+?)?\s*\{',
+  ).firstMatch(norm);
+  if (m == null) return null;
+  var depth = 0;
+  var paren = 0;
+  var close = -1;
+  for (var k = m.end - 1; k < norm.length; k++) {
+    if (norm[k] == '(') paren++;
+    if (norm[k] == ')') paren--;
+    if (norm[k] == '{' && paren == 0) depth++;
+    if (norm[k] == '}' && paren == 0) {
+      depth--;
+      if (depth == 0) {
+        close = k;
+        break;
+      }
+    }
+  }
+  if (close < 0) return null;
+  final inner = norm.substring(m.end, close);
+  // Member section after the first top-level `;`.
+  var valuesPart = inner;
+  var members = '';
+  var d = 0;
+  var p = 0;
+  for (var k = 0; k < inner.length; k++) {
+    if (inner[k] == '(') p++;
+    if (inner[k] == ')') p--;
+    if (inner[k] == '{' && p == 0) d++;
+    if (inner[k] == '}' && p == 0) d--;
+    if (inner[k] == ';' && d == 0 && p == 0) {
+      valuesPart = inner.substring(0, k);
+      members = inner.substring(k + 1).trim();
+      break;
+    }
+  }
+  final values = <String>[];
+  for (final seg in _splitTopLevel(valuesPart, ',')) {
+    var v = seg.trim();
+    if (v.isEmpty) continue;
+    v = v.replaceAll(RegExp(r'^@\w+(?:\([^()]*\))?\s*'), '');
+    final vm = RegExp(r'^(\w+)(.*)$', dotAll: true).firstMatch(v);
+    if (vm == null) return null;
+    values.add('${vm.group(1)}${vm.group(2)!.trim()}');
+  }
+  if (values.isEmpty) return null;
+  return (
+    head: 'enum|${m.group(1)}|${m.group(2) ?? ''}|${m.group(3) ?? ''}|'
+        '${m.group(4) ?? ''}|${m.group(5) ?? ''}',
+    values: values,
+    members: members,
+  );
+}
+
+/// Canonical form of a new-style typedef declaration [text]: type parameters
+/// are de Bruijn-normalized (`#0`, …) and positional parameter *names* of
+/// function types are blanked (they are irrelevant to subtyping — the
+/// `pending` vs `errors` twins). Named/optional parameter names, defaults,
+/// and everything else are kept, so genuinely different aliases never
+/// compare equal. Returns null when unparseable.
+String? _typedefCanonical(String text) {
+  final norm = _normalizeBody(text);
+  final m = RegExp(
+    r'^typedef\s+(\w+)\s*(<[^;{}()]*>)?\s*=\s*(.+?);$',
+    dotAll: true,
+  ).firstMatch(norm);
+  if (m == null) return null;
+  var rhs = m.group(3)!;
+  // Blank positional names in every `Function(` parameter list, innermost
+  // first (re-scanned after each splice, so nesting terminates), stopping
+  // when a pass changes nothing.
+  for (var round = 0; round < 8; round++) {
+    final matches =
+        RegExp(r'Function\s*(<[^()]*>)?\s*\(').allMatches(rhs).toList();
+    if (matches.isEmpty) break;
+    final before = rhs;
+    final fm = matches.last;
+    final open = fm.end - 1;
+    var d = 0;
+    var close = -1;
+    for (var k = open; k < rhs.length; k++) {
+      if (rhs[k] == '(') d++;
+      if (rhs[k] == ')') {
+        d--;
+        if (d == 0) {
+          close = k;
+          break;
+        }
+      }
+    }
+    if (close < 0) return null;
+    final params = _splitTopLevel(rhs.substring(open + 1, close), ',');
+    var positionalEnd = params.length;
+    for (var k = 0; k < params.length; k++) {
+      final t = params[k].trim();
+      if (t.startsWith('[') || t.startsWith('{')) {
+        positionalEnd = k;
+        break;
+      }
+    }
+    for (var k = 0; k < positionalEnd; k++) {
+      final pm = RegExp(r'^(.*\S)\s+(\w+)$', dotAll: true)
+          .firstMatch(params[k].trim());
+      if (pm != null) params[k] = pm.group(1)!;
+    }
+    rhs = '${rhs.substring(0, open + 1)}${params.join(',')}${rhs.substring(close)}';
+    if (rhs == before) break;
+  }
+  var canon = 'typedef|${m.group(1)}|${m.group(2) ?? ''}|$rhs';
+  final tps = m.group(2);
+  if (tps != null) {
+    final names = tps
+        .substring(1, tps.length - 1)
+        .split(',')
+        .map((s) => s.trim().split(RegExp(r'\s+')).first)
+        .where((s) => s.isNotEmpty)
+        .toList();
+    for (var k = 0; k < names.length; k++) {
+      canon = canon.replaceAll(RegExp('\\b${RegExp.escape(names[k])}\\b'), '#$k');
+    }
+  }
+  return canon;
+}
+
+/// Class/member index for the receiver check: class or mixin name → member
+/// names (methods, getters, setters, static and instance fields), superclass
+/// name, mixed-in names, field name → raw declared type (for receiver type
+/// resolution), and the `State<W>` type argument (so `widget` in a state
+/// class resolves to `W`). Built lazily per queried class over survivors'
+/// carved bodies and memoized.
 class _ClassInfo {
   final Set<String> members = <String>{};
   String? superName;
   final List<String> mixins = <String>[];
+  final Map<String, String> fields = <String, String>{};
+  String? stateArg;
   _ClassInfo();
+}
+
+/// Whether [member] is declared by class [name] (or its superclasses or
+/// mixins), with a cycle guard. Top-level companion to the closure-local
+/// declaration check used inside [_resolveClosure].
+bool _classDeclaresIn(
+  Map<String, _ClassInfo> index,
+  String name,
+  String member, [
+  Set<String>? seen,
+]) {
+  seen ??= <String>{};
+  if (!seen.add(name) || seen.length > 25) return false;
+  final info = index[name];
+  if (info == null) return false;
+  if (info.members.contains(member)) return true;
+  if (info.superName != null &&
+      _classDeclaresIn(index, info.superName!, member, seen)) {
+    return true;
+  }
+  for (final mix in info.mixins) {
+    if (_classDeclaresIn(index, mix, member, seen)) return true;
+  }
+  return false;
 }
 
 /// Whether [name] is safe for cross-file rebind: an UpperCamel letter after
@@ -991,7 +2082,7 @@ const _kExtensionSuffix = <String, String>{
 ///   by a kit declaration in the merged scope).
 ///
 /// [chainNames] are the already-suffixed member names that mark Widget-typed
-/// call chains for [_receiverHead]. [shouldRewriteMember] gates each `.m`
+/// call chains for the receiver gate. [shouldRewriteMember] gates each `.m`
 /// occurrence (called with the scanned [body], the `.` offset, and the member
 /// name); a false return leaves that occurrence untouched.
 String _rewriteNames(
@@ -1586,15 +2677,131 @@ _ClosureModel _resolveClosure(
       toDrop.putIfAbsent(dest, () => []).add((s: s, e: e));
     }
 
+    // Declaring record texts for top-level [name] in [home] (one entry per
+    // record mentioning the name), or null when unattributable.
+    List<String>? declTextsFor(String home, String name) {
+      final recs = _topLevelDecls(carvedBodies[home]!);
+      if (recs == null) return null;
+      return [
+        for (final rec in recs)
+          if (_topLevelNames(rec.text).contains(name)) rec.text,
+      ];
+    }
+
+    void cutNameOut(String home, String name) {
+      final recs = _topLevelDecls(carvedBodies[home]!)!;
+      for (final rec in recs) {
+        if (_topLevelNames(rec.text).contains(name)) {
+          cutOut(home, rec.start, rec.end);
+        }
+      }
+    }
+
+    // `case Name.` switches over [name] in any survivor: adding enum values
+    // would break their exhaustiveness, so superset unification stays off.
+    final caseSwitchCache = <String, bool>{};
+    bool hasCaseSwitch(String name) => caseSwitchCache.putIfAbsent(name, () {
+          final pat = RegExp(
+            '\\bcase\\s+' + RegExp.escape(name) + r'\s*[\.<]',
+          );
+          for (final dest in survivors) {
+            if (pat.hasMatch(carvedBodies[dest]!)) return true;
+          }
+          // `is Name` checks do not break, but `.values` iteration with an
+          // exhaustive mapping nearby is unknowable — only `case` gates.
+          return false;
+        });
+
+    // Enum twins: identical signatures (docs/trailing commas aside) unify to
+    // the first home. Strict value-supersets unify to the single maximal
+    // home when heads and member sections match and no `case Name.` switch
+    // exists anywhere (added values cannot break exhaustiveness then);
+    // anything else falls through to scope-aware renaming below.
+    void unifyEnumTwins(String name, List<String> homes) {
+      final partsByHome =
+          <String, ({String head, List<String> values, String members})>{};
+      for (final home in homes) {
+        final texts = declTextsFor(home, name);
+        if (texts == null || texts.length != 1) return;
+        final parts = _enumParts(texts.single);
+        if (parts == null) return;
+        partsByHome[home] = parts;
+      }
+      if (partsByHome.values
+              .map((p) => '${p.head}|${p.values.join(',')}|${p.members}')
+              .toSet()
+              .length ==
+          1) {
+        for (final home in homes.skip(1)) {
+          cutNameOut(home, name);
+        }
+        return;
+      }
+      final head = partsByHome[homes.first]!.head;
+      final members = partsByHome[homes.first]!.members;
+      if (partsByHome.values
+          .any((p) => p.head != head || p.members != members)) {
+        return;
+      }
+      String? superset;
+      for (final cand in homes) {
+        final vc = partsByHome[cand]!.values.toSet();
+        var coversAll = true;
+        for (final other in homes) {
+          if (other == cand) continue;
+          final vo = partsByHome[other]!.values.toSet();
+          if (vo.difference(vc).isNotEmpty || vc.length <= vo.length) {
+            coversAll = false;
+            break;
+          }
+        }
+        if (coversAll) {
+          if (superset != null) return; // two maximal: rename path.
+          superset = cand;
+        }
+      }
+      if (superset == null || hasCaseSwitch(name)) return;
+      for (final home in homes) {
+        if (home != superset) cutNameOut(home, name);
+      }
+    }
+
+    // Typedef twins: identical canonical forms (positional parameter names
+    // blanked — irrelevant to subtyping) unify to the first home; anything
+    // else falls through to scope-aware renaming below.
+    void unifyTypedefTwins(String name, List<String> homes) {
+      final canons = <String, String>{};
+      for (final home in homes) {
+        final texts = declTextsFor(home, name);
+        if (texts == null || texts.length != 1) return;
+        final canon = _typedefCanonical(texts.single);
+        if (canon == null) return;
+        canons[home] = canon;
+      }
+      if (canons.values.toSet().length != 1) return;
+      for (final home in homes.skip(1)) {
+        cutNameOut(home, name);
+      }
+    }
+
     for (final entry in preHomes.entries) {
       final name = entry.key;
       final homes = entry.value;
       if (homes.length < 2) continue;
-      // Enums/typedefs never unify (kept as residuals, like below).
+      final homeKinds = [
+        for (final home in homes) _topLevelKindOf(carvedBodies[home]!, name),
+      ];
+      if (homeKinds.every((k) => k == 'enum')) {
+        unifyEnumTwins(name, homes);
+        continue;
+      }
+      if (homeKinds.every((k) => k == 'typedef')) {
+        unifyTypedefTwins(name, homes);
+        continue;
+      }
       var kindsOk = true;
       var firstKind;
-      for (final home in homes) {
-        final kind = _topLevelKindOf(carvedBodies[home]!, name);
+      for (final kind in homeKinds) {
         firstKind ??= kind;
         if (kind == null ||
             kind == 'enum' ||
@@ -1751,19 +2958,39 @@ _ClosureModel _resolveClosure(
   // (`_`-prefixed) names never cross libraries via imports, so their resolve
   // stays group-local by construction. Rebind crosses file boundaries only
   // for UpperCamel-letter names (lint-clean code never shadows those with
-  // locals). Enums and typedefs are NOT renamed: their companions are bare
-  // cross-group users, so renaming trades one dupe error for redirect-style
-  // cascades (measured on `InputFeaturePosition`, whose copies also diverge
-  // in members); classes, mixins, and extensions rename because their
-  // companions (states, factories) resolve through the same scope.
+  // locals).
+  //
+  // Track I1 extends the same treatment to the remaining duplicate shapes:
+  // top-level functions (diverged twins like `getBullet` /
+  // `buildEditableTextContextMenu` rename with scope-aware rebinding, guarded
+  // per file against shadowing locals/params/members or qualifier uses —
+  // doubt skips the file, never corrupts it) and enums/typedefs (identical
+  // ones are unified in the subset pass above, so only diverged twins like
+  // `InputFeaturePosition` arrive here; their values/aliases are qualified by
+  // the type name itself, so renaming the type with scope-aware rebinding
+  // fully resolves them — no receiver gating needed, unlike extension
+  // members where `StepSize.medium`-style identifier receivers must stay
+  // untouched).
   final renameByDest = <String, Map<String, String>>{};
   final dupeHomes = <String, List<String>>{};
   final allNames = <String>{};
+  final funcNamesCache = <String, Set<String>>{};
+  Set<String> funcNamesOf(String dest) => funcNamesCache.putIfAbsent(
+        dest,
+        () => _topLevelFunctionNames(carvedBodies[dest]!),
+      );
   for (final dest in survivors) {
     final names = namesOf(dest);
     allNames.addAll(names);
     for (final name in names) {
       dupeHomes.putIfAbsent(name, () => []).add(dest);
+    }
+    final funcNames = funcNamesOf(dest);
+    allNames.addAll(funcNames);
+    for (final name in funcNames) {
+      if (!names.contains(name)) {
+        dupeHomes.putIfAbsent(name, () => []).add(dest);
+      }
     }
   }
   // Homes of [name] visible THROUGH [target] (its own part-group plus the
@@ -1847,15 +3074,21 @@ _ClosureModel _resolveClosure(
     final name = entry.key;
     final homes = entry.value;
     if (homes.length < 2) continue;
-    var renameWorthy = true;
+    // Uniform kind across homes (functions included); mixed or unattributable
+    // twins stay honest residuals.
+    String? firstKind;
+    var kindsOk = true;
     for (final home in homes) {
-      final kind = _topLevelKindOf(carvedBodies[home]!, name);
-      if (kind == 'enum' || kind == 'typedef') {
-        renameWorthy = false;
+      final kind = _topLevelKindOf(carvedBodies[home]!, name) ??
+          (funcNamesOf(home).contains(name) ? 'function' : null);
+      firstKind ??= kind;
+      if (kind == null || kind != firstKind) {
+        kindsOk = false;
         break;
       }
     }
-    if (!renameWorthy) continue;
+    if (!kindsOk) continue;
+    final kind = firstKind!;
     // Candidates per dup home (emission order, bumped while taken) so every
     // use site maps to the same replacement for its home.
     final candidateForHome = <String, String>{};
@@ -1870,6 +3103,61 @@ _ClosureModel _resolveClosure(
       candidateForHome[dup] = candidate;
       k++;
     }
+    // Whether rebinding bare [name] in [dest] is unsafe: a same-named local,
+    // param, member, or qualifier shadows the top level there (doubt skips
+    // the file — residual, never corruption). Only the function path checks:
+    // lint-clean code never shadows UpperCamel types with locals.
+    bool shadowed(String dest) {
+      final orig = bodies[dest]!;
+      if (RegExp('\\bimport\\b[^;]*\\bas\\s+' + RegExp.escape(name) + r'\b')
+          .hasMatch(orig)) {
+        return true;
+      }
+      final carved = carvedBodies[dest]!;
+      final clean = _stripStrings(_stripComments(carved));
+      // Own declaration lines for [name], found textually (robust to
+      // unattributable bodies where [_topLevelDecls] returns null): any
+      // `Type name` / `get|set name` / type-keyword header at line start.
+      // Over-blanking only hides uses from the shadow test (safe — real uses
+      // still rename); under-blanking would falsely skip the file.
+      final epat = RegExp.escape(name);
+      final excl = <({int s, int e})>[];
+      for (final m in RegExp(
+        r'^[ \t]*[\w$][\w$<>, ?*\[\].]*?\s+' +
+            epat +
+            r'\b|^[ \t]*(?:class|mixin|enum|extension|typedef)\s+' +
+            epat +
+            r'\b',
+        multiLine: true,
+      ).allMatches(clean)) {
+        var s = m.start;
+        while (s > 0 && clean[s - 1] != '\n') {
+          s--;
+        }
+        var e = m.end;
+        while (e < clean.length && clean[e] != '\n') {
+          e++;
+        }
+        excl.add((s: s, e: e));
+      }
+      return _fileShadowsName(clean, name, excl);
+    }
+
+    void rebindScopeAware() {
+      for (final dest in survivors) {
+        final resolved = resolveDupeHome(dest, name);
+        if (resolved == null) continue;
+        final candidate = candidateForHome[resolved];
+        if (candidate == null) continue; // keeper: keep the name.
+        if (kind == 'function' && shadowed(dest)) continue;
+        renameByDest.putIfAbsent(dest, () => {})[name] = candidate;
+      }
+    }
+
+    if (kind == 'function') {
+      rebindScopeAware();
+      continue;
+    }
     if (!_isRebindableName(name)) {
       for (final dup in homes.skip(1)) {
         renameByDest.putIfAbsent(dup, () => {})[name] =
@@ -1877,13 +3165,7 @@ _ClosureModel _resolveClosure(
       }
       continue;
     }
-    for (final dest in survivors) {
-      final resolved = resolveDupeHome(dest, name);
-      if (resolved == null) continue;
-      final candidate = candidateForHome[resolved];
-      if (candidate == null) continue; // keeper: keep the name.
-      renameByDest.putIfAbsent(dest, () => {})[name] = candidate;
-    }
+    rebindScopeAware();
   }
 
   // (G) rival extension members: same member name on co-visible `on Widget`
@@ -2037,9 +3319,10 @@ _ClosureModel _resolveClosure(
 
   // Class index for the receiver check: class/mixin name → members
   // (methods, getters, setters, static and instance fields), superclass,
-  // and mixin names. One pass over survivors; superclass/mixin walks are
-  // cycle-guarded. SDK/unknown classes are absent (treated as clean —
-  // verified for the rival member set by zero residuals).
+  // mixin names, field types, and the `State<W>` type argument. One pass over
+  // survivors; superclass/mixin walks are cycle-guarded. SDK/unknown classes
+  // are absent (constructors of absent names count as Widget by the
+  // documented heuristic; declared types of absent names count as unknown).
   final classIndex = <String, _ClassInfo>{};
   for (final dest in survivors) {
     final clean = _stripStrings(_stripComments(carvedBodies[dest]!));
@@ -2068,6 +3351,9 @@ _ClosureModel _resolveClosure(
       if (sup != null) {
         info.superName ??= sup.group(1)!.split('.').last.split('<').first;
       }
+      info.stateArg ??= RegExp(r'\bextends\s+State\s*<\s*([\w$][\w$<>?, ]*?)\s*>')
+          .firstMatch(header)
+          ?.group(1);
       final wth =
           RegExp(r'\bwith\s+([\w$.,\s<>]+?)(?:\bimplements\b|$)')
               .firstMatch(header);
@@ -2097,24 +3383,15 @@ _ClosureModel _resolveClosure(
       info.members.addAll(
         _extensionMembers(clean.substring(open + 1, close), true),
       );
+      for (final field in _classFieldTypes(clean.substring(open + 1, close))
+          .entries) {
+        info.fields.putIfAbsent(field.key, () => field.value);
+      }
     }
   }
 
-  bool classDeclares(String name, String member, [Set<String>? seen]) {
-    seen ??= <String>{};
-    if (!seen.add(name) || seen.length > 25) return false;
-    final info = classIndex[name];
-    if (info == null) return false;
-    if (info.members.contains(member)) return true;
-    if (info.superName != null &&
-        classDeclares(info.superName!, member, seen)) {
-      return true;
-    }
-    for (final mix in info.mixins) {
-      if (classDeclares(mix, member, seen)) return true;
-    }
-    return false;
-  }
+  bool classDeclares(String name, String member, [Set<String>? seen]) =>
+      _classDeclaresIn(classIndex, name, member, seen);
 
   // Keeper per (member, on-type): most qualifying `.m` uses attributed to
   // one party wins (ties break by party key — deterministic); exposures
@@ -2123,22 +3400,54 @@ _ClosureModel _resolveClosure(
   // or a renamed-member call chain). On-type grouping is what makes this
   // complete: only identical on-types truly collide (specificity still
   // separates the rest in the merged scope exactly as in the kit).
+  // Keeper per (member, on-type): most qualifying `.m` uses attributed to
+  // one party wins (ties break by party key — deterministic); exposures
+  // memoized for the rewrite loop. Qualifying = Widget-typed receiver under
+  // the type-aware [_receiverIsWidget] gate (constructors, typed identifiers,
+  // field paths, subscripts, and Widget-extension call chains — never
+  // class-declared, enum, SDK, or unknown receivers). On-type grouping is
+  // what makes this complete: only identical on-types truly collide
+  // (specificity still separates the rest in the merged scope exactly as in
+  // the kit).
   final keeperOf = <String, Map<String, String>>{};
   final exposuresCache =
       <String, Map<String, Map<String, Set<String>>>>{};
-  // Renamed-member names (for chain detection) are known only after
-  // suffixes; keeper election runs without chains (documented
-  // approximation — chains cannot flip an argmax except exact ties).
-  bool qualifies(String body, int dot, String member) {
-    final head = _receiverHead(body, dot, const <String>{});
-    if (head == null) return false;
-    if (head.chain) return true;
-    final ctor = head.ctor;
-    if (ctor == null) return false;
-    return !classDeclares(ctor, member);
+  // Per-file lexical environments over carved bodies (built lazily), and the
+  // plain member names of Widget extensions (the chain rule over unrenamed
+  // callees; renamed callees arrive via [suffixedNames] per round below).
+  final envCache = <String, _FileEnv>{};
+  _FileEnv envOf(String dest) => envCache.putIfAbsent(
+        dest,
+        () => _fileEnv(carvedBodies[dest]!, classIndex),
+      );
+  final widgetExtMembers = <String>{};
+  for (final dest in survivors) {
+    for (final site in _extensionDecls(carvedBodies[dest]!)) {
+      if (site.onType == 'Widget') widgetExtMembers.addAll(site.members);
+    }
   }
 
-  if (rivals.isNotEmpty) {
+  bool qualifies(
+    String body,
+    String dest,
+    int dot,
+    String member,
+    Set<String> suffixed,
+  ) =>
+      _receiverIsWidget(
+        body,
+        dot,
+        member,
+        envOf(dest),
+        classIndex,
+        classDeclares,
+        widgetExtMembers,
+        suffixed,
+      );
+
+  Map<String, Map<String, String>> electKeepers(Set<String> suffixed) {
+    final next = <String, Map<String, String>>{};
+    if (rivals.isEmpty) return next;
     final usesByParty = <String, Map<String, Map<String, int>>>{};
     for (final dest in survivors) {
       final scopeGroups = scopeGroupsOf(dest);
@@ -2146,12 +3455,12 @@ _ClosureModel _resolveClosure(
       final exposures = exposuresFor(dest, scopeGroups);
       exposures.removeWhere((m, byType) => !rivals.containsKey(m));
       for (final m in rivals.keys) {
-        final dots = <int>[];
+        var dots = 0;
         for (final match
             in RegExp('\\.' + RegExp.escape(m) + r'\b').allMatches(body)) {
-          if (qualifies(body, match.start, m)) dots.add(match.start);
+          if (qualifies(body, dest, match.start, m, suffixed)) dots++;
         }
-        if (dots.isEmpty) continue;
+        if (dots == 0) continue;
         final byType = exposures[m];
         if (byType == null) continue;
         for (final t in byType.keys) {
@@ -2159,7 +3468,7 @@ _ClosureModel _resolveClosure(
             usesByParty
                     .putIfAbsent(m, () => <String, Map<String, int>>{})
                     .putIfAbsent(t, () => <String, int>{})[p] =
-                ((usesByParty[m]?[t]?[p]) ?? 0) + dots.length;
+                ((usesByParty[m]?[t]?[p]) ?? 0) + dots;
           }
         }
       }
@@ -2172,21 +3481,40 @@ _ClosureModel _resolveClosure(
             final cmp = b.value.compareTo(a.value);
             return cmp != 0 ? cmp : a.key.compareTo(b.key);
           });
-        keeperOf.putIfAbsent(m, () => <String, String>{})[t] =
+        next.putIfAbsent(m, () => <String, String>{})[t] =
             sorted.first.key;
       });
     });
+    return next;
+  }
+
+  bool keeperMapsEqual(
+    Map<String, Map<String, String>> a,
+    Map<String, Map<String, String>> b,
+  ) {
+    if (a.length != b.length) return false;
+    for (final e in a.entries) {
+      final o = b[e.key];
+      if (o == null || o.length != e.value.length) return false;
+      for (final f in e.value.entries) {
+        if (o[f.key] != f.value) return false;
+      }
+    }
+    return true;
   }
 
   // Suffix per renamed party: short map by extension name, `__xN` fallback
   // in sorted party order; bumped while taken by any top-level or member
-  // name so generated identifiers are always fresh.
-  final suffixOfParty = <String, String>{};
-  {
+  // name so generated identifiers are always fresh. Pure in its inputs
+  // (reads [allNames] but never mutates it), so election rounds can rerun it.
+  ({Map<String, String> suffixes, Set<String> suffixed}) assignSuffixes(
+    Map<String, Map<String, String>> keepers,
+  ) {
+    final suffixes = <String, String>{};
     final renamed = <String>[];
     for (final mEntry in rivals.entries) {
       for (final tEntry in mEntry.value.entries) {
-        final keeper = keeperOf[mEntry.key]?[tEntry.key];
+        final keeper = keepers[mEntry.key]?[tEntry.key];
         if (keeper == null) continue;
         for (final ext in tEntry.value.keys) {
           for (final g in tEntry.value[ext]!) {
@@ -2223,8 +3551,42 @@ _ClosureModel _resolveClosure(
         bump++;
       }
       taken.add(candidate);
-      suffixOfParty[p] = candidate;
+      suffixes[p] = candidate;
     }
+    // Suffixed member names (for chain detection): every renamed
+    // member+suffix combination assigned above.
+    final suffixed = <String>{};
+    for (final mEntry in rivals.entries) {
+      for (final tEntry in mEntry.value.entries) {
+        final keeper = keepers[mEntry.key]?[tEntry.key];
+        for (final ext in tEntry.value.keys) {
+          for (final g in tEntry.value[ext]!) {
+            final p = partyKey(ext, g);
+            if (p == keeper) continue;
+            final sfx = suffixes[p];
+            if (sfx != null) suffixed.add(mEntry.key + sfx);
+          }
+        }
+      }
+    }
+    return (suffixes: suffixes, suffixed: suffixed);
+  }
+
+  // Election rounds: renamed-member chains are Widget-typed by construction,
+  // so each round's suffixes unlock the next round's chain votes (the old
+  // single pass ran without chains as a documented approximation). Capped at
+  // three; deterministic regardless of convergence.
+  var suffixOfParty = <String, String>{};
+  var suffixedNames = <String>{};
+  for (var round = 0; round < 3; round++) {
+    final nextKeepers = electKeepers(suffixedNames);
+    final assigned = assignSuffixes(nextKeepers);
+    final stable = keeperMapsEqual(keeperOf, nextKeepers);
+    keeperOf.clear();
+    nextKeepers.forEach((k, v) => keeperOf[k] = Map.of(v));
+    suffixOfParty = assigned.suffixes;
+    suffixedNames = assigned.suffixed;
+    if (stable) break;
   }
 
   // Home declaration renames: per extension-declaration span, rival members
@@ -2260,40 +3622,52 @@ _ClosureModel _resolveClosure(
     if (sites.isNotEmpty) homeDeclRenames[dest] = sites;
   }
 
-  // Suffixed member names (for chain detection): every renamed
-  // member+suffix combination assigned above.
-  final suffixedNames = <String>{};
-  for (final mEntry in rivals.entries) {
-    for (final tEntry in mEntry.value.entries) {
-      final keeper = keeperOf[mEntry.key]?[tEntry.key];
-      for (final ext in tEntry.value.keys) {
-        for (final g in tEntry.value[ext]!) {
-          final p = partyKey(ext, g);
-          if (p == keeper) continue;
-          final sfx = suffixOfParty[p];
-          if (sfx != null) suffixedNames.add(mEntry.key + sfx);
+  // Receiver gate for the (G3) rewrite below (H1+I1): a `.m` occurrence
+  // rewrites only when its receiver is Widget-typed under the same
+  // type-aware gate as election — constructors, typed identifiers (`child`,
+  // `title`, `label`), `widget.` paths via the `State<W>` argument, field
+  // paths (`data.title`), subscripts (`rows[i].label`), and Widget-extension
+  // call chains (`.mono().bold()`). Anything else (property paths like
+  // `theme.typography.sans`, enum accesses like `StepSize.medium`/
+  // `TextDecoration.underline`, SDK calls like `future.then`, field accesses
+  // like `this.then`, cascades, spreads, literals, unknowns) stays untouched.
+  // This is what stops `__textN` suffixes from hitting non-rivals: the suffix
+  // still disambiguates the true Widget extension collision, but
+  // `Typography` getters, `then` formals, and friends never qualify as Widget
+  // extension uses. Environments here run over rewritten bodies (post
+  // home-decl renames), built lazily per file.
+  final rewriteEnvs = <String, _FileEnv>{};
+  final rewriteWidgetExts = <String>{};
+  bool rewriteExtsBuilt = false;
+  bool qualifiesForRewrite(String body, String dest, int dot, String member) {
+    var env = rewriteEnvs[dest];
+    if (env == null) {
+      if (!rewriteExtsBuilt) {
+        rewriteExtsBuilt = true;
+        for (final d in survivors) {
+          for (final site in _extensionDecls(carvedBodies[d]!)) {
+            if (site.onType == 'Widget') {
+              rewriteWidgetExts.addAll(site.members);
+            }
+          }
         }
+        rewriteWidgetExts.addAll(suffixedNames);
       }
+      // Built on the caller's (post-rename) text so offsets line up; member
+      // names consulted are original (the scanner reports original offsets).
+      env = _fileEnv(body, classIndex);
+      rewriteEnvs[dest] = env;
     }
-  }
-
-  // Receiver gate for the (G3) rewrite below (H1): a `.m` occurrence rewrites
-  // only when its receiver is Widget-typed — a bare `Name(`/`const Name(`
-  // constructor whose class lacks the member, or a renamed-member call chain.
-  // Anything else (identifiers, property paths like `theme.typography.sans`,
-  // enum accesses like `StepSize.medium`/`TextDecoration.underline`, SDK calls
-  // like `future.then`, field accesses like `this.then`, cascades, spreads,
-  // literals) stays untouched. This is what stops `__textN` suffixes from
-  // hitting non-rivals: the suffix still disambiguates the true Widget
-  // extension collision, but `Typography` getters, `then` formals, and friends
-  // never qualify as Widget extension uses.
-  bool qualifiesForRewrite(String body, int dot, String member) {
-    final head = _receiverHead(body, dot, suffixedNames);
-    if (head == null) return false;
-    if (head.chain) return true;
-    final ctor = head.ctor;
-    if (ctor == null) return false;
-    return !classDeclares(ctor, member);
+    return _receiverIsWidget(
+      body,
+      dot,
+      member,
+      env,
+      classIndex,
+      classDeclares,
+      rewriteWidgetExts,
+      suffixedNames,
+    );
   }
 
   for (final dest in survivors) {
@@ -2362,7 +3736,12 @@ _ClosureModel _resolveClosure(
     // is ours to drop; the target declaration serves directly). Matched on
     // the pre-strip text (qualifier present and stripped, or absent) and
     // span-carved by a fresh parse so neighbors keep byte-identical text.
+    // Dupe-renamed typedefs are exempt: their declaration must survive as a
+    // keeper-alias (repaired in (D2b) below) — cutting it while uses rebind
+    // to the new name would leave a dangling reference.
     if (strip.isNotEmpty && stripped.contains('typedef')) {
+      final dupeRenamed =
+          renameByDest[dest]?.keys.toSet() ?? const <String>{};
       final recs = _topLevelDecls(stripped);
       if (recs != null) {
         final cuts = <({int s, int e})>[];
@@ -2372,7 +3751,8 @@ _ClosureModel _resolveClosure(
           ).firstMatch(record.text);
           if (m != null &&
               m.group(1) == m.group(3) &&
-              (m.group(2) == null || strip.contains(m.group(2)))) {
+              (m.group(2) == null || strip.contains(m.group(2))) &&
+              !dupeRenamed.contains(m.group(1))) {
             cuts.add((s: record.start, e: record.end));
           }
         }
@@ -2438,8 +3818,25 @@ _ClosureModel _resolveClosure(
       memberRename,
       qualify,
       chainNames: suffixedNames,
-      shouldRewriteMember: qualifiesForRewrite,
+      shouldRewriteMember: (b, dot, m) => qualifiesForRewrite(b, dest, dot, m),
     );
+    // (D2b) typedef-alias repair: a dupe-renamed `typedef N = Q.N` whose
+    // qualifier was stripped rewrote to the self-cycle `typedef N__dupK =
+    // N__dupK;` (the bare rename maps every occurrence, including the RHS).
+    // Repoint the RHS at the keeper (`N`), restoring the kit alias's meaning
+    // (`N__dupK` names the same type everywhere). A `typedef X = X;` cannot
+    // come from the kit (it would not compile), so any occurrence is ours.
+    final destRenames = renameByDest[dest];
+    if (destRenames != null && destRenames.isNotEmpty) {
+      final inverse = <String, String>{};
+      destRenames.forEach((k, v) => inverse[v] = k);
+      rewritten[dest] = rewritten[dest]!.replaceAllMapped(
+        RegExp(r'typedef\s+(\w+__dup\d+)\s*=\s*(\w+)\s*;'),
+        (m) => m.group(1) == m.group(2) && inverse.containsKey(m.group(1))
+            ? 'typedef ${m.group(1)} = ${inverse[m.group(1)]};'
+            : m.group(0)!,
+      );
+    }
     // Shadow imports are emitted only for aliases the rewrite actually
     // used (a firing rule with no occurrences must not drag an import in).
     for (final entry in qualify.entries) {

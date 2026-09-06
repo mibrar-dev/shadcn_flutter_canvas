@@ -895,6 +895,564 @@ extension TextExtension on Widget {
       expect(out, contains('final TextStyle sans;'));
     });
 
+  group('single-file final mile (Track I1)', () {
+    test('diverged top-level functions rename with scope-aware rebind', () {
+      // `getBullet` is vendored twice with different bodies: the first home
+      // keeps the name, the other becomes `getBullet__dup2`, and each file's
+      // own use rebinds to its home (no silent cross-binding).
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => getBullet(context, 0, 6);
+}
+
+Widget getBullet(BuildContext context, int depth, double size) {
+  return CustomPaint(size: Size(size, size));
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+import 'package:flutter/widgets.dart';
+
+Widget getBullet(BuildContext context, int depth, double size) {
+  return Center(child: Container(width: size, height: size));
+}
+
+class SharedUser extends StatelessWidget {
+  const SharedUser({super.key});
+  Widget build(BuildContext context) => getBullet(context, 1, 4);
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, contains('Widget getBullet(BuildContext context'));
+      expect(out, contains('Widget getBullet__dup2(BuildContext context'));
+      expect('getBullet__dup2(context, 0, 6)'.allMatches(out).length, 1);
+      expect('getBullet(context, 1, 4)'.allMatches(out).length, 1);
+      expect(out, isNot(contains('getBullet__dup2(context, 1, 4)')));
+    });
+
+    test('shadowing files keep the honest residual instead of corrupting', () {
+      // A loser-scope file declaring a same-named local is left alone (its
+      // bare use still binds the keeper — no error — rather than renaming a
+      // use that means the local).
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) {
+    final getBullet = (int x) => x;
+    return Text('\${getBullet(1)}');
+  }
+}
+
+Widget getBullet(BuildContext context, int depth, double size) {
+  return CustomPaint(size: Size(size, size));
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+import 'package:flutter/widgets.dart';
+
+Widget getBullet(BuildContext context, int depth, double size) {
+  return Center(child: Container(width: size, height: size));
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      // The shared keeper stays; the component copy is renamed (its own
+      // declaration unambiguously means the top level)…
+      expect(out, contains('Widget getBullet__dup2(BuildContext context'));
+      // …but the shadowed local use is untouched.
+      expect(out, contains('getBullet(1)'));
+      expect(out, isNot(contains('getBullet__dup2(1)')));
+    });
+
+    test('typedefs differing only in positional names unify', () {
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+typedef FormPendingWidgetBuilder =
+    Widget Function(
+      BuildContext context,
+      Map<String, Future<int?>> errors,
+      Widget? child,
+    );
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+import 'package:flutter/widgets.dart';
+
+typedef FormPendingWidgetBuilder =
+    Widget Function(
+      BuildContext context,
+      Map<String, Future<int?>> pending,
+      Widget? child,
+    );
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect('typedef FormPendingWidgetBuilder ='.allMatches(out).length, 1);
+      expect(out, isNot(contains('__dup')));
+    });
+
+    test('diverged typedefs rename with scope-aware rebind', () {
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+
+class Bbb extends StatelessWidget {
+  final MyBuilder builder;
+  const Bbb({required this.builder});
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+typedef MyBuilder = int Function(BuildContext context);
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+import 'package:flutter/widgets.dart';
+
+typedef MyBuilder = Widget Function(BuildContext context);
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, contains('typedef MyBuilder = Widget Function'));
+      expect(out, contains('typedef MyBuilder__dup2 = int Function'));
+      expect(out, contains('final MyBuilder__dup2 builder;'));
+    });
+
+    test('enums differing only in docs unify', () {
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+class Bbb {}
+
+/// Validation timing.
+enum FormValidationMode {
+  /// Runs on creation.
+  initial,
+
+  /// Runs on change.
+  changed,
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+enum FormValidationMode { initial, changed }
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect('enum FormValidationMode'.allMatches(out).length, 1);
+      expect(out, isNot(contains('__dup')));
+    });
+
+    test('strict enum supersets unify when no switch exists', () {
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+class Bbb {
+  Object? pos;
+  Bbb() : pos = InputFeaturePosition.above;
+}
+
+enum InputFeaturePosition {
+  leading,
+  trailing,
+  above,
+  below,
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+enum InputFeaturePosition {
+  leading,
+  trailing,
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect('enum InputFeaturePosition'.allMatches(out).length, 1);
+      expect(out, contains('above,'));
+      expect(out, contains('InputFeaturePosition.above'));
+      expect(out, isNot(contains('__dup')));
+    });
+
+    test('diverged enums with switches rename with rebind', () {
+      // A `case` switch forces the rename path (a superset would break
+      // exhaustiveness); each file keeps its own exhaustive view.
+      const sources = {
+        'r/components/cat/bbb/bbb.dart': '''
+class Bbb {
+  String where(InputFeaturePosition p) {
+    switch (p) {
+      case InputFeaturePosition.leading:
+        return 'l';
+      case InputFeaturePosition.trailing:
+        return 't';
+    }
+  }
+}
+
+enum InputFeaturePosition {
+  leading,
+  trailing,
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+enum InputFeaturePosition {
+  leading,
+  trailing,
+  above,
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('bbb'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, contains('enum InputFeaturePosition {'));
+      expect(out, contains('above,'));
+      expect(out, contains('enum InputFeaturePosition__dup2 {'));
+      expect(out, contains('case InputFeaturePosition__dup2.leading:'));
+    });
+
+    test('Widget-typed identifier receivers elect keepers', () {
+      // `child` is a `Widget` param in aaa (ExtA scope) while bbb uses a
+      // constructor: one vote each, tie breaks to ExtA, and bbb's use takes
+      // the suffix.
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        _identSources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect('.tiny();'.allMatches(out).length, 1);
+      expect('.tiny__x1();'.allMatches(out).length, 1);
+      expect(out, contains('tiny__x1() => this;'));
+    });
+
+    test('field and widget receivers resolve through the class index', () {
+      // Votes tie 1-1 per member (aaa constructors vs bbb `widget.`/field
+      // paths), so the alphabetical keeper is ExtA throughout: bbb's
+      // Widget-typed uses rewrite with one shared suffix. `h4` is ExtB-only
+      // (never rival) and `StepSize.medium` (UpperCamel receiver) is never
+      // suffixed.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) => Column(
+        children: [
+          const Text('x').large(),
+          const Text('y').medium(),
+        ],
+      );
+}
+''',
+        'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtA on Widget {
+  Widget large() => this;
+  Widget medium() => this;
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+enum StepSize { small, medium, large }
+
+class AppBar extends StatefulWidget {
+  final Widget? title;
+  const AppBar({super.key, this.title});
+  @override
+  State<AppBar> createState() => AppBarState();
+}
+
+class AppBarState extends State<AppBar> {
+  @override
+  Widget build(BuildContext context) => widget.title!.large();
+}
+
+class Card extends StatelessWidget {
+  final Widget title;
+  final Widget subtitle;
+  const Card({super.key, required this.title, required this.subtitle});
+  Widget build(BuildContext context) => Column(
+        children: [
+          title.h4(),
+          subtitle.medium().withSize(StepSize.medium),
+        ],
+      );
+}
+''',
+        'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtB on Widget {
+  Widget large() => this;
+  Widget h4() => this;
+  Widget medium() => this;
+  Widget withSize(StepSize size) => this;
+}
+''',
+      };
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      // Renamed parties: only (ExtB, bbb-group), so both members share __x1.
+      expect(out, contains('widget.title!.large__x1()'));
+      expect(out, contains('subtitle.medium__x1().withSize(StepSize.medium)'));
+      expect(out, contains("Text('x').large()"));
+      expect(out, contains("Text('y').medium()"));
+      // Non-rivals and enum values keep plain members.
+      expect(out, contains('title.h4()'));
+      expect(out, isNot(contains('h4__')));
+      expect(out, contains('StepSize.medium'));
+      expect(out, isNot(contains('StepSize.medium__')));
+      expect(out, contains('large__x1() => this;'));
+      expect(out, contains('medium__x1() => this;'));
+    });
+
+    test('dynamic receivers never elect or rewrite', () {
+      // The only `.normal()` use has a `dynamic` receiver: no keeper exists,
+      // so both declarations stay plain (honest residual, never corruption).
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+void useIt(dynamic theme) {
+  theme.normal();
+}
+''',
+        'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtA on Widget {
+  Widget normal() => this;
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+''',
+        'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtB on Widget {
+  Widget normal() => this;
+}
+''',
+      };
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, contains('theme.normal();'));
+      expect(out, isNot(contains('normal__')));
+    });
+
+    test('subscript and inferred-locals receivers resolve', () {
+      // `rows` is `List<FormField>`, `label` a `Widget` field, and `row` is
+      // inferred from `this.rows[0]` — two bbb votes beat aaa's one, so the
+      // keeper is ExtB: aaa's constructor use rewrites while bbb's stay
+      // plain. (If inference failed the keeper would flip to ExtA instead.)
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) => const Text('x').textSmall();
+}
+''',
+        'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtA on Widget {
+  Widget textSmall() => this;
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+class FormField extends StatelessWidget {
+  final Widget label;
+  const FormField({super.key, required this.label});
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+class Table extends StatelessWidget {
+  final List<FormField> rows;
+  const Table({super.key, required this.rows});
+  @override
+  Widget build(BuildContext context) {
+    final row = this.rows[0];
+    return Column(
+      children: [
+        rows[1].label.textSmall(),
+        row.label.textSmall(),
+      ],
+    );
+  }
+}
+''',
+        'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtB on Widget {
+  Widget textSmall() => this;
+}
+''',
+      };
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect('.textSmall__x1();'.allMatches(out).length, 1);
+      expect(out, contains("Text('x').textSmall__x1()"));
+      expect(out, contains('rows[1].label.textSmall()'));
+      expect(out, contains('row.label.textSmall()'));
+      expect(out, isNot(contains('textSmall__x1(),')));
+      expect(out, contains('textSmall__x1() => this;'));
+    });
+
+    test('prefixed self-alias typedefs survive as keeper aliases (D2b)', () {
+      // `typedef N = p.N;` in a part would strip to a self-cycle; with the
+      // name dupe-renamed it must survive as `typedef N__dup2 = N;` while the
+      // part's use rebinds to it.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '../../../shared/help.dart' as p;
+part '_impl/part_a.dart';
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+''',
+        'r/components/cat/aaa/_impl/part_a.dart': '''
+part of '../aaa.dart';
+
+typedef AliasFn = p.AliasFn;
+
+class PartUser {
+  final AliasFn fn;
+  const PartUser(this.fn);
+}
+''',
+      };
+      const shared = {
+        'r/shared/help.dart': '''
+import 'package:flutter/widgets.dart';
+
+typedef AliasFn = Widget Function(BuildContext context);
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('aaa'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {
+          'r/components/cat/aaa/_impl/part_a.dart':
+              'r/components/cat/aaa/aaa.dart',
+        },
+      );
+      expect(out, contains('typedef AliasFn = Widget Function'));
+      expect(out, contains('typedef AliasFn__dup2 = AliasFn;'));
+      expect(out, contains('final AliasFn__dup2 fn;'));
+    });
+  });
+
+
     test('closure golden for a two-kind doc', () {      final doc = ScreenDoc.fromJson({
         'screens': [
           {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
@@ -940,6 +1498,80 @@ extension TextExtension on Widget {
     });
   });
 }
+
+/// Two-kind doc (aaa + bbb) for the rival/identifier tests.
+ScreenDoc _twoKindDoc() {
+  return ScreenDoc.fromJson({
+    'screens': [
+      {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+    ],
+    'nodes': [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {'id': 'i1', 'kind': 'aaa'},
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {'id': 'i2', 'kind': 'bbb'},
+        ],
+      },
+    ],
+    'theme': {
+      'paletteKey': 'slate',
+      'dark': false,
+      'shape': 'rounded',
+      'motion': 'standard',
+    },
+    'meta': {'title': 'Kind', 'brief': ''},
+  });
+}
+
+/// Twin extensions colliding on `tiny`; aaa's use has a `Widget`-typed
+/// identifier receiver, bbb's a constructor receiver.
+const _identSources = {
+  'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class Aaa extends StatelessWidget {
+  final Widget child;
+  const Aaa({super.key, required this.child});
+  Widget build(BuildContext context) => child.tiny();
+}
+''',
+  'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtA on Widget {
+  Widget tiny() => this;
+}
+''',
+  'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => const Text('y').tiny();
+}
+''',
+  'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension ExtB on Widget {
+  Widget tiny() => this;
+}
+''',
+};
 
 /// Builds a one-screen doc with a single item of [kind] carrying [props].
 ScreenDoc _singleItemDoc(String kind,
