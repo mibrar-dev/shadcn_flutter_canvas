@@ -8,8 +8,10 @@
 ///   `canvas/_impl/embedded_sources.dart` (same wiring the codegen docs
 ///   prescribe for the future export UI);
 /// * filename shaping ([exportSlug], [exportFileName]: doc title + date);
-/// * three minimal starter templates ([buildBlankTemplate],
-///   [buildLoginTemplate], [buildShowcaseTemplate]);
+/// * six minimal starter templates ([buildBlankTemplate],
+///   [buildLoginTemplate], [buildShowcaseTemplate],
+///   [buildOnboardingTemplate], [buildSettingsTemplate],
+///   [buildProfileTemplate]);
 /// * the [ExportDialog] (download ZIP / download single `.dart` / copy
 ///   single-file / copy share link / copy AI prompt / save doc JSON).
 ///
@@ -334,11 +336,183 @@ ScreenDoc buildShowcaseTemplate() => ScreenDoc(
       ),
     );
 
+/// "Onboarding": guided intro (scaffold + card + steps + get-started button)
+/// wired to Home (basic), clean-slate dark, no chrome.
+ScreenDoc buildOnboardingTemplate() => ScreenDoc(
+      screens: const [
+        CanvasScreen(
+          id: 's1',
+          name: 'Onboarding',
+          x: 0.0,
+          y: 0.0,
+          bg: 'surface',
+          device: 'phone',
+        ),
+        CanvasScreen(
+          id: 's2',
+          name: 'Home',
+          x: 420.0,
+          y: 0.0,
+          bg: 'surface',
+          device: 'phone',
+        ),
+      ],
+      nodes: [
+        _templateNode('n1', 's1', 0, 'scaffold', const {
+          'title': 'Onboarding',
+          'body': 'Welcome',
+        }),
+        _templateNode('n2', 's1', 1, 'card', const {
+          'title': 'Welcome',
+          'description': "Let's get you set up",
+          'showFooter': false,
+        }),
+        _templateNode('n3', 's1', 2, 'steps', const {
+          'step1': 'Create an account',
+          'detail1': 'Sign up in seconds',
+          'step2': 'Make it yours',
+          'detail2': 'Pick a theme and avatar',
+        }),
+        _templateNode(
+          'n4',
+          's1',
+          3,
+          'button',
+          const {
+            'label': 'Get started',
+            'variant': 'primary',
+            'size': 'md',
+            'disabled': false,
+          },
+          const NodeAction(to: 's2', transition: 'slide'),
+        ),
+        _templateNode('n5', 's2', 0, 'basic', const {
+          'title': 'Home',
+          'subtitle': 'Subtitle',
+          'content': "You're all set.",
+          'showLeading': true,
+          'showTrailing': true,
+        }),
+      ],
+      theme: const CanvasTheme(
+        paletteKey: 'clean-slate',
+        dark: true,
+        shape: 'rounded',
+        motion: 'standard',
+      ),
+      meta: const DocMeta(
+        title: 'Onboarding',
+        brief: 'Guided intro steps wired to a home screen.',
+      ),
+    );
+
+/// "Settings": one screen (scaffold + switch + checkbox + theme select),
+/// clean-slate dark, no chrome. No actions — every control is local state.
+ScreenDoc buildSettingsTemplate() => ScreenDoc(
+      screens: const [
+        CanvasScreen(
+          id: 's1',
+          name: 'Settings',
+          x: 0.0,
+          y: 0.0,
+          bg: 'surface',
+          device: 'phone',
+        ),
+      ],
+      nodes: [
+        _templateNode('n1', 's1', 0, 'scaffold', const {
+          'title': 'Settings',
+          'body': 'Welcome',
+        }),
+        _templateNode('n2', 's1', 1, 'switch', const {
+          'value': true,
+          'disabled': false,
+        }),
+        _templateNode('n3', 's1', 2, 'checkbox', const {
+          'value': false,
+          'disabled': false,
+          'tristate': false,
+        }),
+        _templateNode('n4', 's1', 3, 'select', const {
+          'placeholder': 'Theme',
+          'option1': 'Light',
+          'option2': 'Dark',
+          'value': 'Light',
+          'disabled': false,
+        }),
+      ],
+      theme: const CanvasTheme(
+        paletteKey: 'clean-slate',
+        dark: true,
+        shape: 'rounded',
+        motion: 'standard',
+      ),
+      meta: const DocMeta(
+        title: 'Settings',
+        brief: 'Toggles and a theme picker on one screen.',
+      ),
+    );
+
+/// "Profile": one screen (scaffold + avatar + bio + badge + edit button),
+/// clean-slate dark, no chrome. No actions — single screen.
+ScreenDoc buildProfileTemplate() => ScreenDoc(
+      screens: const [
+        CanvasScreen(
+          id: 's1',
+          name: 'Profile',
+          x: 0.0,
+          y: 0.0,
+          bg: 'surface',
+          device: 'phone',
+        ),
+      ],
+      nodes: [
+        _templateNode('n1', 's1', 0, 'scaffold', const {
+          'title': 'Profile',
+          'body': 'Welcome',
+        }),
+        _templateNode('n2', 's1', 1, 'avatar', const {
+          'initials': 'JD',
+          'size': 40.0,
+        }),
+        _templateNode('n3', 's1', 2, 'basic', const {
+          'title': 'Jane Doe',
+          'subtitle': '@jane',
+          'content': 'Design engineer.',
+          'showLeading': false,
+          'showTrailing': true,
+        }),
+        _templateNode('n4', 's1', 3, 'badge', const {
+          'label': 'Pro',
+          'variant': 'secondary',
+        }),
+        _templateNode('n5', 's1', 4, 'button', const {
+          'label': 'Edit profile',
+          'variant': 'primary',
+          'size': 'md',
+          'disabled': false,
+        }),
+      ],
+      theme: const CanvasTheme(
+        paletteKey: 'clean-slate',
+        dark: true,
+        shape: 'rounded',
+        motion: 'standard',
+      ),
+      meta: const DocMeta(
+        title: 'Profile',
+        brief: 'Avatar, bio, badge, and an edit button.',
+      ),
+    );
+
 /// The starter templates in display order: label → builder.
 const templateBuilders = <String, ScreenDoc Function()>{
   'Blank': buildBlankTemplate,
   'Login flow': buildLoginTemplate,
   'Showcase': buildShowcaseTemplate,
+  'Onboarding': buildOnboardingTemplate,
+  'Settings': buildSettingsTemplate,
+  'Profile': buildProfileTemplate,
 };
 
 /// One single-item node for the templates above ([row] sets the flow `y`).
@@ -604,38 +778,66 @@ class _ExportDialogState extends State<ExportDialog> {
             child: Text(label),
           ),
         );
+    Widget section(String title) => Padding(
+          padding: const EdgeInsets.only(top: EditorMetrics.tileGap),
+          child: Text(
+            title,
+            style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
+          ),
+        );
     return shadcn.AlertDialog(
       title: Text(
         'Export design',
         style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Code, share links, and project files.',
-            style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: EditorMetrics.tileGap),
-          option('Download project ZIP', _downloadZip),
-          option('Download single .dart file', _downloadSingle),
-          option('Copy single-file code', _copySingle),
-          option('Copy share link', _copyShareLink),
-          option('Copy AI prompt', _copyPrompt),
-          option('Save doc JSON to file', _saveDocJson),
-          if (_error != null || _notice != null) ...[
-            const SizedBox(height: EditorMetrics.tileGap),
-            Text(
-              _error ?? _notice!,
-              style: EditorType.field.copyWith(
-                color: _error != null
-                    ? Theme.of(context).colorScheme.error
-                    : colors.onSurfaceVariant,
+      content: ConstrainedBox(
+        // The kit dialog caps width (560) but not height: bound the scroll
+        // region to a viewport fraction so the option list scrolls instead
+        // of overflowing short screens (a ratio, not a fixed pixel budget).
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Code, share links, and project files.',
+                style:
+                    EditorType.field.copyWith(color: colors.onSurfaceVariant),
               ),
-            ),
-          ],
-        ],
+              if (widget.store.doc.screens.isEmpty) ...[
+                const SizedBox(height: EditorMetrics.tileGap),
+                Text(
+                  'Nothing to export yet — add a screen first.',
+                  style:
+                      EditorType.field.copyWith(color: colors.onSurfaceVariant),
+                ),
+              ],
+              section('Code'),
+              option('Download project ZIP', _downloadZip),
+              option('Download single .dart file', _downloadSingle),
+              option('Copy single-file code', _copySingle),
+              section('Share'),
+              option('Copy share link', _copyShareLink),
+              option('Copy AI prompt', _copyPrompt),
+              section('Project files'),
+              option('Save doc JSON to file', _saveDocJson),
+              if (_error != null || _notice != null) ...[
+                const SizedBox(height: EditorMetrics.tileGap),
+                Text(
+                  _error ?? _notice!,
+                  style: EditorType.field.copyWith(
+                    color: _error != null
+                        ? Theme.of(context).colorScheme.error
+                        : colors.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
       actions: [
         shadcn.TextButton(

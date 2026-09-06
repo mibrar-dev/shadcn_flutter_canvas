@@ -694,6 +694,9 @@ class _InspectorPanelState extends State<InspectorPanel> {
         return 'Dialog';
       case 'condition':
         return 'If ${step.variable} == ${step.equals}';
+      case 'apiCall':
+        if (step.url.isEmpty) return 'API call';
+        return 'API ${step.method} ${step.url}';
     }
     return step.kind;
   }
@@ -846,8 +849,243 @@ class _InspectorPanelState extends State<InspectorPanel> {
             ),
           ],
         );
+      case 'apiCall':
+        return _apiCallEditor(step, doc, prefix, index, update);
     }
     return Text('Unknown step: ${step.kind}');
+  }
+
+  /// Track S1 `apiCall` step editor: URL field, GET/POST segmented method,
+  /// per-row header editor (key/value pairs with add/delete), POST-only body
+  /// field, and an optional `saveTo` var picker. Validation is inline notes
+  /// only (warn, never block — the executor skips bad steps, see
+  /// `validateActionSteps` in canvas_core). Secrets note: headers/bodies
+  /// live in the doc like any other prop (no vault).
+  ///
+  /// Keys are `$prefix-$index-url|method|header-add|header-key-<i>|`
+  /// `header-value-<i>|header-delete-<i>|body|saveTo|saveTo-clear`, so tests
+  /// can drive every field like the other step editors.
+  Widget _apiCallEditor(
+    ActionStep step,
+    ScreenDoc doc,
+    String prefix,
+    int index,
+    ValueChanged<ActionStep> update,
+  ) {
+    final vars = doc.states;
+    final method =
+        kApiCallMethods.contains(step.method) ? step.method : 'GET';
+    final entries = step.headers.entries.toList();
+    ActionStep withHeaders(Map<String, String> next) => ActionStep.apiCall(
+          url: step.url,
+          method: step.method,
+          headers: next,
+          body: step.body,
+          saveTo: step.saveTo,
+        );
+    void updateHeaderKey(int at, String nextKey) {
+      final next = <String, String>{};
+      for (var j = 0; j < entries.length; j++) {
+        if (j == at) {
+          next[nextKey] = entries[j].value;
+        } else {
+          next[entries[j].key] = entries[j].value;
+        }
+      }
+      update(withHeaders(next));
+    }
+
+    void updateHeaderValue(int at, String nextValue) {
+      final next = <String, String>{};
+      for (var j = 0; j < entries.length; j++) {
+        next[entries[j].key] = j == at ? nextValue : entries[j].value;
+      }
+      update(withHeaders(next));
+    }
+
+    void deleteHeader(int at) {
+      final next = <String, String>{};
+      for (var j = 0; j < entries.length; j++) {
+        if (j != at) next[entries[j].key] = entries[j].value;
+      }
+      update(withHeaders(next));
+    }
+
+    void addHeader() {
+      final taken = step.headers.keys.toSet();
+      var i = taken.length + 1;
+      var name = 'Header$i';
+      while (taken.contains(name)) {
+        i++;
+        name = 'Header$i';
+      }
+      update(withHeaders({...step.headers, name: ''}));
+    }
+
+    final saveTo = step.saveTo;
+    AppStateVar? saveTarget;
+    for (final v in vars) {
+      if (v.name == saveTo) saveTarget = v;
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        PropTextEditor(
+          key: ValueKey('$prefix-$index-url'),
+          initial: step.url,
+          placeholderLabel: 'https://api.example.com/items',
+          onChanged: (s) => update(
+            ActionStep.apiCall(
+              url: s,
+              method: step.method,
+              headers: Map<String, String>.from(step.headers),
+              body: step.body,
+              saveTo: step.saveTo,
+            ),
+          ),
+        ),
+        const SizedBox(height: _kInspectorGap),
+        PropSegmentedEditor(
+          key: ValueKey('$prefix-$index-method'),
+          value: method,
+          options: const ['GET', 'POST'],
+          onChanged: (m) => update(
+            ActionStep.apiCall(
+              url: step.url,
+              method: m,
+              headers: Map<String, String>.from(step.headers),
+              body: step.body,
+              saveTo: step.saveTo,
+            ),
+          ),
+        ),
+        const SizedBox(height: _kInspectorGap),
+        const Text('Headers', style: EditorType.sectionHeader),
+        const SizedBox(height: _kInspectorGap),
+        for (var i = 0; i < entries.length; i++) ...[
+          Row(
+            children: [
+              Expanded(
+                child: PropTextEditor(
+                  key: ValueKey('$prefix-$index-header-key-$i'),
+                  initial: entries[i].key,
+                  placeholderLabel: 'name',
+                  onChanged: (s) => updateHeaderKey(i, s),
+                ),
+              ),
+              const SizedBox(width: _kInspectorGap),
+              Expanded(
+                child: PropTextEditor(
+                  key: ValueKey('$prefix-$index-header-value-$i'),
+                  initial: entries[i].value,
+                  placeholderLabel: 'value',
+                  onChanged: (s) => updateHeaderValue(i, s),
+                ),
+              ),
+              const SizedBox(width: _kInspectorGap),
+              shadcn.OutlineButton(
+                key: ValueKey('$prefix-$index-header-delete-$i'),
+                size: shadcn.ButtonSize.small,
+                onPressed: () => deleteHeader(i),
+                child: const Text('Delete'),
+              ),
+            ],
+          ),
+          const SizedBox(height: _kInspectorGap),
+        ],
+        shadcn.OutlineButton(
+          key: ValueKey('$prefix-$index-header-add'),
+          size: shadcn.ButtonSize.small,
+          onPressed: addHeader,
+          child: const Text('Add header'),
+        ),
+        const SizedBox(height: _kInspectorGap),
+        if (method == 'POST') ...[
+          PropTextEditor(
+            key: ValueKey('$prefix-$index-body'),
+            initial: step.body,
+            placeholderLabel: 'request body (JSON)',
+            onChanged: (s) => update(
+              ActionStep.apiCall(
+                url: step.url,
+                method: step.method,
+                headers: Map<String, String>.from(step.headers),
+                body: s,
+                saveTo: step.saveTo,
+              ),
+            ),
+          ),
+          const SizedBox(height: _kInspectorGap),
+        ],
+        _varPicker(
+          key: ValueKey('$prefix-$index-saveTo'),
+          value: saveTo,
+          placeholder:
+              vars.isEmpty ? 'No state vars' : 'No save (optional)',
+          onChanged: (v) => update(
+            ActionStep.apiCall(
+              url: step.url,
+              method: step.method,
+              headers: Map<String, String>.from(step.headers),
+              body: step.body,
+              saveTo: v,
+            ),
+          ),
+        ),
+        if (saveTo.isNotEmpty) ...[
+          const SizedBox(height: _kInspectorGap),
+          shadcn.OutlineButton(
+            key: ValueKey('$prefix-$index-saveTo-clear'),
+            size: shadcn.ButtonSize.small,
+            onPressed: () => update(
+              ActionStep.apiCall(
+                url: step.url,
+                method: step.method,
+                headers: Map<String, String>.from(step.headers),
+                body: step.body,
+                saveTo: '',
+              ),
+            ),
+            child: const Text('Clear saveTo'),
+          ),
+        ],
+        if (step.url.isEmpty) ...[
+          const SizedBox(height: _kInspectorGap),
+          const Text(
+            'Enter an http(s) URL.',
+            style: EditorType.tileLabel,
+          ),
+        ] else if (!isApiCallUrlValid(step.url)) ...[
+          const SizedBox(height: _kInspectorGap),
+          const Text(
+            'Invalid URL: use http(s):// with a host.',
+            style: EditorType.tileLabel,
+          ),
+        ],
+        for (final entry in entries)
+          if (!isApiHeaderValid(entry.key, entry.value)) ...[
+            const SizedBox(height: _kInspectorGap),
+            Text(
+              'Invalid header "${entry.key}".',
+              style: EditorType.tileLabel,
+            ),
+          ],
+        if (saveTo.isNotEmpty && saveTarget == null) ...[
+          const SizedBox(height: _kInspectorGap),
+          Text(
+            'Unknown var "$saveTo" — response will be discarded.',
+            style: EditorType.tileLabel,
+          ),
+        ],
+        if (saveTarget != null && saveTarget.type != 'string') ...[
+          const SizedBox(height: _kInspectorGap),
+          Text(
+            'Var "$saveTo" is ${saveTarget.type} — response stored as text.',
+            style: EditorType.tileLabel,
+          ),
+        ],
+      ],
+    );
   }
 
   /// State-var picker shared by the setState/condition editors: a plain
@@ -921,6 +1159,13 @@ class _InspectorPanelState extends State<InspectorPanel> {
           'condition',
           'Condition',
           ActionStep.condition(variable: firstVar, equals: ''),
+          onAdd,
+        ),
+        _addStepButton(
+          prefix,
+          'apiCall',
+          'API',
+          const ActionStep.apiCall(url: ''),
           onAdd,
         ),
       ],

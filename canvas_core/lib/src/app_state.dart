@@ -16,7 +16,7 @@
 ///   as the raw string (documented v1 limitation — the catalog resolves
 ///   per-spec, codegen interpolates text positions only).
 /// * [ActionStep]: one ordered step (`navigate`, `setState`, `showSnackBar`,
-///   `showDialog`, `condition`). A `setState` value is a type literal
+///   `showDialog`, `condition`, `apiCall`). A `setState` value is a type literal
 ///   (`1`, `true`, `hello`) or a var reference (`=otherVar`, same-type by
 ///   convention — the inspector only offers same-type refs). A `condition`
 ///   runs its `then` steps when `stringify(value) == equals`; a guard on an
@@ -50,7 +50,57 @@ const Set<String> kActionStepKinds = {
   'showSnackBar',
   'showDialog',
   'condition',
+  'apiCall',
 };
+
+/// HTTP methods an [ActionStep.apiCall] may use (minimal REST subset).
+const Set<String> kApiCallMethods = {'GET', 'POST'};
+
+/// Timeout for `apiCall` steps (preview executor and generated code share
+/// this budget: 10s, documented in both places).
+const Duration kApiCallTimeout = Duration(seconds: 10);
+
+/// Whether [url] is a usable `apiCall` target (http/https with a host).
+/// Trims surrounding whitespace first; never throws.
+bool isApiCallUrlValid(String url) {
+  try {
+    final uri = Uri.parse(url.trim());
+    if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+    return uri.host.isNotEmpty;
+  } catch (_) {
+    return false;
+  }
+}
+
+/// Whether an `apiCall` header pair is well-formed (minimal check: non-empty
+/// trimmed name without `:`/line-breaks, value without line-breaks).
+bool isApiHeaderValid(String name, String value) {
+  final key = name.trim();
+  if (key.isEmpty) return false;
+  if (key.contains(':') || key.contains('\n') || key.contains('\r')) {
+    return false;
+  }
+  return !value.contains('\n') && !value.contains('\r');
+}
+
+/// Whether any step (recursing into conditions) is an `apiCall` (the
+/// generated tap method must then be `async` and import `package:http`).
+bool stepsNeedHttp(List<ActionStep> steps) {
+  for (final s in steps) {
+    if (s.kind == 'apiCall') return true;
+    if (s.kind == 'condition' && stepsNeedHttp(s.thenSteps)) return true;
+  }
+  return false;
+}
+
+/// Dart map literal for `apiCall` [headers] (sorted keys, deterministic).
+String apiHeadersDart(Map<String, String> headers) {
+  final keys = headers.keys.toList()..sort();
+  final pairs = [
+    for (final k in keys) '${dartStringLiteral(k)}: ${dartStringLiteral(headers[k]!)}',
+  ];
+  return '<String, String>{${pairs.join(', ')}}';
+}
 
 /// Whether [value] is a state binding reference (`=varName`).
 ///
@@ -189,6 +239,10 @@ bool _defaultMatches(String type, Object? def) {
 /// * `showDialog`: [title] + [message] (same binding rule).
 /// * `condition`: [variable] + [equals] + [thenSteps] (runs `thenSteps`
 ///   when `stringify(value) == equals`).
+/// * `apiCall`: [url] + [method] (`GET`/`POST`) + [headers] + [body] +
+///   [saveTo] (optional var name receiving the response body string).
+///   Secrets note: headers/bodies live in the doc like any other prop (no
+///   vault — documented, not solved).
 class ActionStep {
   final String kind;
   final String to;
@@ -199,6 +253,11 @@ class ActionStep {
   final String title;
   final String equals;
   final List<ActionStep> thenSteps;
+  final String url;
+  final String method;
+  final Map<String, String> headers;
+  final String body;
+  final String saveTo;
 
   const ActionStep._({
     required this.kind,
@@ -210,6 +269,11 @@ class ActionStep {
     this.title = '',
     this.equals = '',
     this.thenSteps = const [],
+    this.url = '',
+    this.method = 'GET',
+    this.headers = const {},
+    this.body = '',
+    this.saveTo = '',
   });
 
   const ActionStep.navigate({required String to, String transition = 'slide'})
@@ -229,6 +293,21 @@ class ActionStep {
     required String equals,
     List<ActionStep> then = const [],
   }) : this._(kind: 'condition', variable: variable, equals: equals, thenSteps: then);
+
+  const ActionStep.apiCall({
+    required String url,
+    String method = 'GET',
+    Map<String, String> headers = const {},
+    String body = '',
+    String saveTo = '',
+  }) : this._(
+          kind: 'apiCall',
+          url: url,
+          method: method,
+          headers: headers,
+          body: body,
+          saveTo: saveTo,
+        );
 
   factory ActionStep.fromJson(Map<String, dynamic> json) {
     final kind = json['kind'] as String?;
@@ -264,6 +343,21 @@ class ActionStep {
                   .toList() ??
               const [],
         );
+      case 'apiCall':
+        final headersRaw = json['headers'];
+        final headers = <String, String>{};
+        if (headersRaw is Map) {
+          for (final entry in headersRaw.entries) {
+            headers['${entry.key}'] = '${entry.value ?? ''}';
+          }
+        }
+        return ActionStep.apiCall(
+          url: json['url'] as String? ?? '',
+          method: json['method'] as String? ?? 'GET',
+          headers: headers,
+          body: json['body'] as String? ?? '',
+          saveTo: json['saveTo'] as String? ?? '',
+        );
     }
     throw FormatException('ActionStep has unknown kind: $kind');
   }
@@ -285,13 +379,23 @@ class ActionStep {
           'equals': equals,
           'then': [for (final s in thenSteps) s.toJson()],
         };
+      case 'apiCall':
+        return {
+          'kind': kind,
+          'url': url,
+          'method': method,
+          'headers': {for (final e in headers.entries) e.key: e.value},
+          'body': body,
+          'saveTo': saveTo,
+        };
     }
     return {'kind': kind};
   }
 
   /// Copy with var [old] renamed to [next]: rewrites the step's own
   /// `variable` plus exact `=old` refs in `value`/`message`, recursing
-  /// into [thenSteps].
+  /// into [thenSteps]. An `apiCall` [saveTo] target renames like `variable`
+  /// (it names a var); `url`/`body`/headers carry no bindings in v1.
   ActionStep withVariableRenamed(String old, String next) {
     String rewrite(String raw) => raw == '=$old' ? '=$next' : raw;
     return ActionStep._(
@@ -304,6 +408,11 @@ class ActionStep {
       title: title,
       equals: equals,
       thenSteps: [for (final s in thenSteps) s.withVariableRenamed(old, next)],
+      url: url,
+      method: method,
+      headers: Map<String, String>.from(headers),
+      body: body,
+      saveTo: saveTo == old ? next : saveTo,
     );
   }
 
@@ -311,6 +420,8 @@ class ActionStep {
   /// `=name` refs in `value`/`message` become the bare `name` literal.
   /// `variable` refs are left intact (the executor skips unknown vars —
   /// see [partitionSteps]) — deleting a var never silently drops steps.
+  /// An `apiCall` [saveTo] is left intact for the same reason (the executor
+  /// runs the request and discards the response when the var is gone).
   ActionStep withBindingCleared(String name) {
     String clear(String raw) => raw == '=$name' ? name : raw;
     return ActionStep._(
@@ -323,6 +434,11 @@ class ActionStep {
       title: title,
       equals: equals,
       thenSteps: [for (final s in thenSteps) s.withBindingCleared(name)],
+      url: url,
+      method: method,
+      headers: Map<String, String>.from(headers),
+      body: body,
+      saveTo: saveTo,
     );
   }
 
@@ -330,6 +446,14 @@ class ActionStep {
     if (thenSteps.length != other.length) return false;
     for (var i = 0; i < thenSteps.length; i++) {
       if (thenSteps[i] != other[i]) return false;
+    }
+    return true;
+  }
+
+  bool _headersEqual(Map<String, String> other) {
+    if (headers.length != other.length) return false;
+    for (final key in headers.keys) {
+      if (!other.containsKey(key) || other[key] != headers[key]) return false;
     }
     return true;
   }
@@ -345,20 +469,33 @@ class ActionStep {
       other.message == message &&
       other.title == title &&
       other.equals == equals &&
+      other.url == url &&
+      other.method == method &&
+      _headersEqual(other.headers) &&
+      other.body == body &&
+      other.saveTo == saveTo &&
       _thenEquals(other.thenSteps);
 
   @override
-  int get hashCode => Object.hash(
-        kind,
-        to,
-        transition,
-        variable,
-        value,
-        message,
-        title,
-        equals,
-        Object.hashAll(thenSteps),
-      );
+  int get hashCode {
+    final sortedHeaders = headers.keys.toList()..sort();
+    return Object.hash(
+      kind,
+      to,
+      transition,
+      variable,
+      value,
+      message,
+      title,
+      equals,
+      url,
+      method,
+      Object.hashAll([for (final k in sortedHeaders) Object.hash(k, headers[k])]),
+      body,
+      saveTo,
+      Object.hashAll(thenSteps),
+    );
+  }
 }
 
 /// Short summary for code comments (`setState count`, `navigate s2`).
@@ -374,6 +511,9 @@ String stepSummary(ActionStep step) {
       return 'dialog';
     case 'condition':
       return 'if ${step.variable}';
+    case 'apiCall':
+      if (step.url.isEmpty) return 'apiCall';
+      return 'apiCall ${step.method} ${step.url}';
   }
   return step.kind;
 }
@@ -427,6 +567,29 @@ List<String> validateActionSteps(
             problems.add('action condition reads unknown state "${s.variable}"');
           }
           walk(s.thenSteps);
+        case 'apiCall':
+          if (!isApiCallUrlValid(s.url)) {
+            problems.add('action apiCall has invalid URL "${s.url}"');
+          }
+          if (!kApiCallMethods.contains(s.method)) {
+            problems.add('action apiCall has unknown method "${s.method}"');
+          }
+          for (final entry in s.headers.entries) {
+            if (!isApiHeaderValid(entry.key, entry.value)) {
+              problems.add('action apiCall has invalid header "${entry.key}"');
+            }
+          }
+          if (s.saveTo.isNotEmpty) {
+            final target = vars[s.saveTo];
+            if (target == null) {
+              problems.add('action apiCall saves to unknown state "${s.saveTo}"');
+            } else if (target.type != 'string') {
+              problems.add(
+                'action apiCall saves to non-string state "${s.saveTo}" '
+                '(response stored as text)',
+              );
+            }
+          }
         case 'showSnackBar':
         case 'showDialog':
           break;
@@ -468,6 +631,12 @@ StepPlan partitionSteps(
           if (conditionHolds(s, values)) walk(s.thenSteps);
         case 'setState':
           if (knownVars.contains(s.variable)) immediate.add(s);
+        case 'apiCall':
+          // Immediate like the other non-navigation steps: runs in order
+          // before navigations (conditions already flattened above). The
+          // response save is best-effort — an unknown [saveTo] discards at
+          // runtime instead of dropping the request here.
+          immediate.add(s);
         case 'showSnackBar':
         case 'showDialog':
           immediate.add(s);
@@ -648,10 +817,30 @@ num _numDefault(AppStateVar target) =>
 /// Emits one method-body statement list for [steps] (shared by the
 /// single-file and bundle exporters so runtime and codegen agree).
 ///
+/// Dart assignment RHS for an `apiCall` response [bodyVar] (always a
+/// runtime `String`): string targets take it directly, number targets parse
+/// with the default as fallback, bool targets compare case-insensitively.
+String apiAssignExpr(String bodyVar, AppStateVar target) {
+  switch (target.type) {
+    case 'number':
+      return 'num.tryParse($bodyVar.trim()) ?? ${_numDefault(target)}';
+    case 'bool':
+      return "($bodyVar.trim().toLowerCase() == 'true')";
+    case 'string':
+    default:
+      return bodyVar;
+  }
+}
+
 /// [routeOf] maps a navigate target to its route (null = unknown — a
 /// comment, never a crash). Statements use `setState`/`ScaffoldMessenger`/
 /// `showDialog`/`Navigator`, so single-file screens that emit them need
-/// the material import (see `_needsMaterialSteps` there).
+/// the material import (see `_needsMaterialSteps` there). `apiCall` steps
+/// emit `package:http` calls (the enclosing tap method must be `async` —
+/// see [stepsNeedHttp]) with a 10s timeout ([kApiCallTimeout]); transport
+/// errors are swallowed with a comment, and the response body string feeds
+/// [saveTo] (coerced per type via [apiAssignExpr], discarded when empty or
+/// unknown).
 List<String> emitStepStatements({
   required List<ActionStep> steps,
   required Map<String, AppStateVar> vars,
@@ -660,6 +849,7 @@ List<String> emitStepStatements({
   String indent = '    ',
 }) {
   final out = <String>[];
+  var apiIndex = 0;
   void walk(List<ActionStep> list, String pad) {
     for (final s in list) {
       switch (s.kind) {
@@ -689,6 +879,59 @@ List<String> emitStepStatements({
         case 'condition':
           out.add('${pad}if (${conditionDartExpr(s, fields)}) {');
           walk(s.thenSteps, '$pad  ');
+          out.add('$pad}');
+        case 'apiCall':
+          if (!isApiCallUrlValid(s.url)) {
+            final safe = s.url.replaceAll('\n', ' ').replaceAll('\r', ' ');
+            out.add('$pad// apiCall skipped: invalid URL "$safe".');
+            continue;
+          }
+          if (!kApiCallMethods.contains(s.method)) {
+            out.add('$pad// apiCall skipped: unknown method "${s.method}".');
+            continue;
+          }
+          final idx = apiIndex++;
+          final uriVar = '_apiUri$idx';
+          final respVar = '_apiResp$idx';
+          final bodyVar = '_apiBody$idx';
+          out.add('${pad}try {');
+          out.add('$pad  final $uriVar = Uri.parse(${dartStringLiteral(s.url)});');
+          final headersExpr =
+              s.headers.isEmpty ? null : apiHeadersDart(s.headers);
+          if (s.method == 'POST') {
+            final args = <String>[
+              if (headersExpr != null) 'headers: $headersExpr',
+              if (s.body.isNotEmpty) 'body: ${dartStringLiteral(s.body)}',
+            ];
+            final argText = args.isEmpty ? '' : ', ${args.join(', ')}';
+            out.add(
+              '$pad  final $respVar = await http.post($uriVar$argText).timeout(const Duration(seconds: 10));',
+            );
+          } else {
+            final argText =
+                headersExpr == null ? '' : ', headers: $headersExpr';
+            out.add(
+              '$pad  final $respVar = await http.get($uriVar$argText).timeout(const Duration(seconds: 10));',
+            );
+          }
+          out.add('$pad  final $bodyVar = $respVar.body;');
+          if (s.saveTo.isEmpty) {
+            out.add('$pad  // apiCall response discarded (no saveTo).');
+          } else {
+            final target = vars[s.saveTo];
+            if (target == null) {
+              out.add(
+                '$pad  // unknown state "${s.saveTo}": response discarded.',
+              );
+            } else {
+              final own = fields[s.saveTo] ?? '_${s.saveTo}';
+              out.add('${pad}  setState(() {');
+              out.add('$pad    $own = ${apiAssignExpr(bodyVar, target)};');
+              out.add('$pad  });');
+            }
+          }
+          out.add('$pad} catch (_) {');
+          out.add('$pad  // apiCall failed: skipped.');
           out.add('$pad}');
         case 'navigate':
           final route = routeOf(s.to);

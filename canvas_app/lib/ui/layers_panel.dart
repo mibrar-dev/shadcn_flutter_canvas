@@ -8,14 +8,30 @@
 /// editing. All rows carry bring-forward/send-backward controls wired to
 /// [CanvasStore.reorderNode] within their own visual group, and screen
 /// headers carry a rename affordance wired to [CanvasStore.renameScreen].
+///
+/// Track S2 multi-select: the panel receives the full selection set
+/// ([LayersPanel.selectedNodeIds]) plus the primary id
+/// ([LayersPanel.selectedNodeId]) for compat. Plain row taps collapse via
+/// [LayersPanel.onSelectNode]; Ctrl/Cmd-taps toggle via
+/// [LayersPanel.onToggleNode] and Shift-taps range via
+/// [LayersPanel.onRangeSelectNode] (the panel reads the live modifiers via
+/// `HardwareKeyboard`, mirroring the shell's canvas tap path; when the
+/// toggle/range callbacks are null — e.g. legacy single-select hosts — every
+/// tap collapses). Selected rows highlight with [EditorColors.toolbarActive]:
+/// the primary gets a ring plus a stronger tint, the rest of the set a
+/// lighter secondary tint. A count header ("N selected") with a Shift-range
+/// hint plus delete-set/group/ungroup actions sits above the screens while
+/// anything is selected.
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_tokens.dart';
+import 'package:canvas_app/ui/selection_model.dart';
 import 'package:canvas_core/canvas_core.dart';
 
 /// Row tap target size for the trailing duplicate/delete actions.
@@ -47,13 +63,48 @@ class LayersPanel extends StatelessWidget {
   const LayersPanel({
     super.key,
     required this.store,
-    required this.selectedNodeId,
+    this.selectedNodeId,
+    this.selectedNodeIds = const {},
     required this.onSelectNode,
+    this.onToggleNode,
+    this.onRangeSelectNode,
+    this.onGroupSelection,
+    this.onUngroupSelection,
+    this.onDeleteSelection,
   });
 
   final CanvasStore store;
+
+  /// Primary selection (compat): the ring highlight and the collapse target.
+  /// The shell passes its `_primaryNodeId()` here.
   final String? selectedNodeId;
+
+  /// Full multi-selection set. When empty and [selectedNodeId] names a node,
+  /// the panel treats that single id as the selection, so legacy
+  /// single-select hosts keep working unchanged.
+  final Set<String> selectedNodeIds;
+
+  /// Plain row tap (collapse to the tapped id) and selection clears (null).
   final ValueChanged<String?> onSelectNode;
+
+  /// Ctrl/Cmd-tap toggle. Null falls back to [onSelectNode] (plain collapse).
+  final ValueChanged<String>? onToggleNode;
+
+  /// Shift-tap range. Null falls back to [onSelectNode] (plain collapse).
+  final ValueChanged<String>? onRangeSelectNode;
+
+  /// Header "Group selection" action. Null falls back to a direct
+  /// `store.groupIntoRow` + select-the-row (with a SnackBar on refusal);
+  /// the button disables unless [canGroupNodes] holds.
+  final VoidCallback? onGroupSelection;
+
+  /// Header "Ungroup" action. Null disables the button (the released-children
+  /// selection cannot round-trip through the single-id [onSelectNode]).
+  final VoidCallback? onUngroupSelection;
+
+  /// Header "Delete selection" action. Null falls back to one
+  /// `store.deleteNode` per selected id plus [onSelectNode] `(null)`.
+  final VoidCallback? onDeleteSelection;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +113,13 @@ class LayersPanel extends StatelessWidget {
     return _LayersBody(
       store: store,
       selectedNodeId: selectedNodeId,
+      selectedNodeIds: selectedNodeIds,
       onSelectNode: onSelectNode,
+      onToggleNode: onToggleNode,
+      onRangeSelectNode: onRangeSelectNode,
+      onGroupSelection: onGroupSelection,
+      onUngroupSelection: onUngroupSelection,
+      onDeleteSelection: onDeleteSelection,
     );
   }
 }
@@ -71,12 +128,24 @@ class _LayersBody extends StatefulWidget {
   const _LayersBody({
     required this.store,
     required this.selectedNodeId,
+    required this.selectedNodeIds,
     required this.onSelectNode,
+    required this.onToggleNode,
+    required this.onRangeSelectNode,
+    required this.onGroupSelection,
+    required this.onUngroupSelection,
+    required this.onDeleteSelection,
   });
 
   final CanvasStore store;
   final String? selectedNodeId;
+  final Set<String> selectedNodeIds;
   final ValueChanged<String?> onSelectNode;
+  final ValueChanged<String>? onToggleNode;
+  final ValueChanged<String>? onRangeSelectNode;
+  final VoidCallback? onGroupSelection;
+  final VoidCallback? onUngroupSelection;
+  final VoidCallback? onDeleteSelection;
 
   @override
   State<_LayersBody> createState() => _LayersBodyState();
@@ -110,9 +179,13 @@ class _LayersBodyState extends State<_LayersBody> {
             ),
           );
         }
+        final selected = _effectiveSelection();
+        final primary = _primaryId(doc, selected);
         return ListView(
           padding: const EdgeInsets.all(EditorMetrics.panelInset),
           children: [
+            if (selected.isNotEmpty)
+              _selectionHeader(context, doc, selected),
             for (final screen in doc.screens) ...[
               Row(
                 children: [
@@ -140,7 +213,15 @@ class _LayersBodyState extends State<_LayersBody> {
                 builder: (_) {
                   return Column(
                     mainAxisSize: MainAxisSize.min,
-                    children: _treeRows(doc, screen, null, 0, const {}),
+                    children: _treeRows(
+                      doc,
+                      screen,
+                      null,
+                      0,
+                      const {},
+                      selected,
+                      primary,
+                    ),
                   );
                 },
               ),
@@ -158,6 +239,137 @@ class _LayersBodyState extends State<_LayersBody> {
     );
   }
 
+  /// Effective selection: the multi-aware set when non-empty, else the
+  /// legacy single [LayersPanel.selectedNodeId] as a singleton (so
+  /// single-select hosts keep working unchanged).
+  Set<String> _effectiveSelection() {
+    if (widget.selectedNodeIds.isNotEmpty) return widget.selectedNodeIds;
+    final primary = widget.selectedNodeId;
+    return primary == null ? const {} : {primary};
+  }
+
+  /// Primary id for the ring highlight: the compat [LayersPanel.selectedNodeId]
+  /// while it names a selected live node, else the first selected id in doc
+  /// order (mirroring the shell's `_primaryNodeId`), else null. Stale ids
+  /// (e.g. after an undo) resolve to null rather than a dangling highlight.
+  String? _primaryId(ScreenDoc doc, Set<String> selected) {
+    if (selected.isEmpty) return null;
+    final primary = widget.selectedNodeId;
+    if (primary != null && selected.contains(primary)) return primary;
+    for (final n in doc.nodes) {
+      if (selected.contains(n.id)) return n.id;
+    }
+    return null;
+  }
+
+  /// Row tap with live modifiers (mirrors the shell's canvas tap path):
+  /// Ctrl/Cmd-tap toggles, Shift-tap ranges, plain tap collapses. [additive]
+  /// wins when both are held. A missing toggle/range callback falls back to a
+  /// plain collapse so legacy single-select hosts keep working.
+  void _onRowTap(String id) {
+    final keys = HardwareKeyboard.instance;
+    final additive = keys.isControlPressed || keys.isMetaPressed;
+    final ranged = keys.isShiftPressed;
+    if (additive && widget.onToggleNode != null) {
+      widget.onToggleNode!(id);
+    } else if (ranged && widget.onRangeSelectNode != null) {
+      widget.onRangeSelectNode!(id);
+    } else {
+      widget.onSelectNode(id);
+    }
+  }
+
+  /// Count header plus the multi-action row, shown while anything is
+  /// selected: "N selected" with delete-set/group/ungroup actions and the
+  /// Shift-range hint. Group enables exactly when [canGroupNodes] holds;
+  /// ungroup exactly when [ungroupTargetRow] resolves (and its callback is
+  /// wired); delete-set is always enabled.
+  Widget _selectionHeader(
+    BuildContext context,
+    ScreenDoc doc,
+    Set<String> selected,
+  ) {
+    final colors = EditorTheme.of(context);
+    final canGroup = canGroupNodes(doc, selected);
+    final canUngroup =
+        ungroupTargetRow(doc, selected) != null &&
+            widget.onUngroupSelection != null;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                '${selected.length} selected',
+                style: EditorType.sectionHeader
+                    .copyWith(color: colors.onSurface),
+              ),
+            ),
+            _LayerAction(
+              tooltip: 'Group selection',
+              icon: Icons.group_work,
+              onPressed: canGroup ? () => _onGroupPressed(context) : null,
+            ),
+            _LayerAction(
+              tooltip: 'Ungroup',
+              icon: Icons.call_split,
+              onPressed:
+                  canUngroup ? widget.onUngroupSelection : null,
+            ),
+            _LayerAction(
+              tooltip: 'Delete selection',
+              icon: Icons.delete_sweep,
+              onPressed: _onDeletePressed,
+            ),
+          ],
+        ),
+        Text(
+          'Tip: Ctrl/Cmd+click toggles, Shift+click selects a range',
+          style: EditorType.tileLabel
+              .copyWith(color: colors.onSurfaceVariant),
+        ),
+        const SizedBox(height: EditorMetrics.tileGap),
+      ],
+    );
+  }
+
+  /// Header delete-set: the wired callback when present (the shell deletes
+  /// the whole set and clears), else one [CanvasStore.deleteNode] per id plus
+  /// a clear (cascade covers parent+child pairs, unknown ids no-op).
+  void _onDeletePressed() {
+    final callback = widget.onDeleteSelection;
+    if (callback != null) {
+      callback();
+      return;
+    }
+    for (final id in _effectiveSelection().toList()) {
+      widget.store.deleteNode(id);
+    }
+    widget.onSelectNode(null);
+  }
+
+  /// Header group: the wired callback when present (the shell groups and
+  /// selects the row), else a direct [CanvasStore.groupIntoRow] plus
+  /// select-the-row, with a SnackBar on refusal like the shell.
+  void _onGroupPressed(BuildContext context) {
+    final callback = widget.onGroupSelection;
+    if (callback != null) {
+      callback();
+      return;
+    }
+    try {
+      final rowId =
+          widget.store.groupIntoRow(_effectiveSelection().toList());
+      widget.onSelectNode(rowId);
+    } on StateError catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Cannot group: ${e.message}')),
+      );
+    }
+  }
+
   /// Nested layer rows for one sibling group ([parentId], null = the
   /// screen's roots) at indent [depth]: frontmost-first within the group,
   /// each header followed by its own subtree. [ancestors] holds the ids on
@@ -166,13 +378,16 @@ class _LayersBodyState extends State<_LayersBody> {
   /// render the header only. Reorder buttons still move within the node's
   /// own visual group via [CanvasStore.reorderNode]; delete cascades through
   /// [CanvasStore.deleteNode] at any depth (reparent-safe: descendants go
-  /// with the deleted node, never orphaned).
+  /// with the deleted node, never orphaned). [selected]/[primary] drive the
+  /// multi-highlight (secondary tint vs primary ring).
   List<Widget> _treeRows(
     ScreenDoc doc,
     CanvasScreen screen,
     String? parentId,
     int depth,
     Set<String> ancestors,
+    Set<String> selected,
+    String? primary,
   ) {
     final group = _groupFrontmostFirst(doc, screen, parentId);
     return [
@@ -185,6 +400,8 @@ class _LayersBodyState extends State<_LayersBody> {
           index,
           depth,
           ancestors,
+          selected,
+          primary,
         ),
     ];
   }
@@ -200,6 +417,8 @@ class _LayersBodyState extends State<_LayersBody> {
     int visualIndex,
     int depth,
     Set<String> ancestors,
+    Set<String> selected,
+    String? primary,
   ) {
     final kids = [
       for (final k in _groupFrontmostFirst(doc, screen, node.id))
@@ -213,6 +432,8 @@ class _LayersBodyState extends State<_LayersBody> {
         visualIndex,
         depth: depth,
         hasChildren: kids.isNotEmpty,
+        selected: selected,
+        primary: primary,
       ),
       if (!_collapsed.contains(node.id))
         for (var ci = 0; ci < kids.length; ci++)
@@ -224,29 +445,35 @@ class _LayersBodyState extends State<_LayersBody> {
             ci,
             depth + 1,
             next,
+            selected,
+            primary,
           ),
     ];
   }
 
   /// One layer row wired to the store: tap selects (rows select for gap
-  /// editing), duplicate/delete act, and the reorder buttons move within the
-  /// node's visual group ([groupLength]/[visualIndex] in frontmost-first
-  /// display order) by passing the group-relative doc index. [depth] indents
-  /// the row one level per nesting depth; [hasChildren] shows the
-  /// expand/collapse toggle (collapsed hides the subtree via [_collapsed]).
+  /// editing) with multi-aware modifiers (see [_onRowTap]), duplicate/delete
+  /// act, and the reorder buttons move within the node's visual group
+  /// ([groupLength]/[visualIndex] in frontmost-first display order) by
+  /// passing the group-relative doc index. [depth] indents the row one level
+  /// per nesting depth; [hasChildren] shows the expand/collapse toggle
+  /// (collapsed hides the subtree via [_collapsed]).
   Widget _layerRow(
     CanvasNode node,
     int groupLength,
     int visualIndex, {
     required int depth,
     required bool hasChildren,
+    required Set<String> selected,
+    required String? primary,
   }) {
     return Padding(
       padding: EdgeInsets.only(left: depth * EditorMetrics.panelInset),
       child: _LayerRow(
         node: node,
-        selected: node.id == widget.selectedNodeId,
-        onTap: () => widget.onSelectNode(node.id),
+        selected: selected.contains(node.id),
+        primary: node.id == primary,
+        onTap: () => _onRowTap(node.id),
         onDuplicate: () => widget.store.duplicateNode(node.id),
         onDelete: () => widget.store.deleteNode(node.id),
         // Displayed frontmost-first: group-relative doc index of this row is
@@ -278,8 +505,8 @@ class _LayersBodyState extends State<_LayersBody> {
 
   /// Deletes a screen via [CanvasStore.deleteScreen]. A refusal (dangling
   /// actions would be left behind) keeps the screen and surfaces the
-  /// blockers in a SnackBar; on success a node selection that lived on the
-  /// removed screen is cleared.
+  /// blockers in a SnackBar; on success any selection id that no longer
+  /// names a live node is cleared (multi-aware: the whole set collapses).
   void _deleteScreen(BuildContext context, CanvasScreen screen) {
     final dangling = widget.store.deleteScreen(screen.id);
     if (dangling.isNotEmpty) {
@@ -292,8 +519,8 @@ class _LayersBodyState extends State<_LayersBody> {
       );
       return;
     }
-    if (widget.selectedNodeId != null &&
-        widget.store.doc.nodes.every((n) => n.id != widget.selectedNodeId)) {
+    final remaining = {for (final n in widget.store.doc.nodes) n.id};
+    if (_effectiveSelection().any((id) => !remaining.contains(id))) {
       widget.onSelectNode(null);
     }
   }
@@ -415,6 +642,7 @@ class _LayerRow extends StatefulWidget {
   const _LayerRow({
     required this.node,
     required this.selected,
+    required this.primary,
     required this.onTap,
     required this.onDuplicate,
     required this.onDelete,
@@ -426,7 +654,14 @@ class _LayerRow extends StatefulWidget {
   });
 
   final CanvasNode node;
+
+  /// In the selection set (primary or secondary).
   final bool selected;
+
+  /// The primary selection: ring plus stronger tint. Secondary selections
+  /// ([selected] without [primary]) get the lighter tint only. Both use the
+  /// [EditorColors.toolbarActive] token.
+  final bool primary;
   final VoidCallback onTap;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
@@ -454,9 +689,12 @@ class _LayerRowState extends State<_LayerRow> {
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
     final radius = BorderRadius.circular(EditorMetrics.segmentInnerRadius);
-    final background = widget.selected
-        ? colors.toolbarActive.withValues(alpha: 0.25)
-        : (_hovered ? colors.surfaceContainerHigh : Colors.transparent);
+    // Primary ring + stronger tint; secondary tint; hover; plain.
+    final background = widget.primary
+        ? colors.toolbarActive.withValues(alpha: 0.35)
+        : widget.selected
+            ? colors.toolbarActive.withValues(alpha: 0.15)
+            : (_hovered ? colors.surfaceContainerHigh : Colors.transparent);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
       onExit: (_) => setState(() => _hovered = false),
@@ -468,6 +706,9 @@ class _LayerRowState extends State<_LayerRow> {
           decoration: BoxDecoration(
             color: background,
             borderRadius: radius,
+            border: widget.primary
+                ? Border.all(color: colors.toolbarActive, width: 1.5)
+                : null,
           ),
           padding: const EdgeInsets.symmetric(
             horizontal: EditorMetrics.panelInset,

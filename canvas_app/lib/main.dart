@@ -11,7 +11,7 @@ import 'package:flutter/services.dart';
 
 import 'package:canvas_app/canvas/canvas_store.dart' hide ChangeNotifier;
 import 'package:canvas_app/canvas/persistence.dart';
-import 'package:canvas_core/canvas_core.dart';import 'package:canvas_app/ui/canvas_toolbar.dart';
+import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/export_panel.dart';
@@ -22,9 +22,19 @@ import 'package:canvas_app/ui/open_dialog.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/preview_player.dart';
 import 'package:canvas_app/ui/right_aside.dart';
+import 'package:canvas_app/ui/selection_model.dart';
 import 'package:canvas_app/ui/theme_bar.dart';
 import 'package:canvas_app/ui/theme_panels.dart';
 import 'package:canvas_app/ui/zoom_controls.dart';
+export 'ui/selection_model.dart'
+    show
+        toggleNodeSelection,
+        rangeNodeSelection,
+        resolveNodeTap,
+        NodeTapSelection,
+        canGroupNodes,
+        ungroupTargetRow,
+        ungroupRowDoc;
 
 /// Package asset prefix for fonts bundled by `flutter_shadcn_kit`.
 const _kitFonts = 'packages/flutter_shadcn_kit/assets/fonts';
@@ -105,178 +115,17 @@ class _ShellRelay extends ChangeNotifier {
   }
 }
 
-/// Track D2 multi-selection primitives (pure, widget-testable).
-///
-/// The shell owns a SET of selected node ids plus a range anchor; screen
-/// selection stays a single id mutually exclusive with any node selection.
-/// Canvas taps resolve through [resolveNodeTap] (the shell reads the live
-/// modifier keys via `HardwareKeyboard` because the `DesignCanvas`/
+/// Track D2 multi-selection primitives (pure, widget-testable) live in
+/// `ui/selection_model.dart` and are re-exported above so existing
+/// `package:canvas_app/main.dart` imports (e.g. `multiselect_test.dart`) keep
+/// resolving. The shell owns a SET of selected node ids plus a range anchor;
+/// screen selection stays a single id mutually exclusive with any node
+/// selection. Canvas taps resolve through [resolveNodeTap] (the shell reads
+/// the live modifier keys via `HardwareKeyboard` because the `DesignCanvas`/
 /// `ScreenSurface` tap signatures are single-id and owned by another track).
-/// The layers panel is read-only this track: it keeps its single-select
-/// callback, which the shell wires to collapse the set to one (see the seam
-/// note on [_EditorShellState._collapseToNode]).
-
-/// Toggles [id] in [current]: removed when present, added when absent.
-Set<String> toggleNodeSelection(Set<String> current, String id) {
-  final next = Set<String>.of(current);
-  if (!next.remove(id)) next.add(id);
-  return next;
-}
-
-/// Inclusive doc-order range between [anchorId] and [tappedId] when both name
-/// nodes in the SAME sibling group (equal `screenId` AND equal `parentId`);
-/// empty otherwise (unknown ids, cross-parent, or cross-screen taps fall back
-/// to a plain add at the call site).
-Set<String> rangeNodeSelection(
-  ScreenDoc doc,
-  String anchorId,
-  String tappedId,
-) {
-  CanvasNode? anchor;
-  CanvasNode? tapped;
-  for (final n in doc.nodes) {
-    if (n.id == anchorId) anchor = n;
-    if (n.id == tappedId) tapped = n;
-  }
-  if (anchor == null || tapped == null) return const {};
-  if (anchor.screenId != tapped.screenId) return const {};
-  if (anchor.parentId != tapped.parentId) return const {};
-  final group = [
-    for (final n in doc.nodes)
-      if (n.screenId == anchor.screenId && n.parentId == anchor.parentId)
-        n.id,
-  ];
-  final from = group.indexOf(anchorId);
-  final to = group.indexOf(tappedId);
-  final lo = from < to ? from : to;
-  final hi = from < to ? to : from;
-  return group.sublist(lo, hi + 1).toSet();
-}
-
-/// Resolved outcome of one canvas node tap: the next selection set plus the
-/// next range anchor.
-typedef NodeTapSelection = ({Set<String> ids, String? anchor});
-
-/// Resolves a canvas node tap into selection semantics:
-///
-/// * plain tap (`additive`/`ranged` false, or null [tappedId]) collapses to
-///   the single tapped node (null clears);
-/// * Ctrl/Cmd-tap ([additive]) toggles the node in the set and moves the
-///   anchor onto it when added (removing keeps the old anchor so a follow-up
-///   Shift-tap still ranges from a live doc node);
-/// * Shift-tap ([ranged]) unions the anchor→tap range (see
-///   [rangeNodeSelection]) into the set; a cross-group/unknown-anchor range
-///   degrades to a plain add. The anchor moves to the tap in both cases.
-///   [additive] wins when both modifiers are held.
-NodeTapSelection resolveNodeTap({
-  required Set<String> current,
-  required String? anchor,
-  required ScreenDoc doc,
-  required String? tappedId,
-  bool additive = false,
-  bool ranged = false,
-}) {
-  if (tappedId == null) return (ids: <String>{}, anchor: null);
-  if (additive) {
-    final next = Set<String>.of(current);
-    var nextAnchor = anchor;
-    if (next.contains(tappedId)) {
-      next.remove(tappedId);
-    } else {
-      next.add(tappedId);
-      nextAnchor = tappedId;
-    }
-    return (ids: next, anchor: nextAnchor);
-  }
-  if (ranged && anchor != null) {
-    final range = rangeNodeSelection(doc, anchor, tappedId);
-    if (range.isNotEmpty) {
-      return (ids: {...current, ...range}, anchor: tappedId);
-    }
-    return (ids: {...current, tappedId}, anchor: tappedId);
-  }
-  return (ids: {tappedId}, anchor: tappedId);
-}
-
-/// Group availability: ≥2 selected ids that all name existing same-screen
-/// ROOT-level (`parentId == null`) nodes. Anything else (singletons, unknown
-/// ids, nested nodes, cross-screen sets) disables the toolbar action; the
-/// store re-validates and throws [StateError] on the same conditions.
-bool canGroupNodes(ScreenDoc doc, Set<String> ids) {
-  if (ids.length < 2) return false;
-  final byId = {for (final n in doc.nodes) n.id: n};
-  String? screenId;
-  for (final id in ids) {
-    final node = byId[id];
-    if (node == null || node.parentId != null) return false;
-    screenId ??= node.screenId;
-    if (node.screenId != screenId) return false;
-  }
-  return true;
-}
-
-/// Ungroup target: the row id when [ids] names exactly one existing row node,
-/// else null (empty/multi/non-row/unknown selections disable the action).
-String? ungroupTargetRow(ScreenDoc doc, Set<String> ids) {
-  if (ids.length != 1) return null;
-  for (final n in doc.nodes) {
-    if (n.id == ids.single) return n.isRow ? n.id : null;
-  }
-  return null;
-}
-
-/// Rebuilds [node] with a new [parentId], preserving every other field with
-/// the store's deep-copy precedent (`hiddenOn`/`breakpointValues`/`slots`
-/// copied, never aliased; `items` rides along untouched).
-CanvasNode _withParentId(CanvasNode node, String? parentId) => CanvasNode(
-      id: node.id,
-      screenId: node.screenId,
-      x: node.x,
-      y: node.y,
-      items: node.items,
-      parentId: parentId,
-      isRow: node.isRow,
-      gap: node.gap,
-      mainAxis: node.mainAxis,
-      crossAxis: node.crossAxis,
-      expand: node.expand,
-      flex: node.flex,
-      hiddenOn: Set<String>.from(node.hiddenOn),
-      breakpointValues: {
-        for (final entry in node.breakpointValues.entries)
-          entry.key: Map<String, dynamic>.from(entry.value),
-      },
-      slots: Map<String, String>.from(node.slots),
-    );
-
-/// Pure ungroup: lifts [rowId]'s DIRECT children to the screen root in doc
-/// order (deeper descendants keep their parent edges under the moved
-/// children) and removes the row, which takes its doc slot. Throws
-/// [StateError] on unknown [rowId] or a non-row node. The caller commits via
-/// [CanvasStore.replaceDoc] in one step, so ungroup is a single atomic undo
-/// unit with no store API change.
-ScreenDoc ungroupRowDoc(ScreenDoc doc, String rowId) {
-  final index = doc.nodes.indexWhere((n) => n.id == rowId);
-  if (index < 0) throw StateError('Unknown node: $rowId');
-  if (!doc.nodes[index].isRow) throw StateError('Not a row: $rowId');
-  final kids = [
-    for (final n in doc.nodes)
-      if (n.parentId == rowId) n,
-  ];
-  final kidIds = {for (final k in kids) k.id};
-  return ScreenDoc(
-    screens: List.of(doc.screens),
-    nodes: [
-      for (final n in doc.nodes)
-        if (n.id == rowId)
-          for (final k in kids) _withParentId(k, null)
-        else if (!kidIds.contains(n.id))
-          n,
-    ],
-    theme: doc.theme,
-    meta: doc.meta,
-  );
-}
+/// The layers panel is multi-aware since Track S2: it receives the set plus
+/// toggle/range callbacks and collapses only on plain taps (see the wiring in
+/// [_EditorShellState._leftPanel] and [_EditorShellState._collapseToNode]).
 
 /// Assembles rail + parts panel + canvas + toolbar + zoom + right aside.
 class EditorShell extends StatefulWidget {
@@ -297,16 +146,15 @@ class _EditorShellState extends State<EditorShell> {
 
   /// Shell-owned multi-selection, mutually exclusive with [_selectedScreenId]:
   /// selecting any node clears the screen selection and vice versa. Canvas
-  /// taps resolve through [resolveNodeTap] (plain = collapse, Ctrl/Cmd =
-  /// toggle, Shift = same-group range); the layers panel keeps its
-  /// single-select contract and collapses the set (off-limits seam, see
-  /// [_collapseToNode]).
+  /// AND layers taps resolve through [resolveNodeTap] (plain = collapse,
+  /// Ctrl/Cmd = toggle, Shift = same-group range); the layers panel receives
+  /// the set plus toggle/range callbacks (see [_leftPanel]).
   final Set<String> _selectedNodeIds = {};
 
   /// Range anchor for Shift+click: the last plain-selected or Ctrl-added
-  /// node. Single-select surfaces (inspector, layers highlight, canvas ring,
-  /// shortcuts) bind the anchor when selected, else the first selected id in
-  /// doc order.
+  /// node. Primary surfaces (inspector, canvas ring, shortcuts) bind the
+  /// anchor when selected, else the first selected id in doc order. The layers
+  /// panel binds the full set (primary ring + secondary tint).
   String? _selectionAnchorId;
 
   /// Shell-owned screen selection, mutually exclusive with [_selectedNodeIds]:
@@ -405,10 +253,12 @@ class _EditorShellState extends State<EditorShell> {
     );
   }
 
-  /// Primary id for the single-select surfaces (inspector, layers
-  /// highlight, canvas ring, shortcuts): the anchor while selected, else the
-  /// first selected id in doc order, else null. Stale ids (e.g. after an
-  /// undo) resolve to null rather than a dangling selection.
+  /// Primary id for the single-ring surfaces (inspector, canvas ring,
+  /// shortcuts): the anchor while selected, else the first selected id in doc
+  /// order, else null. Stale ids (e.g. after an undo) resolve to null rather
+  /// than a dangling selection. The layers panel takes the full set
+  /// separately and highlights the primary with a ring plus the rest with a
+  /// secondary tint.
   String? _primaryNodeId() {
     if (_selectionAnchorId != null &&
         _selectedNodeIds.contains(_selectionAnchorId)) {
@@ -441,15 +291,22 @@ class _EditorShellState extends State<EditorShell> {
       case kRailParts:
         return const PartsPalette();
       case kRailLayers:
+        // Track S2: multi-aware layers — the panel receives the full set
+        // (primary ring + secondary tint + count header with delete/group
+        // actions) and three tap intents: plain collapses, Ctrl/Cmd toggles,
+        // Shift ranges. The panel reads the live modifiers itself, like the
+        // canvas tap path. The canvas ring stays primary-only (documented
+        // limitation, owned by another track).
         return LayersPanel(
           store: widget.store,
+          selectedNodeIds: _selectedNodeIds,
           selectedNodeId: _primaryNodeId(),
-          // LAYERS SEAM (Track D2): layers_panel.dart is off-limits, so its
-          // single-select callback collapses a multi-selection to the tapped
-          // node (or clears on null). Full multi-aware layers (toggle/range
-          // affordances, multi highlight) is a follow-up once the panel's
-          // owner lands its own multi-select signature.
           onSelectNode: _collapseToNode,
+          onToggleNode: _toggleLayerNode,
+          onRangeSelectNode: _rangeLayerNode,
+          onGroupSelection: _groupSelection,
+          onUngroupSelection: _ungroupSelection,
+          onDeleteSelection: _deleteSelection,
         );
       // Theme panels hug their content: the loose scroll constraints stop
       // the panel Card from stretching to the full column height.
@@ -598,9 +455,9 @@ class _EditorShellState extends State<EditorShell> {
 
   void _addScreen() => widget.store.addScreen();
 
-  /// Layers-panel tap: collapses the set to the single tapped node (null
-  /// clears). See the Track D2 seam note at the call site — multi-aware
-  /// layers callbacks belong to the panel owner's follow-up.
+  /// Layers-panel plain tap: collapses the set to the single tapped node
+  /// (null clears). Ctrl/Cmd and Shift taps arrive on [_toggleLayerNode] and
+  /// [_rangeLayerNode] instead (the panel reads the live modifiers itself).
   void _collapseToNode(String? id) => setState(() {
         _selectedNodeIds.clear();
         if (id == null) {
@@ -611,6 +468,44 @@ class _EditorShellState extends State<EditorShell> {
         }
         _selectedScreenId = null;
       });
+
+  /// Layers-panel Ctrl/Cmd-tap: toggles the node in the set via
+  /// [resolveNodeTap] (`additive`), clearing any screen selection.
+  void _toggleLayerNode(String id) {
+    final resolved = resolveNodeTap(
+      current: _selectedNodeIds,
+      anchor: _selectionAnchorId,
+      doc: widget.store.doc,
+      tappedId: id,
+      additive: true,
+    );
+    setState(() {
+      _selectedNodeIds
+        ..clear()
+        ..addAll(resolved.ids);
+      _selectionAnchorId = resolved.anchor;
+      _selectedScreenId = null;
+    });
+  }
+
+  /// Layers-panel Shift-tap: unions the anchor→tap range into the set via
+  /// [resolveNodeTap] (`ranged`), clearing any screen selection.
+  void _rangeLayerNode(String id) {
+    final resolved = resolveNodeTap(
+      current: _selectedNodeIds,
+      anchor: _selectionAnchorId,
+      doc: widget.store.doc,
+      tappedId: id,
+      ranged: true,
+    );
+    setState(() {
+      _selectedNodeIds
+        ..clear()
+        ..addAll(resolved.ids);
+      _selectionAnchorId = resolved.anchor;
+      _selectedScreenId = null;
+    });
+  }
 
   /// Canvas node tap: resolves Ctrl/Cmd-toggle and Shift-range through
   /// [resolveNodeTap]. Modifier keys are read live from `HardwareKeyboard`

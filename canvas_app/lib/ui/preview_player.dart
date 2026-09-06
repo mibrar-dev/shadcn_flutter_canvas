@@ -23,6 +23,16 @@
 /// vars are skipped, never a crash — so deleting a var can never break a
 /// running preview.
 ///
+/// TRACK S1 (API actions): `apiCall` steps run in order as immediates (see
+/// [partitionSteps]) via [executeApiCall] (`package:http`, 10s timeout per
+/// [kApiCallTimeout]). Transport errors, timeouts, and invalid URLs skip the
+/// step with a `debugPrint` note (the debug console — never a crash, never a
+/// dialog); a success with [ActionStep.saveTo] writes the response body
+/// string into the session (coerced per var type, unparseable bodies keep the
+/// current value). Secrets note: headers/bodies live in the doc like any
+/// other prop (no vault — documented, not solved) and session values are
+/// never persisted.
+///
 /// The player takes an immutable [ScreenDoc] snapshot (preview never edits),
 /// themed by [themeOverride] or `doc.theme` via [ThemedCanvas].
 ///
@@ -44,6 +54,7 @@ library;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/state_scope.dart';
@@ -65,6 +76,51 @@ const double kPreviewMobileMaxWidth = 390;
 /// against it.
 const double kPreviewWebMaxWidth = 1100;
 
+/// Runs one `apiCall` step over HTTP and returns the response body string,
+/// or null when the step was skipped (invalid URL/method, transport error,
+/// or timeout — each logged to the debug console via `debugPrint`).
+///
+/// [client] is injectable so tests pass a `MockClient` and never hit the
+/// real network; a null client creates (and closes) a short-lived one.
+/// Any HTTP status still yields its body (only transport failures skip).
+/// Headers/bodies live in the doc like any other prop (no vault).
+Future<String?> executeApiCall(
+  ActionStep step, {
+  http.Client? client,
+  Duration timeout = kApiCallTimeout,
+}) async {
+  if (step.kind != 'apiCall') return null;
+  if (!isApiCallUrlValid(step.url)) {
+    debugPrint('[canvas apiCall] skipped: invalid URL "${step.url}".');
+    return null;
+  }
+  if (!kApiCallMethods.contains(step.method)) {
+    debugPrint('[canvas apiCall] skipped: unknown method "${step.method}".');
+    return null;
+  }
+  final owned = client ?? http.Client();
+  try {
+    final uri = Uri.parse(step.url.trim());
+    final headers = step.headers.isEmpty ? null : step.headers;
+    late final http.Response response;
+    if (step.method == 'POST') {
+      response = await owned
+          .post(uri, headers: headers, body: step.body.isEmpty ? null : step.body)
+          .timeout(timeout);
+    } else {
+      response = await owned.get(uri, headers: headers).timeout(timeout);
+    }
+    return response.body;
+  } catch (e) {
+    debugPrint(
+      '[canvas apiCall] ${step.method} ${step.url} failed: $e (skipped).',
+    );
+    return null;
+  } finally {
+    if (client == null) owned.close();
+  }
+}
+
 /// Preview host over [doc] starting at [startScreenId] (or the first screen).
 class PreviewPlayer extends StatefulWidget {
   final ScreenDoc doc;
@@ -74,12 +130,18 @@ class PreviewPlayer extends StatefulWidget {
   /// Called when back is pressed at the stack root.
   final VoidCallback? onExit;
 
+  /// Injectable HTTP client for `apiCall` steps (tests pass a `MockClient`;
+  /// null creates short-lived clients per call). Part of the apiCall
+  /// execution surface only.
+  final http.Client? httpClient;
+
   const PreviewPlayer({
     super.key,
     required this.doc,
     this.themeOverride,
     this.startScreenId,
     this.onExit,
+    this.httpClient,
   });
 
   @override
@@ -131,10 +193,12 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// against the live session ([resolveActionValue] — unresolvable values
   /// keep the current value); `showSnackBar`/`showDialog` resolve
   /// whole-value `=var` bindings in their text; conditions evaluate against
-  /// the live session (unknown vars are false); navigations push known
-  /// screens in order (unknown targets are skipped). Legacy single-nav
-  /// actions flow through the same path as a one-navigate plan, so old
-  /// behavior is unchanged.
+  /// the live session (unknown vars are false); `apiCall` runs via
+  /// [executeApiCall] (Track S1 — skipped with a debug-console note on
+  /// error, response body saved into [ActionStep.saveTo] when set and
+  /// known); navigations push known screens in order (unknown targets are
+  /// skipped). Legacy single-nav actions flow through the same path as a
+  /// one-navigate plan, so old behavior is unchanged.
   Future<void> _runItemAction(CanvasItem item) async {
     final steps = effectiveActionSteps(item.action);
     if (steps.isEmpty) return;
@@ -154,6 +218,31 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
           );
           if (next == null) continue;
           setState(() => _session[step.variable] = next);
+        case 'apiCall':
+          final body = await executeApiCall(
+            step,
+            client: widget.httpClient,
+          );
+          if (body == null) continue;
+          final saveTo = step.saveTo;
+          if (saveTo.isEmpty) continue;
+          final target = varsByName[saveTo];
+          if (target == null) {
+            debugPrint(
+              '[canvas apiCall] unknown saveTo "$saveTo": response discarded.',
+            );
+            continue;
+          }
+          final next = parseStateLiteral(body, target.type);
+          if (next == null) {
+            debugPrint(
+              '[canvas apiCall] response not compatible with '
+              '${target.type} "$saveTo": skipped.',
+            );
+            continue;
+          }
+          if (!mounted) return;
+          setState(() => _session[saveTo] = next);
         case 'showSnackBar':
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

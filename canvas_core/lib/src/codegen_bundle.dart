@@ -718,6 +718,12 @@ BundleManifest buildCleanBundle(
   for (final kind in kinds) {
     deps.addAll(_kinds[kind]!.pubspecDeps);
   }
+  // Track S1: `apiCall` steps pull `package:http` through the same per-kind
+  // pubspec mechanism (step-driven — no kind row carries it, so it is added
+  // explicitly when any step needs it; legacy docs never contain it).
+  if (_docNeedsHttp(doc)) {
+    deps.putIfAbsent('http', () => '^1.2.2');
+  }
   final depKeys = deps.keys.toList()..sort();
   final manifest = <String, dynamic>{
     'screens': screenNames,
@@ -896,6 +902,9 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
           _screenNeedsMaterialSteps(doc, screen);
   final needsServices = screenKinds.contains('keyboard_shortcut');
   final needsValidator = screenKinds.contains('validated');
+  // Track S1: screens with apiCall steps import package:http (conditional,
+  // so legacy screens keep byte-identical headers).
+  final needsHttp = _screenNeedsHttp(doc, screen);
   final flutterImport = needsMaterial ? _flutterMaterial : _flutterWidgets;
   // Track H2 barrel imports: one relative import per used catalog kind
   // (plus [_screenExtraKinds] extras and [_screenExtraTemplates] files),
@@ -954,10 +963,16 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   final extraImports = StringBuffer();
   if (needsServices) extraImports.writeln("import '$_flutterServices';");
   if (needsValidator) extraImports.writeln("import '$_dartAsync';");
+  if (needsHttp) {
+    extraImports.writeln("import 'package:http/http.dart' as http;");
+  }
   final extraNote = [
     if (needsServices) '`package:flutter/services.dart` for keyboard shortcuts',
     if (needsValidator) '`dart:async` for form validators',
   ].join(' and ');
+  final httpNote = needsHttp
+      ? 'Plus `package:http` (^1.2.2) for API steps — add `http: ^1.2.2` to pubspec dependencies.'
+      : '';
   // Extra barrel imports are kind-based, not prop-based (a `card` screen
   // imports the button barrel even with the footer off): hand-edits that
   // flip such props never need new imports. The provably-unused remainder
@@ -987,7 +1002,7 @@ ${extraImports}${kitImports}
 /// Vanilla [StatefulWidget] with no store dependency: bring your own state
 /// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
 /// into your own widget. Depends only on `$flutterImport`
-/// plus the shipped kit bodies.${extraNote.isEmpty ? '' : '\n/// (plus $extraNote — Flutter SDK libraries, no extra packages).'}
+/// plus the shipped kit bodies.${extraNote.isEmpty ? '' : '\n/// (plus $extraNote — Flutter SDK libraries, no extra packages).'}${httpNote.isEmpty ? '' : '\n/// $httpNote'}
 class ${cls}Screen extends StatefulWidget {
   const ${cls}Screen({super.key});
 
@@ -1074,10 +1089,40 @@ bool _screenNeedsMaterialSteps(ScreenDoc doc, CanvasScreen screen) {
   return false;
 }
 
-/// Tap methods for [screen]'s stepped items (doc order; one
-/// `void _onTap<id>(BuildContext context)` per item, names unique
-/// doc-wide). Bodies come from [emitStepStatements] (unknown targets become
-/// comments, never a crash). Empty when no item carries steps.
+/// Whether [screen] has an `apiCall` step (see [stepsNeedHttp]): those
+/// screens gain the `package:http` import and `async` tap methods.
+bool _screenNeedsHttp(ScreenDoc doc, CanvasScreen screen) {
+  for (final node in doc.nodes) {
+    if (node.screenId != screen.id) continue;
+    for (final item in node.items) {
+      final steps = item.action?.steps;
+      if (steps != null && steps.isNotEmpty && stepsNeedHttp(steps)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Whether any step in [doc] is an `apiCall` (drives the bundle pubspec
+/// `http` dep — see [buildCleanBundle]).
+bool _docNeedsHttp(ScreenDoc doc) {
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      final steps = item.action?.steps;
+      if (steps != null && steps.isNotEmpty && stepsNeedHttp(steps)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// Tap methods for [screen]'s stepped items (doc order; one tap method per
+/// item, names unique doc-wide). Bodies come from [emitStepStatements]
+/// (unknown targets become comments, never a crash). Methods with an
+/// `apiCall` step are `Future<void> ... async`; all others keep the
+/// historical `void` signature. Empty when no item carries steps.
 String _bundleActionMethods(
   ScreenDoc doc,
   CanvasScreen screen,
@@ -1093,7 +1138,12 @@ String _bundleActionMethods(
       if (steps == null || steps.isEmpty) continue;
       final name = methodNameFor('_onTap', item.id);
       if (!seen.add(name)) continue;
-      buf.writeln('  void $name(BuildContext context) {');
+      final async = stepsNeedHttp(steps);
+      buf.writeln(
+        async
+            ? '  Future<void> $name(BuildContext context) async {'
+            : '  void $name(BuildContext context) {',
+      );
       for (final line in emitStepStatements(
         steps: steps,
         vars: _bundleStateVars,

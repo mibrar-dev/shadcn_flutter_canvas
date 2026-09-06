@@ -106,7 +106,7 @@ String buildSingleFile(
   Map<String, String>? partOf,
 }) {
   final kinds = _usedKinds(doc);
-  final deps = _mergedDeps(kinds);
+  final deps = _mergedDeps(kinds, doc);
   final closure =
       sharedSources != null || extraImports != null || partOf != null;
   // Track R1: per-emission state tables for binding interpolation ([_str])
@@ -115,6 +115,10 @@ String buildSingleFile(
   _stateFields = _hasAppState(doc) ? stateFieldsFor(doc.states) : const {};
   _stateVars = {for (final v in doc.states) v.name: v};
   final needsMaterialSteps = _docNeedsMaterialSteps(doc);
+  // Track S1: `package:http` rides the same dep-table mechanism as the
+  // per-kind deps below (appended only when an apiCall step exists, so
+  // legacy docs keep byte-identical pubspec comments).
+  final needsHttp = _docNeedsHttp(doc);
   // Resolved before the header: closure imports are written up front.
   final _ClosureModel? model = closure
       ? _resolveClosure(
@@ -149,6 +153,10 @@ String buildSingleFile(
     if (kinds.contains('keyboard_shortcut')) {
       out.writeln("import 'package:flutter/services.dart';");
     }
+    // Track S1: `package:http` for apiCall steps (conditional, same rule).
+    if (needsHttp) {
+      out.writeln("import 'package:http/http.dart' as http;");
+    }
   } else {
     final uris = <String>{
       'package:flutter/widgets.dart',
@@ -158,6 +166,8 @@ String buildSingleFile(
       // `kEmbeddedImports` (which already lists services.dart).
       if (kinds.contains('keyboard_shortcut'))
         'package:flutter/services.dart',
+      // Track S1: closure files with apiCall steps need the http import.
+      if (needsHttp) 'package:http/http.dart',
     };
     final sorted = uris.toList()..sort();
     // Each distinct import line goes out once (duplicate lines are dropped,
@@ -5265,6 +5275,21 @@ bool _docNeedsMaterialSteps(ScreenDoc doc) {
   return false;
 }
 
+/// Whether any step in [doc] is an `apiCall` (see [stepsNeedHttp]): those
+/// docs gain the `package:http` import, an `http` pubspec dep, and `async`
+/// tap methods.
+bool _docNeedsHttp(ScreenDoc doc) {
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      final steps = item.action?.steps;
+      if (steps != null && steps.isNotEmpty && stepsNeedHttp(steps)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /// Comment line for [item]'s tap behavior, or null when action-less:
 /// the legacy `// taps -> <to>` or the R1 `// steps (N): ...` summary.
 /// Shared by every emission site so comments stay consistent.
@@ -5373,10 +5398,12 @@ void _writeStatefulScreen(
     ..writeln('}');
 }
 
-/// Writes one `void _onTap<id>(BuildContext context)` method per stepped
-/// item on [screen] (doc order; method names derive from item ids, unique
-/// doc-wide). Bodies come from [emitStepStatements] with routes resolved
-/// against [taps] (unknown targets become comments, never a crash).
+/// Writes one tap method per stepped item on [screen] (doc order; method
+/// names derive from item ids, unique doc-wide). Bodies come from
+/// [emitStepStatements] with routes resolved against [taps] (unknown targets
+/// become comments, never a crash). Methods with an `apiCall` step are
+/// `Future<void> ... async` (they `await` `package:http`); all others keep
+/// the historical `void` signature byte-identically.
 void _writeActionMethods(
   StringBuffer out,
   ScreenDoc doc,
@@ -5391,8 +5418,13 @@ void _writeActionMethods(
       if (steps == null || steps.isEmpty) continue;
       final name = methodNameFor('_onTap', item.id);
       if (!seen.add(name)) continue;
+      final async = stepsNeedHttp(steps);
       out.writeln();
-      out.writeln('  void $name(BuildContext context) {');
+      out.writeln(
+        async
+            ? '  Future<void> $name(BuildContext context) async {'
+            : '  void $name(BuildContext context) {',
+      );
       for (final line in emitStepStatements(
         steps: steps,
         vars: _stateVars,
@@ -5531,13 +5563,19 @@ const Map<String, List<String>> _kKindDeps = {
   'text_area': ['gap'],
 };
 
-/// Merged deps for [kinds], deduped, first-seen order.
-List<String> _mergedDeps(List<String> kinds) {
+/// Merged deps for [kinds], deduped, first-seen order. When [doc] carries an
+/// `apiCall` step, `http` is appended (step-driven, not kind-driven — the
+/// per-kind table above has no apiCall row, so the dep rides this same
+/// mechanism explicitly; legacy docs never contain it).
+List<String> _mergedDeps(List<String> kinds, [ScreenDoc? doc]) {
   final deps = <String>[];
   for (final kind in kinds) {
     for (final dep in _kKindDeps[kind] ?? const <String>[]) {
       if (!deps.contains(dep)) deps.add(dep);
     }
+  }
+  if (doc != null && _docNeedsHttp(doc) && !deps.contains('http')) {
+    deps.add('http');
   }
   return deps;
 }

@@ -211,79 +211,124 @@ class _OpenDialogState extends State<OpenDialog> {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    // Gallery entries resolve their description + counts from the built doc
+    // (meta.brief), so the cards can never drift from the templates.
+    final templates = <String, ScreenDoc>{
+      for (final entry in templateBuilders.entries) entry.key: entry.value(),
+    };
     return shadcn.AlertDialog(
       title: Text(
         'Open design',
         style: EditorType.sectionHeader.copyWith(color: colors.onSurface),
       ),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Paste a share link or doc JSON.',
-            style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
-          ),
-          const SizedBox(height: EditorMetrics.tileGap),
-          shadcn.TextField(
-            controller: _controller,
-            keyboardType: TextInputType.multiline,
-            maxLines: null,
-            style: EditorType.field.copyWith(color: colors.onSurface),
-            cursorColor: colors.onSurfaceVariant,
-            placeholder: Text(
-              'Share link or doc JSON',
-              style:
-                  EditorType.field.copyWith(color: colors.onSurfaceVariant),
-            ),
-            onChanged: (_) {
-              if (_error != null) setState(() => _error = null);
-            },
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: EditorMetrics.tileGap),
-            Text(
-              _error!,
-              style: EditorType.field.copyWith(
-                color: Theme.of(context).colorScheme.error,
-              ),
-            ),
-          ],
-          if (_notice != null) ...[
-            const SizedBox(height: EditorMetrics.tileGap),
-            Text(
-              _notice!,
-              style:
-                  EditorType.field.copyWith(color: colors.onSurfaceVariant),
-            ),
-          ],
-          const SizedBox(height: EditorMetrics.tileGap),
-          Row(
+      content: ConstrainedBox(
+        // The kit dialog caps width (560) but not height: bound the scroll
+        // region to a viewport fraction so the gallery scrolls instead of
+        // overflowing short screens (a ratio, not a fixed pixel budget).
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.sizeOf(context).height * 0.7,
+        ),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              shadcn.TextButton(
-                onPressed: _loadFromFile,
-                child: const Text('Load from file…'),
+              Text(
+                'Paste a share link or doc JSON.',
+                style:
+                    EditorType.field.copyWith(color: colors.onSurfaceVariant),
               ),
-              shadcn.TextButton(
-                onPressed: _saveToFile,
-                child: const Text('Save to file'),
+              const SizedBox(height: EditorMetrics.tileGap),
+              shadcn.TextField(
+                controller: _controller,
+                keyboardType: TextInputType.multiline,
+                maxLines: null,
+                style: EditorType.field.copyWith(color: colors.onSurface),
+                cursorColor: colors.onSurfaceVariant,
+                placeholder: Text(
+                  'Share link or doc JSON',
+                  style:
+                      EditorType.field.copyWith(color: colors.onSurfaceVariant),
+                ),
+                onChanged: (_) {
+                  if (_error != null) setState(() => _error = null);
+                },
               ),
+              if (_error != null) ...[
+                const SizedBox(height: EditorMetrics.tileGap),
+                Text(
+                  _error!,
+                  style: EditorType.field.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ],
+              if (_notice != null) ...[
+                const SizedBox(height: EditorMetrics.tileGap),
+                Text(
+                  _notice!,
+                  style:
+                      EditorType.field.copyWith(color: colors.onSurfaceVariant),
+                ),
+              ],
+              const SizedBox(height: EditorMetrics.tileGap),
+              Row(
+                children: [
+                  shadcn.TextButton(
+                    onPressed: _loadFromFile,
+                    child: const Text('Load from file…'),
+                  ),
+                  shadcn.TextButton(
+                    onPressed: _saveToFile,
+                    child: const Text('Save to file'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: EditorMetrics.tileGap),
+              Text(
+                'Templates',
+                style:
+                    EditorType.sectionHeader.copyWith(color: colors.onSurface),
+              ),
+              Text(
+                'New from template (replaces the current design).',
+                style:
+                    EditorType.field.copyWith(color: colors.onSurfaceVariant),
+              ),
+              if (templates.isEmpty)
+                Text(
+                  'No templates available.',
+                  style:
+                      EditorType.field.copyWith(color: colors.onSurfaceVariant),
+                ),
+              for (final entry in templates.entries)
+                Padding(
+                  padding: const EdgeInsets.only(top: EditorMetrics.tileGap),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: shadcn.TextButton(
+                      onPressed: () => _newFromTemplate(entry.key),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(entry.key),
+                          Text(
+                            '${entry.value.meta.brief} '
+                            '(${entry.value.screens.length} screens · '
+                            '${entry.value.nodes.length} nodes)',
+                            style: EditorType.field.copyWith(
+                              color: colors.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
             ],
           ),
-          const SizedBox(height: EditorMetrics.tileGap),
-          Text(
-            'New from template (replaces the current design).',
-            style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
-          ),
-          for (final name in templateBuilders.keys)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: shadcn.TextButton(
-                onPressed: () => _newFromTemplate(name),
-                child: Text(name),
-              ),
-            ),
-        ],
+        ),
       ),
       actions: [
         shadcn.TextButton(
