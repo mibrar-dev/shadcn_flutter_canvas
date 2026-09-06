@@ -407,7 +407,31 @@ class CanvasNode {
   ///
   /// Serialized as a map under JSON key `slots`; a missing key parses to
   /// empty (no overrides).
+  ///
+  /// NOTE — distinct from [slotNodes]: `slots` is the older per-tier
+  /// responsive override map (keys are tier names like `'tablet'` or item
+  /// ids consumed by the preview slot filter); `slotNodes` is the
+  /// widget-composition map (keys are NAMED COMPONENT SLOTS like
+  /// `'appBar'`, values are child node ids). The two maps never share keys
+  /// in practice; validators treat them independently.
   final Map<String, String> slots;
+
+  /// Named-slot widget composition: slot name → child node id.
+  ///
+  /// A node whose kind declares named slots (see `kNodeSlots` in the app's
+  /// component catalog, e.g. scaffold `appBar`/`body`) assigns one child
+  /// node per slot here. Renderers build the child and inject it into the
+  /// builder under the slot name; codegen emits the slot construction.
+  /// Missing key parses to empty (no slot assignments); [toJson] omits the
+  /// key when empty so older docs round-trip byte-identically.
+  final Map<String, String> slotNodes;
+
+  /// Editor lock: locked nodes cannot be selected, resized, reparented, or
+  /// deleted until unlocked (inspector + layers toggle). Editor-only concern
+  /// like the theme `chrome`: renderers skip locked nodes for selection and
+  /// handles, export ignores the flag. Missing key parses to false;
+  /// [toJson] omits the key when false.
+  final bool locked;
 
   const CanvasNode({
     required this.id,
@@ -427,6 +451,8 @@ class CanvasNode {
     this.hiddenOn = const {},
     this.breakpointValues = const {},
     this.slots = const {},
+    this.slotNodes = const {},
+    this.locked = false,
   });
 
   factory CanvasNode.fromJson(Map<String, dynamic> json) {
@@ -442,6 +468,8 @@ class CanvasNode {
     final breakpointRaw =
         (json['breakpointValues'] as Map?) ?? const <String, dynamic>{};
     final slotsRaw = (json['slots'] as Map?) ?? const <String, dynamic>{};
+    final slotNodesRaw =
+        (json['slotNodes'] as Map?) ?? const <String, dynamic>{};
     return CanvasNode(
       id: json['id'] as String,
       screenId: json['screenId'] as String,
@@ -471,6 +499,11 @@ class CanvasNode {
         for (final entry in slotsRaw.entries)
           entry.key as String: entry.value as String,
       },
+      slotNodes: {
+        for (final entry in slotNodesRaw.entries)
+          entry.key as String: entry.value as String,
+      },
+      locked: (json['locked'] as bool?) ?? false,
     );
   }
 
@@ -497,6 +530,11 @@ class CanvasNode {
             entry.key: Map<String, dynamic>.from(entry.value),
         },
         'slots': Map<String, String>.from(slots),
+        // Omit-when-empty / omit-when-false (like w/h): older docs keep
+        // byte-identical JSON.
+        if (slotNodes.isNotEmpty)
+          'slotNodes': Map<String, String>.from(slotNodes),
+        if (locked) 'locked': true,
       };
 }
 
