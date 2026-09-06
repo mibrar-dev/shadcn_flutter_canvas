@@ -511,6 +511,8 @@ class _DesignCanvasState extends State<DesignCanvas> {
                     zoom: widget.zoom,
                     panMode: widget.panMode,
                     onSelectNode: (id) => widget.onSelectNode?.call(id),
+                    onResizeNode: (id, w, h) =>
+                        widget.store.setNodeSize(id, w: w, h: h),
                     onDropKind: (kind, position, {parentId, index}) =>
                         widget.onAccept(
                       kind,

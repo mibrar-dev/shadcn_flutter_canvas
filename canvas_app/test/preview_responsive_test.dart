@@ -197,4 +197,61 @@ void main() {
     expect(find.text('Slot Two'), findsNothing);
     expect(find.text('Free Item'), findsOneWidget);
   });
+
+  group('node w/h sizing (Track U2 follow-up)', () {
+    testWidgets('sized node renders at pinned width in preview', (tester) async {
+      await _pumpPreview(
+        tester,
+        _doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'w': 200.0,
+            'items': [
+              {'id': 'i1', 'kind': 'button', 'label': 'Pinned'},
+            ],
+          },
+        ]),
+      );
+      final box = tester.widget<SizedBox>(
+        find.ancestor(
+          of: find.text('Pinned'),
+          matching: find.byWidgetPredicate(
+            (w) => w is SizedBox && w.width == 200.0,
+          ),
+        ).first,
+      );
+      expect(box.width, 200.0);
+    });
+
+    testWidgets('unsized node has no pinning SizedBox', (tester) async {
+      await _pumpPreview(
+        tester,
+        _doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'button', 'label': 'Auto'},
+            ],
+          },
+        ]),
+      );
+      // Stage chrome itself uses SizedBoxes, so pin absence of the exact
+      // pinning size rather than of SizedBox in general.
+      expect(
+        find.ancestor(
+          of: find.text('Auto'),
+          matching: find.byWidgetPredicate(
+            (w) => w is SizedBox && w.width == 200.0,
+          ),
+        ),
+        findsNothing,
+      );
+    });
+  });
 }

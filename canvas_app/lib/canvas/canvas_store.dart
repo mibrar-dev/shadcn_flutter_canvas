@@ -212,6 +212,8 @@ class CanvasStore extends ChangeNotifier {
               crossAxis: n.crossAxis,
               expand: n.expand,
               flex: n.flex,
+              w: n.w,
+              h: n.h,
               hiddenOn: Set<String>.from(n.hiddenOn),
               breakpointValues: {
                 for (final entry in n.breakpointValues.entries)
@@ -245,6 +247,8 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        w: n.w,
+        h: n.h,
         hiddenOn: Set<String>.from(n.hiddenOn),
         breakpointValues: {
           for (final entry in n.breakpointValues.entries)
@@ -377,6 +381,8 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        w: n.w,
+        h: n.h,
         hiddenOn: Set<String>.from(n.hiddenOn),
         breakpointValues: {
           for (final entry in n.breakpointValues.entries)
@@ -536,6 +542,8 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        w: n.w,
+        h: n.h,
         hiddenOn: Set<String>.from(n.hiddenOn),
         breakpointValues: {
           for (final entry in n.breakpointValues.entries)
@@ -638,6 +646,8 @@ class CanvasStore extends ChangeNotifier {
           crossAxis: n.crossAxis,
           expand: n.expand,
           flex: n.flex,
+          w: n.w,
+          h: n.h,
           hiddenOn: Set<String>.from(n.hiddenOn),
           breakpointValues: {
             for (final entry in n.breakpointValues.entries)
@@ -895,6 +905,8 @@ class CanvasStore extends ChangeNotifier {
             crossAxis: crossAxis ?? n.crossAxis,
             expand: expand ?? n.expand,
             flex: flex ?? n.flex,
+            w: n.w,
+            h: n.h,
             hiddenOn: Set<String>.from(n.hiddenOn),
             breakpointValues: {
               for (final entry in n.breakpointValues.entries)
@@ -956,6 +968,8 @@ class CanvasStore extends ChangeNotifier {
         crossAxis: n.crossAxis,
         expand: n.expand,
         flex: n.flex,
+        w: n.w,
+        h: n.h,
         hiddenOn: clearHiddenOn
             ? const {}
             : (hiddenOn != null
@@ -977,6 +991,75 @@ class CanvasStore extends ChangeNotifier {
             : (slots != null
                 ? Map<String, String>.from(slots)
                 : Map<String, String>.from(n.slots)),
+      );
+    }));
+  }
+
+  /// Sets a node's explicit size (`w`/`h`, Track U2 — null = auto, see the
+  /// sizing table on [CanvasNode]).
+  ///
+  /// Pass a non-null dimension to fix it, or its `clear*` flag to reset it to
+  /// auto (sparse-delete precedent, mirroring [setNodeResponsive]; needed
+  /// because `null` means "leave unchanged", matching [patchNode]). A `clear*`
+  /// flag wins over its value param when both are given.
+  ///
+  /// Validation (all before committing, so history stays clean): non-null
+  /// values must be positive and finite — zero, negative, NaN, and infinite
+  /// throw [ArgumentError] (fail fast, mirroring [setScreenDevice]). There is
+  /// deliberately NO upper bound here: docs may target wider future stages
+  /// and codegen emits verbatim. Sane maxes live at the UI layer instead —
+  /// drag handles clamp to the live stage (`clampResizeWidth/Height` in
+  /// `phone_frame.dart`, `[kMinNodeSize, stage]`) and inspector steppers clamp
+  /// to `[kMinNodeSize, kMaxNodeWidth/kMaxNodeHeight]`.
+  ///
+  /// Unknown [nodeId] is a no-op without committing (matching [deleteNode],
+  /// so history stays clean), as is calling with no values and no clear flags
+  /// or with values equal to the current size (so a handle release without
+  /// movement writes no undo entry). Otherwise undoable and autosaved like
+  /// every other mutation; every other field is preserved with the
+  /// [setNodeResponsive] deep-copy precedent.
+  void setNodeSize(
+    String nodeId, {
+    double? w,
+    double? h,
+    bool clearW = false,
+    bool clearH = false,
+  }) {
+    if (!clearW && w != null && !(w.isFinite && w > 0)) {
+      throw ArgumentError('Node width must be positive and finite: $w');
+    }
+    if (!clearH && h != null && !(h.isFinite && h > 0)) {
+      throw ArgumentError('Node height must be positive and finite: $h');
+    }
+    final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (index < 0) return;
+    final current = _doc.nodes[index];
+    final nextW = clearW ? null : (w ?? current.w);
+    final nextH = clearH ? null : (h ?? current.h);
+    if (nextW == current.w && nextH == current.h) return;
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      return CanvasNode(
+        id: n.id,
+        screenId: n.screenId,
+        x: n.x,
+        y: n.y,
+        items: n.items,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
+        w: nextW,
+        h: nextH,
+        hiddenOn: Set<String>.from(n.hiddenOn),
+        breakpointValues: {
+          for (final entry in n.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(n.slots),
       );
     }));
   }
@@ -1036,6 +1119,8 @@ class CanvasStore extends ChangeNotifier {
       crossAxis: node.crossAxis,
       expand: node.expand,
       flex: node.flex,
+      w: node.w,
+      h: node.h,
       hiddenOn: Set<String>.from(node.hiddenOn),
       breakpointValues: {
         for (final entry in node.breakpointValues.entries)
@@ -1155,6 +1240,8 @@ class CanvasStore extends ChangeNotifier {
           crossAxis: byId[id]!.crossAxis,
           expand: byId[id]!.expand,
           flex: byId[id]!.flex,
+          w: byId[id]!.w,
+          h: byId[id]!.h,
           hiddenOn: Set<String>.from(byId[id]!.hiddenOn),
           breakpointValues: {
             for (final entry in byId[id]!.breakpointValues.entries)

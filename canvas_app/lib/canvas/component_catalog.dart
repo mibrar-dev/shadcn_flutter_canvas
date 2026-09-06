@@ -72,6 +72,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:canvas_app/canvas/component_registry.dart' as registry;
 import 'package:canvas_app/canvas/props_schema.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_core/canvas_core.dart'
@@ -3337,12 +3338,12 @@ CatalogEntry? findEntry(String kind) {
 }
 
 /// Builds the widget for [kind] with [props] and already-built [children],
-/// or [fallbackBuilder] output for unknown kinds. Builders tolerate missing
-/// keys (each prop has a fallback), so hand-written docs without full
-/// defaults still render. Migrated container builders receive [children]
-/// (spliced into their spec slot); every other builder keeps its 1-arg
-/// shape and never sees them (their nodes' children render via the
-/// renderers' below-fallback, never inside chrome).
+/// or registry-fallback / [fallbackBuilder] output for non-catalog kinds.
+/// Builders tolerate missing keys (each prop has a fallback), so
+/// hand-written docs without full defaults still render. Migrated container
+/// builders receive [children] (spliced into their spec slot); every other
+/// builder keeps its 1-arg shape and never sees them (their nodes' children
+/// render via the renderers' below-fallback, never inside chrome).
 ///
 /// [scope] (Track R1) carries live state values (var name → value); bound
 /// props (`=name`) resolve through [resolveBoundProps] before the builder
@@ -3353,7 +3354,7 @@ Widget buildCatalogItem(
   List<Widget> children = const [],
   Map<String, dynamic>? scope,
 ]) {  final entry = findEntry(kind);
-  if (entry == null) return fallbackBuilder(kind);
+  if (entry == null) return _buildRegistryFallback(kind, props, children, scope);
   final effective = scope == null ? props : resolveBoundProps(kind, props, scope);
   if (children.isNotEmpty) {
     final build = entry.build;
@@ -3364,6 +3365,122 @@ Widget buildCatalogItem(
     if (build is NodeBuilder) return build(effective, children);
   }
   return entry.build(effective);
+}
+
+/// Track U1 render-path unification (2026-09-06): canvas renders through
+/// [buildCatalogItem], which used to consult [kCatalog] ONLY — so the ten
+/// hand-verified bare registry kinds (`alert`, `chip`,
+/// `circular_progress_indicator`, `linear_progress_indicator`,
+/// `triple_dots`, `dot_indicator`, `empty_state`, `code_snippet`,
+/// `number_ticker`, `text_area`) rendered `unknown: <kind>` + X-box even
+/// though the palette lists them and drops accept them.
+///
+/// Renderability no longer equals catalog membership: on a catalog miss,
+/// this fallback consults the generated registry
+/// (`registry.findRegistryEntry`). A hit whose entry is NOT a placeholder
+/// build renders its real widget; true placeholders and totally-unknown
+/// kinds keep [fallbackBuilder] exactly as before.
+///
+/// `canvasReady` semantics are unchanged: the flags still declare which
+/// registry entries own real bare-widget builders (the palette honesty
+/// signal), and no flag is touched here — this fallback only READS them.
+/// (This note lives in the catalog because `component_registry.dart` is
+/// generated and off-limits.)
+Widget _buildRegistryFallback(
+  String kind,
+  Map<String, dynamic> props,
+  List<Widget> children,
+  Map<String, dynamic>? scope,
+) {
+  final reg = registry.findRegistryEntry(kind);
+  // No registry entry, or a placeholder entry (`canvasReady` is false for
+  // placeholders per the registry header — true only where a real
+  // bare-widget builder exists): keep the honest unknown + X as before.
+  if (reg == null || !reg.canvasReady) return fallbackBuilder(kind);
+  // Same props/scope contract as the catalog path: bound props resolve
+  // through [scope] first (schema-less registry kinds keep raw values — see
+  // [resolveBoundProp] — so this is a no-op for them, never a crash).
+  final effective = scope == null ? props : resolveBoundProps(kind, props, scope);
+  final propsBuild = _registryPropsBuilderFor(kind);
+  if (propsBuild != null) {
+    // Mirrors the [NodeBuilder] recovery in [buildCatalogItem]: children
+    // splice into chrome only for container kinds with a migrated 2-arg
+    // builder. None of the ten registry-only kinds is a container (or
+    // 2-arg), so their nodes' children keep rendering via the renderers'
+    // below-fallback, as today.
+    if (children.isNotEmpty &&
+        kContainerKinds.contains(kind) &&
+        propsBuild is NodeBuilder) {
+      return propsBuild(effective, children);
+    }
+    return propsBuild(effective);
+  }
+  // Generic tail: canvasReady registry kinds without a props-aware builder
+  // above (today only the `row` pseudo-kind — rows lay out structurally and
+  // never arrive here with children). The `Builder` supplies the
+  // `BuildContext` the registry `WidgetBuilder` needs; a build that still
+  // materializes a [registry.RegistryPlaceholder] (flag drift) keeps the
+  // fallback, so placeholder builds can never leak through here.
+  final chrome = Builder(
+    builder: (context) {
+      final built = reg.build(context);
+      if (built is registry.RegistryPlaceholder) return fallbackBuilder(kind);
+      return built;
+    },
+  );
+  if (children.isEmpty || !kContainerKinds.contains(kind)) return chrome;
+  // Unreachable today (every container kind lives in [kCatalog]): mirrors
+  // the renderers' §1 below-fallback rhythm so children are never silently
+  // dropped if a container kind ever lands here.
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      chrome,
+      for (var i = 0; i < children.length; i++) ...[
+        const SizedBox(height: kFlowScreenGap),
+        children[i],
+      ],
+    ],
+  );
+}
+
+/// Props-aware builders for the registry-only canvasReady kinds (the ten
+/// hand-verified EASY builders in `component_registry.dart`). A `switch`
+/// (not a top-level map) keeps these tear-offs call-time — no initialization
+/// coupling with the generated registry this library now imports (the
+/// registry imports this catalog back for its bridges; Dart tolerates the
+/// cycle because every cross-reference resolves at call time).
+///
+/// Returns null for every other kind: placeholders never reach here (gated
+/// on `canvasReady` above) and remaining canvasReady kinds take the generic
+/// `Builder` tail. A future eleventh bare kind renders via that tail until
+/// it gains a props-aware case here — never `unknown:` again.
+Widget Function(Map<String, dynamic>)? _registryPropsBuilderFor(String kind) {
+  switch (kind) {
+    case 'alert':
+      return registry.buildAlertEntry;
+    case 'chip':
+      return registry.buildChipEntry;
+    case 'circular_progress_indicator':
+      return registry.buildCircularProgressEntry;
+    case 'code_snippet':
+      return registry.buildCodeSnippetEntry;
+    case 'dot_indicator':
+      return registry.buildDotIndicatorEntry;
+    case 'empty_state':
+      return registry.buildEmptyStateEntry;
+    case 'linear_progress_indicator':
+      return registry.buildLinearProgressEntry;
+    case 'number_ticker':
+      return registry.buildNumberTickerEntry;
+    case 'text_area':
+      return registry.buildTextAreaEntry;
+    case 'triple_dots':
+      return registry.buildTripleDotsEntry;
+    default:
+      return null;
+  }
 }
 
 /// Resolves one bound prop: a `=var` [raw] value becomes the scope value

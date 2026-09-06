@@ -91,6 +91,28 @@ const _kNewKinds = [
 /// `Validated.child`, `RefreshTrigger.child`).
 const _kTrackD1Kinds = ['chat', 'toast', 'validated', 'refresh_trigger'];
 
+/// The 10 Track U1 kinds: hand-verified EASY registry builders with real
+/// bare widgets but no `CatalogEntry`. Before U1, `buildCatalogItem`
+/// consulted `kCatalog` only, so these rendered `unknown: <kind>` + X-box
+/// on canvas and in preview even though the palette lists them and drops
+/// accept them. U1 routes catalog misses through the registry fallback
+/// (`_buildRegistryFallback` in `component_catalog.dart`); this list pins
+/// the unified render path. No old-fallback test asserted `unknown:` for
+/// these kinds, so there is nothing to invert in place — the triage group
+/// below documents the behavior change instead.
+const _kTrackU1Kinds = [
+  'alert',
+  'chip',
+  'circular_progress_indicator',
+  'code_snippet',
+  'dot_indicator',
+  'empty_state',
+  'linear_progress_indicator',
+  'number_ticker',
+  'text_area',
+  'triple_dots',
+];
+
 Future<void> _pump(
   WidgetTester tester,
   Widget widget, {
@@ -2097,5 +2119,455 @@ void main() {
         });
       });
     }
+  });
+
+  group('track U1 wiring', () {
+    test('registry-only kinds are bridged without catalog entries', () {
+      expect(_kTrackU1Kinds, hasLength(10));
+      for (final kind in _kTrackU1Kinds) {
+        // No catalog entry BY DESIGN: the U1 fallback bridges the registry,
+        // so these kinds need no CatalogEntry and kCatalog stays at 68
+        // (renderability no longer equals catalog membership).
+        expect(findEntry(kind), isNull, reason: 'U1 keeps $kind out of kCatalog');
+        final reg = findRegistryEntry(kind);
+        expect(reg, isNotNull, reason: 'no registry entry $kind');
+        expect(reg!.canvasReady, isTrue, reason: kind);
+      }
+    });
+
+    testWidgets('triage: EASY kinds never render the unknown-kind fallback', (
+      tester,
+    ) async {
+      // Pre-U1, every kind below rendered `unknown: <kind>` + X-box because
+      // buildCatalogItem consulted kCatalog only. This test deliberately
+      // asserts the inverted expectation: the registry fallback now renders
+      // their real builders (see _buildRegistryFallback).
+      for (final kind in _kTrackU1Kinds) {
+        await _pump(tester, buildCatalogItem(kind, {}));
+        expect(find.text('unknown: $kind'), findsNothing, reason: kind);
+        expect(find.text('canvas-ready coming soon'), findsNothing);
+      }
+    });
+
+    testWidgets('registry builders tolerate empty props (defaults kick in)', (
+      tester,
+    ) async {
+      for (final kind in _kTrackU1Kinds) {
+        await _pump(tester, buildCatalogItem(kind, {}));
+      }
+    });
+  });
+
+  group('alert', () {
+    testWidgets('defaults render title + content (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('alert', {}), dark: dark);
+        expect(find.byType(shadcn.Alert), findsOneWidget);
+        expect(find.text('Alert'), findsOneWidget);
+        expect(find.text('Something happened.'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props incl. destructive (light + dark)', (
+      tester,
+    ) async {
+      const props = {
+        'title': 'Boom',
+        'content': 'Outage',
+        'destructive': true,
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('alert', props), dark: dark);
+        expect(find.byType(shadcn.Alert), findsOneWidget);
+        expect(find.text('Boom'), findsOneWidget);
+        expect(find.text('Outage'), findsOneWidget);
+        expect(
+          tester.widget<shadcn.Alert>(find.byType(shadcn.Alert)).destructive,
+          isTrue,
+        );
+      }
+    });
+  });
+
+  group('chip', () {
+    testWidgets('defaults render the label (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('chip', {}), dark: dark);
+        expect(find.byType(shadcn.Chip), findsOneWidget);
+        expect(find.text('Chip'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('chip', {'label': 'Beta'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.Chip), findsOneWidget);
+        expect(find.text('Beta'), findsOneWidget);
+      }
+    });
+  });
+
+  group('circular_progress_indicator', () {
+    testWidgets('defaults render the determinate spinner (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('circular_progress_indicator', {}),
+          dark: dark,
+        );
+        expect(
+          find.byType(shadcn.CircularProgressIndicator),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<shadcn.CircularProgressIndicator>(
+                find.byType(shadcn.CircularProgressIndicator),
+              )
+              .value,
+          0.6,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('circular_progress_indicator', {'value': 0.2}),
+          dark: dark,
+        );
+        expect(
+          tester
+              .widget<shadcn.CircularProgressIndicator>(
+                find.byType(shadcn.CircularProgressIndicator),
+              )
+              .value,
+          0.2,
+        );
+      }
+    });
+  });
+
+  group('code_snippet', () {
+    testWidgets('defaults render the code text (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('code_snippet', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.CodeSnippet), findsOneWidget);
+        expect(find.text('const x = 1;'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('code_snippet', {'code': 'void main() {}'}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.CodeSnippet), findsOneWidget);
+        expect(find.text('void main() {}'), findsOneWidget);
+      }
+    });
+  });
+
+  group('dot_indicator', () {
+    testWidgets('defaults render three dots (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('dot_indicator', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.DotIndicator), findsOneWidget);
+        final dots = tester.widget<shadcn.DotIndicator>(
+          find.byType(shadcn.DotIndicator),
+        );
+        expect(dots.index, 0);
+        expect(dots.length, 3);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'index': 2, 'length': 5};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('dot_indicator', props),
+          dark: dark,
+        );
+        final dots = tester.widget<shadcn.DotIndicator>(
+          find.byType(shadcn.DotIndicator),
+        );
+        expect(dots.index, 2);
+        expect(dots.length, 5);
+      }
+    });
+  });
+
+  group('empty_state', () {
+    testWidgets('defaults render title + description (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('empty_state', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.EmptyState), findsOneWidget);
+        expect(find.text('No results'), findsOneWidget);
+        expect(find.text('Try adjusting your search.'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'title': 'Empty', 'description': 'Nothing here'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('empty_state', props),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.EmptyState), findsOneWidget);
+        expect(find.text('Empty'), findsOneWidget);
+        expect(find.text('Nothing here'), findsOneWidget);
+      }
+    });
+  });
+
+  group('linear_progress_indicator', () {
+    testWidgets('defaults render the determinate bar (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('linear_progress_indicator', {}),
+          dark: dark,
+        );
+        expect(
+          find.byType(shadcn.LinearProgressIndicator),
+          findsOneWidget,
+        );
+        expect(
+          tester
+              .widget<shadcn.LinearProgressIndicator>(
+                find.byType(shadcn.LinearProgressIndicator),
+              )
+              .value,
+          0.6,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('linear_progress_indicator', {'value': 0.2}),
+          dark: dark,
+        );
+        expect(
+          tester
+              .widget<shadcn.LinearProgressIndicator>(
+                find.byType(shadcn.LinearProgressIndicator),
+              )
+              .value,
+          0.2,
+        );
+      }
+    });
+  });
+
+  group('number_ticker', () {
+    testWidgets('defaults render the pinned value (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('number_ticker', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.NumberTicker), findsOneWidget);
+        expect(
+          tester
+              .widget<shadcn.NumberTicker>(find.byType(shadcn.NumberTicker))
+              .number,
+          42,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('number_ticker', {'value': 7}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.NumberTicker), findsOneWidget);
+        expect(
+          tester
+              .widget<shadcn.NumberTicker>(find.byType(shadcn.NumberTicker))
+              .number,
+          7,
+        );
+      }
+    });
+  });
+
+  group('text_area', () {
+    testWidgets('defaults render the placeholder (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text_area', {}), dark: dark);
+        expect(find.byType(shadcn.TextArea), findsOneWidget);
+        expect(find.text('Type here'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props incl. label + disabled (light + dark)', (
+      tester,
+    ) async {
+      const props = {
+        'placeholder': 'Bio',
+        'label': 'About',
+        'disabled': true,
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text_area', props), dark: dark);
+        expect(find.byType(shadcn.TextArea), findsOneWidget);
+        expect(find.text('Bio'), findsOneWidget);
+        expect(find.text('About'), findsOneWidget);
+        expect(
+          tester.widget<shadcn.TextArea>(find.byType(shadcn.TextArea)).enabled,
+          isFalse,
+        );
+      }
+    });
+  });
+
+  group('triple_dots', () {
+    testWidgets('defaults render three dots (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('triple_dots', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.MoreDots), findsOneWidget);
+        expect(
+          tester.widget<shadcn.MoreDots>(find.byType(shadcn.MoreDots)).count,
+          3,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('triple_dots', {'count': 7}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.MoreDots), findsOneWidget);
+        expect(
+          tester.widget<shadcn.MoreDots>(find.byType(shadcn.MoreDots)).count,
+          7,
+        );
+      }
+    });
+  });
+
+  group('track U1 fallback tail', () {
+    testWidgets('true-unknown kinds keep the unknown fallback', (
+      tester,
+    ) async {
+      await _pump(tester, buildCatalogItem('definitely_not_a_kind', {}));
+      expect(find.byType(Placeholder), findsOneWidget);
+      expect(find.text('unknown: definitely_not_a_kind'), findsOneWidget);
+    });
+
+    testWidgets('placeholder registry kinds keep the unknown fallback', (
+      tester,
+    ) async {
+      // Spot-check across sections: these have registry entries but
+      // canvasReady false, so the U1 fallback must NOT promote them to
+      // 'canvas-ready coming soon' cards — canvas keeps unknown + X exactly
+      // as before U1.
+      const placeholders = [
+        'markdown',
+        'spinner',
+        'text',
+        'autocomplete',
+        'navigation_bar',
+        'switcher',
+      ];
+      for (final kind in placeholders) {
+        expect(findEntry(kind), isNull, reason: kind);
+        final reg = findRegistryEntry(kind);
+        expect(reg, isNotNull, reason: kind);
+        expect(reg!.canvasReady, isFalse, reason: kind);
+        await _pump(tester, buildCatalogItem(kind, {}));
+        expect(find.text('unknown: $kind'), findsOneWidget, reason: kind);
+        expect(find.byType(Placeholder), findsOneWidget, reason: kind);
+        expect(
+          find.text('canvas-ready coming soon'),
+          findsNothing,
+          reason: kind,
+        );
+      }
+    });
+
+    testWidgets('row pseudo-kind renders its structural preview', (
+      tester,
+    ) async {
+      // Deliberate U1 side effect of the literal fallback rule (exists +
+      // real build → use it): the `row` pseudo-kind is canvasReady with a
+      // real structural builder, so it no longer renders unknown. Rows lay
+      // out structurally and never route item props here, so defaults apply.
+      await _pump(tester, buildCatalogItem('row', {}));
+      expect(find.text('unknown: row'), findsNothing);
+      expect(find.text('Row'), findsOneWidget);
+    });
+
+    testWidgets('registry fallback honors the props/children contract', (
+      tester,
+    ) async {
+      // Children are ignored (no U1 kind is a container) without crashing —
+      // the renderers' below-fallback keeps owning them, as today.
+      await _pump(
+        tester,
+        buildCatalogItem('chip', {}, [const Text('U1 kid')]),
+      );
+      expect(find.byType(shadcn.Chip), findsOneWidget);
+      expect(find.text('unknown: chip'), findsNothing);
+      // Schema-less kinds keep bound props raw (never a crash).
+      await _pump(
+        tester,
+        buildCatalogItem('chip', {
+          'label': '=nick',
+        }, const [], {'nick': 'Ada'}),
+      );
+      expect(find.byType(shadcn.Chip), findsOneWidget);
+      expect(find.text('=nick'), findsOneWidget);
+    });
   });
 }

@@ -24,6 +24,10 @@ import 'package:canvas_core/canvas_core.dart';
 /// the screen's far edges (content clips at the frame instead of exploding).
 const double _kMinNodeExtent = 48.0;
 
+/// Track U2 resize-handle hit box (square side, logical px). Handles sit
+/// inside the selected chrome edges (see [_ScreenSurfaceState._withHandles]).
+const double _kHandleSize = 14.0;
+
 /// Snap threshold for drag aids, in logical px in pre-zoom screen space: a
 /// palette-drag pointer within this distance of a guide axis shows the guide
 /// and, on drop, lands snapped onto the axis. X and Y resolve independently.
@@ -305,20 +309,102 @@ CrossAxisAlignment rowCrossAxis(String? value) {
   }
 }
 
-/// W3 child flex wrapper: `expanded` → [Expanded], `flex` → [Flexible] with
-/// `flex ?? 1` (Flexible defaults to FlexFit.loose), `none`/null/unknown →
-/// the pre-W3 default bare [Flexible] (finite-width share so kit widgets with
-/// internal Expanded rows never see unbounded width).
+/// W3 child flex wrapper + Track U2 sizing (single source of truth for the
+/// canvas renderer and the preview player, which imports this function).
+///
+/// SQUEEZE ROOT CAUSE (user-observed: two parts side-by-side in a row
+/// rendered ~45px each with letter-by-letter text wrap instead of sharing
+/// space): the pre-U2 default here was `Flexible(child: content)` —
+/// `FlexFit.loose`. Loose fit lets shrink-wrapping content (cards, badges,
+/// …) collapse to its MINIMUM intrinsic width instead of filling its share
+/// of the `Row`, so two cards sat side by side at intrinsic width with dead
+/// space around them, wrapping their text into the tiny box. The U2 fix:
+/// null-width children default to TIGHT fit (equal shares), so available
+/// space is shared by construction.
+///
+/// ROW FLEX RULE:
+/// * `w != null` → `SizedBox(width: w)`: exact pixels, NO flex (an explicit
+///   fixed size beats flex; clear it to restore the flex role). Heights ride
+///   inside the cell (see [applyNodeSize]) — rows keep the `crossAxis`
+///   default `center`, and a fixed `h` centers per it.
+/// * `expand == 'expanded'` → `Expanded(flex ?? 1)` (tight).
+/// * `expand == 'flex'` → `Flexible(flex ?? 1)` (loose).
+/// * otherwise (null/`none`/unknown) → tight `Flexible(flex ?? 1)` (equal
+///   shares — the squeeze fix; an explicit `flex` is honored).
+///   Deliberately `Flexible` with [FlexFit.tight], NOT [Expanded] (which is
+///   the same layout): `find.byType(Flexible)` matches exact runtime types,
+///   and `container_layout_test.dart` pins the default cell as `Flexible`.
+///
+/// Every branch yields a FINITE width, so kit widgets with internal
+/// `Expanded` rows never see unbounded width. Unsized codegen keeps the
+/// legacy unwrapped emission (byte-identical goldens), so canvas and export
+/// agree exactly once sizes are set and differ only for plain auto rows
+/// (canvas shares, export shrink-wraps as before) — documented on
+/// [CanvasNode].
 Widget wrapRowChild(CanvasNode child, Widget content) {
+  if (child.w != null) return SizedBox(width: child.w, child: content);
   switch (child.expand) {
     case 'expanded':
       return Expanded(flex: child.flex ?? 1, child: content);
     case 'flex':
       return Flexible(flex: child.flex ?? 1, child: content);
     default:
-      return Flexible(child: content);
+      return Flexible(
+        flex: child.flex ?? 1,
+        fit: FlexFit.tight,
+        child: content,
+      );
   }
 }
+
+/// Applies a node's explicit size to [content] (Track U2): null dims pass
+/// through untouched (auto — today's behavior), set dims wrap in a
+/// [SizedBox]. Pure widget helper shared by leaves, containers, and row
+/// bodies so canvas sizing has one rule; codegen mirrors it with the same
+/// `SizedBox` idiom.
+Widget applyNodeSize(CanvasNode node, Widget content) =>
+    applyNodeSizeValues(node.w, node.h, content);
+
+/// Tentative-size variant of [applyNodeSize]: [w]/[h] are the effective
+/// (in-gesture tentative ?? stored) dims, used while a resize drag is live.
+Widget applyNodeSizeValues(double? w, double? h, Widget content) {
+  if (w == null && h == null) return content;
+  return SizedBox(width: w, height: h, child: content);
+}
+
+/// Converts a drag [delta] from global (pointer) px to screen-local logical
+/// px for the current [zoom] (Track U2 handle math).
+///
+/// ZOOM LESSON, DELTA HALF (contrast the drop-offset rule kept on
+/// [ScreenSurface]: `globalToLocal` inverts the layout zoom for POSITIONS,
+/// so drops must NOT divide — but gesture DELTAS are raw pointer-space
+/// differences the framework never transforms, so they MUST be divided by
+/// [zoom] to land in screen space). Unit-tested below; non-positive zoom
+/// falls back to unscaled (never divide by zero).
+double resizeDeltaToLocal(double delta, double zoom) =>
+    zoom > 0 ? delta / zoom : delta;
+
+/// Clamps a dragged width into the sane UI range `[kMinNodeSize, maxWidth]`
+/// (Track U2). [maxWidth] is the live stage width; a degenerate max below
+/// the floor clamps to the floor itself. Heights use [clampResizeHeight].
+/// The store stays permissive (any positive finite loads); these clamps live
+/// at the gesture layer only.
+double clampResizeWidth(double value, double maxWidth) {
+  final hi = math.max(kMinNodeSize, maxWidth);
+  return value.clamp(kMinNodeSize, hi).toDouble();
+}
+
+/// Clamps a dragged height into `[kMinNodeSize, maxHeight]` (see
+/// [clampResizeWidth]). [maxHeight] is the fixed stage height.
+double clampResizeHeight(double value, double maxHeight) {
+  final hi = math.max(kMinNodeSize, maxHeight);
+  return value.clamp(kMinNodeSize, hi).toDouble();
+}
+
+/// Finder key for a Track U2 resize handle: [edge] is one of
+/// `'right'`/`'bottom'`/`'corner'` (used by resize-handle tests).
+ValueKey<String> resizeHandleKey(String nodeId, String edge) =>
+    ValueKey<String>('resize-$edge:$nodeId');
 
 /// Insertion index for [pointerMain] (pointer position along a container's
 /// main axis, in screen-local logical px) given the container's
@@ -437,6 +523,17 @@ class ScreenSurface extends StatefulWidget {
   /// [DesignCanvas.panMode].
   final bool panMode;
 
+  /// Commit for a finished Track U2 resize gesture: the selected node's
+  /// handles report concrete sizes here on drag end (a null dim stayed auto —
+  /// wire `(id, w, h) => store.setNodeSize(id, w: w, h: h)`).
+  ///
+  /// WIRING (for the coordinator — `DesignCanvas` is owned by another batch
+  /// and cannot pass this yet): add that one line at the
+  /// `DesignCanvas → ScreenSurface` construction site. Until then handles
+  /// render with live tentative feedback and no-op on release, while the
+  /// inspector W/H editors (which own the store) work end to end today.
+  final void Function(String nodeId, double? w, double? h)? onResizeNode;
+
   const ScreenSurface({
     super.key,
     required this.screen,
@@ -449,6 +546,7 @@ class ScreenSurface extends StatefulWidget {
     this.zoom = 1.0,
     this.dropPointer,
     this.panMode = false,
+    this.onResizeNode,
   });
 
   @override
@@ -460,6 +558,23 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   final Map<String, GlobalKey> _flowKeys = {};
 
   GlobalKey _flowKey(String id) => _flowKeys.putIfAbsent(id, () => GlobalKey());
+
+  /// In-progress resize gesture starts, keyed by node id (Track U2): the
+  /// concrete size the drag began from (stored size, else the measured render
+  /// size, else the floor) plus which axes have moved. Only touched axes
+  /// commit on release (see [_endResize]) — dragging the width handle of an
+  /// auto-height node must not pin its height. Present from pointer-down
+  /// until end/cancel; visuals only change once [_dragSizes] gains a
+  /// tentative value.
+  final Map<String, ({double w, double h, bool touchedW, bool touchedH})>
+      _resizeStarts = {};
+
+  /// Tentative sizes for the live resize gesture, keyed by node id.
+  /// Commit-on-release (ONE undo entry per gesture): drag updates only
+  /// `setState` this map for live feedback while the store stays untouched;
+  /// the single commit goes through [ScreenSurface.onResizeNode] on drag end.
+  /// Cleared on end/cancel and for nodes that vanish.
+  final Map<String, ({double w, double h})> _dragSizes = {};
 
   /// Pointer id holding the node-selection claim. Pointer-down dispatches
   /// deepest-first, so the first node [Listener] to claim a pointer wins and
@@ -481,6 +596,103 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
 
   void _releaseClaim(int pointer) {
     if (_selectionClaim == pointer) _selectionClaim = null;
+  }
+
+  /// Effective (rendered) width of [node]: the live tentative size while its
+  /// handle drags, else the stored size. Row cells ([_rowCell]) and chrome
+  /// ([_nodeChrome]/[_buildRow]) all read through here so the gesture preview
+  /// and the committed render agree.
+  double? _effW(CanvasNode node) => _dragSizes[node.id]?.w ?? node.w;
+
+  /// Effective (rendered) height of [node] (see [_effW]).
+  double? _effH(CanvasNode node) => _dragSizes[node.id]?.h ?? node.h;
+
+  /// Measured render size of [id]'s chrome, or null before first layout.
+  Size? _measuredSize(String id) {
+    final box = _flowKeys[id]?.currentContext?.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.size;
+  }
+
+  /// Records a resize-gesture start: resolves the concrete drag origin
+  /// (stored size, else the measured render size so auto nodes resize from
+  /// what the user sees, else the floor, clamped to the live stage). No
+  /// `setState` — visuals change only once movement produces a tentative.
+  void _beginResize(CanvasNode node) {
+    final measured = _measuredSize(node.id);
+    _resizeStarts[node.id] = (
+      w: clampResizeWidth(
+        node.w ?? measured?.width ?? kMinNodeSize,
+        _innerWidth,
+      ),
+      h: clampResizeHeight(
+        node.h ?? measured?.height ?? kMinNodeSize,
+        EditorMetrics.phoneInnerHeight,
+      ),
+      touchedW: false,
+      touchedH: false,
+    );
+  }
+
+  /// Applies one drag update in screen-local px (callers divide by [zoom]
+  /// via [resizeDeltaToLocal]): accumulates onto the tentative (or the start
+  /// on the first update) clamped to the live stage, then rebuilds for live
+  /// feedback. The store is untouched until [_endResize].
+  void _updateResize(
+    String nodeId,
+    double dxLocal,
+    double dyLocal, {
+    required bool horizontal,
+    required bool vertical,
+  }) {
+    final start = _resizeStarts[nodeId];
+    if (start == null) return;
+    final base = _dragSizes[nodeId] ?? (w: start.w, h: start.h);
+    setState(() {
+      _resizeStarts[nodeId] = (
+        w: start.w,
+        h: start.h,
+        touchedW: start.touchedW || horizontal,
+        touchedH: start.touchedH || vertical,
+      );
+      _dragSizes[nodeId] = (
+        w: horizontal
+            ? clampResizeWidth(base.w + dxLocal, _innerWidth)
+            : base.w,
+        h: vertical
+            ? clampResizeHeight(
+                base.h + dyLocal,
+                EditorMetrics.phoneInnerHeight,
+              )
+            : base.h,
+      );
+    });
+  }
+
+  /// Ends a resize gesture with a SINGLE commit (one undo entry): untouched
+  /// axes report as null (stayed auto/unchanged), and touched axes equal to
+  /// the stored size report as null too — so `setNodeSize` no-ops and a grab
+  /// without movement writes no history. A grab that DID move fixes the
+  /// touched dims at the dragged value even from auto (standard editor
+  /// behavior). Always clears the gesture state.
+  void _endResize(CanvasNode node) {
+    final start = _resizeStarts.remove(node.id);
+    final tentative = _dragSizes.remove(node.id);
+    setState(() {});
+    if (start == null || tentative == null) return;
+    widget.onResizeNode?.call(
+      node.id,
+      start.touchedW && tentative.w != node.w ? tentative.w : null,
+      start.touchedH && tentative.h != node.h ? tentative.h : null,
+    );
+  }
+
+  /// Cancels a resize gesture: tentative state is dropped, the store is
+  /// untouched, and the node snaps back to its stored size.
+  void _cancelResize(String nodeId) {
+    if (_dragSizes.remove(nodeId) != null || _resizeStarts.remove(nodeId) != null) {
+      setState(() {});
+    }
   }
 
   /// Inner stage width: the resolved per-screen device width.
@@ -723,6 +935,13 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     _flowKeys.removeWhere(
       (id, _) => !widget.nodes.any((node) => node.id == id),
     );
+    // Same hygiene for resize gestures (a node deleted mid-drag snaps shut).
+    _dragSizes.removeWhere(
+      (id, _) => !widget.nodes.any((node) => node.id == id),
+    );
+    _resizeStarts.removeWhere(
+      (id, _) => !widget.nodes.any((node) => node.id == id),
+    );
     final frame = PhoneFrame(
       screenColor: _screenBackground(context, colors, widget.screen),
       outerWidth: _innerWidth + EditorMetrics.phoneBezel * 2,
@@ -958,6 +1177,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// chrome; leaves with children get the fallback `Column([own,
   /// ...children])`; childless nodes return [_buildLeaf] untouched.
   ///
+  /// Track U2: cells ride [_rowCell] (live drag width, else [wrapRowChild]);
+  /// the row container honors the node's own `w`/`h`, and the selected row
+  /// gains resize handles via [_withHandles].
+  ///
   /// D3 drop preview: [ghost] threads through every level untouched (only the
   /// matching target splices it in). An empty container targeted by the drag
   /// routes to [_buildContainer] so the ghost still previews inside its
@@ -984,6 +1207,116 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     return _buildLeafFallback(node, colors, ancestors, kids, ghost: ghost);
   }
 
+  /// One row cell (Track U2): the live drag width wins while a handle drags,
+  /// else the [wrapRowChild] rule (fixed `w` → exact pixels, auto → equal
+  /// flex share). Keeps gesture preview and committed render on one path.
+  Widget _rowCell(CanvasNode kid, Widget built) {
+    final dragW = _dragSizes[kid.id]?.w;
+    if (dragW != null) return SizedBox(width: dragW, child: built);
+    return wrapRowChild(kid, built);
+  }
+
+  /// Overlays the Track U2 resize handles on the SELECTED node's chrome
+  /// (leaves, containers, and rows alike — callers pass their chrome box).
+  ///
+  /// Handles sit INSIDE the chrome edges (a `Stack` clips half-outside
+  /// handles, so half-outside placement is not cheap here): right-middle
+  /// (width), bottom-middle (height), and bottom-right corner (both). Only
+  /// the selected node gets handles; anything else returns [chrome]
+  /// untouched, so selection/tap behavior is unchanged for unselected nodes.
+  /// Cursor previews the axis ([SystemMouseCursors.resizeRight]/[resizeDown]/
+  /// [resizeDownRight]); the gesture math divides by [ScreenSurface.zoom]
+  /// (see [resizeDeltaToLocal]).
+  Widget _withHandles(CanvasNode node, Widget chrome) {
+    if (node.id != widget.selectedNodeId) return chrome;
+    return Stack(
+      children: [
+        chrome,
+        Positioned(
+          top: 0,
+          bottom: 0,
+          right: 0,
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: _resizeHandle(
+              node: node,
+              edge: 'right',
+              cursor: SystemMouseCursors.resizeRight,
+              horizontal: true,
+              vertical: false,
+            ),
+          ),
+        ),
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: 0,
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: _resizeHandle(
+              node: node,
+              edge: 'bottom',
+              cursor: SystemMouseCursors.resizeDown,
+              horizontal: false,
+              vertical: true,
+            ),
+          ),
+        ),
+        Positioned(
+          right: 0,
+          bottom: 0,
+          child: _resizeHandle(
+            node: node,
+            edge: 'corner',
+            cursor: SystemMouseCursors.resizeDownRight,
+            horizontal: true,
+            vertical: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// One 14px resize handle (Track U2): pan events drive [_updateResize] in
+  /// screen-local px; release commits once via [_endResize]. The pan
+  /// recognizer owns the gesture on move (content taps underneath are
+  /// suppressed mid-drag); a tap without movement re-selects the already
+  /// selected node, which is harmless.
+  Widget _resizeHandle({
+    required CanvasNode node,
+    required String edge,
+    required MouseCursor cursor,
+    required bool horizontal,
+    required bool vertical,
+  }) {
+    final colors = EditorTheme.of(context);
+    return MouseRegion(
+      cursor: cursor,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanStart: (_) => _beginResize(node),
+        onPanUpdate: (details) => _updateResize(
+          node.id,
+          resizeDeltaToLocal(details.delta.dx, widget.zoom),
+          resizeDeltaToLocal(details.delta.dy, widget.zoom),
+          horizontal: horizontal,
+          vertical: vertical,
+        ),
+        onPanEnd: (_) => _endResize(node),
+        onPanCancel: () => _cancelResize(node.id),
+        child: Container(
+          key: resizeHandleKey(node.id, edge),
+          width: _kHandleSize,
+          height: _kHandleSize,
+          decoration: BoxDecoration(
+            color: colors.toolbarActive,
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: colors.surface, width: 1),
+          ),
+        ),
+      ),
+    );
+  }
   /// One row container: full-width tap target (selects the row for gap
   /// editing) around a `Row` of its children (doc order, node `gap`
   /// separators) with W3 alignment (`mainAxis` null → start, `crossAxis`
@@ -1022,7 +1355,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     } else {
       final cells = <Widget>[
         for (final kid in kids)
-          wrapRowChild(
+          _rowCell(
             kid,
             _buildNodeWidget(kid, colors, next, ghost: ghost),
           ),
@@ -1054,23 +1387,29 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       }
       body = row;
     }
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => widget.onSelectNode?.call(node.id),
-      child: Container(
-        key: _flowKey(node.id),
-        width: double.infinity,
-        padding: const EdgeInsets.all(4),
-        decoration: node.id == widget.selectedNodeId
-            ? BoxDecoration(
-                border: Border.all(
-                  color: colors.toolbarActive,
-                  width: 2,
-                ),
-                borderRadius: BorderRadius.circular(8),
-              )
-            : null,
-        child: body,
+    return _withHandles(
+      node,
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => widget.onSelectNode?.call(node.id),
+        child: Container(
+          key: _flowKey(node.id),
+          // Track U2: a fixed `w` pins the container (cells share the pinned
+          // width); auto keeps full-bleed. A fixed `h` pins the body height;
+          // auto stays intrinsic.
+          width: _effW(node) ?? double.infinity,
+          padding: const EdgeInsets.all(4),
+          decoration: node.id == widget.selectedNodeId
+              ? BoxDecoration(
+                  border: Border.all(
+                    color: colors.toolbarActive,
+                    width: 2,
+                  ),
+                  borderRadius: BorderRadius.circular(8),
+                )
+              : null,
+          child: applyNodeSizeValues(null, _effH(node), body),
+        ),
       ),
     );
   }
@@ -1117,37 +1456,43 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       if (!widget.panMode) widget.onSelectNode?.call(node.id);
     }
 
-    return Listener(
-      behavior: HitTestBehavior.opaque,
-      onPointerDown: (event) => _claimSelect(node, event.pointer),
-      onPointerUp: (event) => _releaseClaim(event.pointer),
-      onPointerCancel: (event) => _releaseClaim(event.pointer),
-      child: GestureDetector(
-        onTap: select,
-        child: Container(
-          key: _flowKey(node.id),
-          padding: const EdgeInsets.all(4),
-          decoration: node.id == widget.selectedNodeId
-              ? BoxDecoration(
-                  border: Border.all(
-                    color: colors.toolbarActive,
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                )
-              : null,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: math.max(
-                _kMinNodeExtent,
-                _innerWidth - node.x,
+    return _withHandles(
+      node,
+      Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) => _claimSelect(node, event.pointer),
+        onPointerUp: (event) => _releaseClaim(event.pointer),
+        onPointerCancel: (event) => _releaseClaim(event.pointer),
+        child: GestureDetector(
+          onTap: select,
+          child: Container(
+            key: _flowKey(node.id),
+            padding: const EdgeInsets.all(4),
+            decoration: node.id == widget.selectedNodeId
+                ? BoxDecoration(
+                    border: Border.all(
+                      color: colors.toolbarActive,
+                      width: 2,
+                    ),
+                    borderRadius: BorderRadius.circular(8),
+                  )
+                : null,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: math.max(
+                  _kMinNodeExtent,
+                  _innerWidth - node.x,
+                ),
+                maxHeight: math.max(
+                  _kMinNodeExtent,
+                  EditorMetrics.phoneInnerHeight - node.y,
+                ),
               ),
-              maxHeight: math.max(
-                _kMinNodeExtent,
-                EditorMetrics.phoneInnerHeight - node.y,
-              ),
+              // Track U2: explicit sizes pin the content (inside the legacy
+              // max clamp, which keeps guarding far-edge drops); auto passes
+              // through untouched.
+              child: applyNodeSizeValues(_effW(node), _effH(node), content),
             ),
-            child: content,
           ),
         ),
       ),

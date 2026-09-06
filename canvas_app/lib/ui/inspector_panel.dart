@@ -83,6 +83,11 @@ final List<String> _kActionTransitions =
 /// mirrors the zoom readout role — see [EditorMetrics.zoomLabelWidth]).
 const double _kGapValueWidth = 48.0;
 
+/// Starter size applied when stepping a dimension that is currently auto
+/// (Track U2): half the 328 phone stage — big enough to see, small enough to
+/// stay inside every device. Documented so tests and users can rely on it.
+const double _kSizeFallback = 160.0;
+
 /// Display title for a spec [group] id (`content` → `Content`). Group ids
 /// stay lowercase in [PropSpec]; only the header paint capitalizes.
 String _groupTitle(String group) {
@@ -1411,6 +1416,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 ),
                 if (node != null) ...[
                   const SizedBox(height: EditorMetrics.panelInset),
+                  _sizeCard(node),
+                  const SizedBox(height: EditorMetrics.panelInset),
                   _actionCard(item),
                   const SizedBox(height: EditorMetrics.panelInset),
                   _stateCard(widget.store.doc),
@@ -1474,6 +1481,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
               _stateCard(widget.store.doc),
               if (node != null) ...[
                 const SizedBox(height: EditorMetrics.panelInset),
+                _sizeCard(node),
+                const SizedBox(height: EditorMetrics.panelInset),
                 _visibilityCard(node),
                 const SizedBox(height: EditorMetrics.panelInset),
                 _nestingCard(node),
@@ -1483,6 +1492,108 @@ class _InspectorPanelState extends State<InspectorPanel> {
           ),
         );
       },
+    );
+  }
+
+  /// Track U2 node-size card: one stepper row per dimension (W/H) writing
+  /// through the undoable `store.setNodeSize`. Shown for every selected node
+  /// (leaves and rows alike — rows additionally carry their container
+  /// editors in [_rowCard]).
+  Widget _sizeCard(CanvasNode node) {
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Size', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          _nodeSizeRow(
+            label: 'Width',
+            value: node.w,
+            max: kMaxNodeWidth,
+            keyPrefix: 'node-width',
+            onSet: (v) => widget.store.setNodeSize(node.id, w: v),
+            onClear: () => widget.store.setNodeSize(node.id, clearW: true),
+          ),
+          const SizedBox(height: _kInspectorGap),
+          _nodeSizeRow(
+            label: 'Height',
+            value: node.h,
+            max: kMaxNodeHeight,
+            keyPrefix: 'node-height',
+            onSet: (v) => widget.store.setNodeSize(node.id, h: v),
+            onClear: () => widget.store.setNodeSize(node.id, clearH: true),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// One dimension stepper (Track U2): icon steppers + numeric readout + a
+  /// clear-to-auto affordance. Null renders as `Auto`; stepping from auto
+  /// starts at [_kSizeFallback], then moves in 8px steps clamped to
+  /// `[kMinNodeSize, max]` (the same bounds the canvas drag handles enforce —
+  /// see `clampResizeWidth/Height` in `phone_frame.dart`). The `Auto` reset
+  /// button only renders while set (a true sparse delete via the `clear*`
+  /// path, mirroring the prop override reset).
+  ///
+  /// Icon (not text) stepper glyphs: the row gap stepper owns the bare
+  /// `+`/`−` texts (`inspector_row_test.dart` taps `find.text('+')`), so
+  /// text glyphs here would make that finder ambiguous.
+  Widget _nodeSizeRow({
+    required String label,
+    required double? value,
+    required double max,
+    required String keyPrefix,
+    required ValueChanged<double> onSet,
+    required VoidCallback onClear,
+  }) {
+    const step = 8.0;
+    final atMin = value != null && value <= kMinNodeSize;
+    final atMax = value != null && value >= max;
+    double stepped(double base, double delta) =>
+        (base + delta).clamp(kMinNodeSize, max).toDouble();
+    return Row(
+      children: [
+        Expanded(child: Text(label, style: EditorType.tileLabel)),
+        shadcn.OutlineButton(
+          key: ValueKey('$keyPrefix-dec'),
+          size: shadcn.ButtonSize.small,
+          onPressed: atMin
+              ? null
+              : () => onSet(
+                    value == null ? _kSizeFallback : stepped(value, -step),
+                  ),
+          child: const Icon(Icons.remove, size: 16),
+        ),
+        SizedBox(
+          width: _kGapValueWidth,
+          child: Text(
+            value == null ? 'Auto' : value.toInt().toString(),
+            key: ValueKey('$keyPrefix-value'),
+            textAlign: TextAlign.center,
+          ),
+        ),
+        shadcn.OutlineButton(
+          key: ValueKey('$keyPrefix-inc'),
+          size: shadcn.ButtonSize.small,
+          onPressed: atMax
+              ? null
+              : () => onSet(
+                    value == null ? _kSizeFallback : stepped(value, step),
+                  ),
+          child: const Icon(Icons.add, size: 16),
+        ),
+        if (value != null) ...[
+          const SizedBox(width: _kInspectorGap),
+          shadcn.OutlineButton(
+            key: ValueKey('$keyPrefix-auto'),
+            size: shadcn.ButtonSize.small,
+            onPressed: onClear,
+            child: const Text('Auto'),
+          ),
+        ],
+      ],
     );
   }
 
@@ -1579,6 +1690,24 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 placeholderLabel: 'Default (center)',
                 onChanged: (v) =>
                     widget.store.patchNode(node.id, crossAxis: v),
+              ),
+              const SizedBox(height: _kInspectorGap),
+              _nodeSizeRow(
+                label: 'Width',
+                value: node.w,
+                max: kMaxNodeWidth,
+                keyPrefix: 'node-width',
+                onSet: (v) => widget.store.setNodeSize(node.id, w: v),
+                onClear: () => widget.store.setNodeSize(node.id, clearW: true),
+              ),
+              const SizedBox(height: _kInspectorGap),
+              _nodeSizeRow(
+                label: 'Height',
+                value: node.h,
+                max: kMaxNodeHeight,
+                keyPrefix: 'node-height',
+                onSet: (v) => widget.store.setNodeSize(node.id, h: v),
+                onClear: () => widget.store.setNodeSize(node.id, clearH: true),
               ),
               if (children.isNotEmpty) ...[
                 const SizedBox(height: _kInspectorGap),

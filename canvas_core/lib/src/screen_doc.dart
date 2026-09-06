@@ -22,6 +22,23 @@ const double kFlowRowGapDefault = 8.0;
 /// app-side [Tier] enum mirrors these names in `canvas_app/lib/ui/responsive.dart`).
 const Set<String> kResponsiveTiers = {'mobile', 'tablet', 'desktop'};
 
+/// Minimum explicit node size in logical px (Track U2).
+///
+/// Drag handles and inspector steppers clamp to this floor: below it text
+/// overflows and hit targets go missing. The store itself stays permissive
+/// (any positive finite value loads) so hand-written JSON is never rejected;
+/// the UI re-clamps on the next drag.
+const double kMinNodeSize = 48.0;
+
+/// Maximum explicit node width in logical px (Track U2): the widest per-screen
+/// device stage (`desktop-wide`, 1440 — see `device_picker.dart`). Inspector
+/// steppers clamp here; drag handles clamp to the narrower live stage width.
+const double kMaxNodeWidth = 1440.0;
+
+/// Maximum explicit node height in logical px (Track U2): the fixed stage
+/// height shared by every per-screen device (see `EditorMetrics`).
+const double kMaxNodeHeight = 709.0;
+
 /// Migrates a legacy absolute-layout doc to flow layout.
 ///
 /// Pure function: root nodes (`parentId == null`, i.e. every node in a
@@ -307,6 +324,49 @@ class CanvasScreen {
 /// (e.g. `{'tablet': 'item-id'}`). Render-time filtering and inspector
 /// editing of these fields are app-side concerns (later batch); the model
 /// only stores, validates, and round-trips them.
+///
+/// Explicit node size (Track U2): `w`/`h` are fixed logical-px sizes, null =
+/// auto (today's behavior, backward compatible). SIZING SEMANTICS
+/// (auto/fixed × context — canvas, preview, and both codegen emitters share
+/// this table):
+///
+/// | w/h    | root/column leaf         | row child                    | row/container node          |
+/// |--------|------------------------------|------------------------------|-----------------------------|
+/// | auto   | intrinsic size, flow-stacked | EQUAL share of free space    | row: full width; container: |
+/// | (null) | (today's behavior)           | via tight flex (the U2 fix — | shrink-wraps content        |
+/// |        |                              | was loose `Flexible`, which  | (today's behavior)          |
+/// |        |                              | shrink-wrapped to ~45px)     |                             |
+/// | fixed  | exact px (`SizedBox`)        | `w`: exact px, flex ignored; | row: fixed width container; |
+/// |        |                              | `h`-only: flex cell + fixed  | `h`: fixed body height      |
+/// |        |                              | inner height                 |                             |
+///
+/// Overflow: fixed widths wider than the stage overflow VISIBLY (honest
+/// authoring signal, same Row in canvas and export). No scrolling (a
+/// scrollable Row gives unbounded width, which detonates tight flex and kit
+/// internals) and no clipping (clip hides content without silencing the
+/// overflow). Handles clamp drags to the live stage, so oversize only
+/// arrives via the inspector or hand-written JSON.
+///
+/// Heights: rows default to `center` (today's behavior); a fixed `h` centers
+/// per the row's `crossAxis` (under `stretch` the tight row height wins, per
+/// standard Flutter constraints).
+///
+/// RESPONSIVE DECISION (v1: fixed sizes + `hiddenOn` only; per-tier sizes
+/// explicitly DEFERRED): node-level per-tier overrides would ride the
+/// existing `breakpointValues` tier maps, but EVERY merge site spreads those
+/// maps into ITEM props (`phone_frame._nodeItems`, `preview_player`,
+/// both codegen `_withProps`) — reserved `w`/`h` keys would leak into
+/// component props. Filtering them needs `preview_player.dart`, which is
+/// owned by another batch, so v1 keeps sizes tier-independent and `w`/`h`
+/// keys inside `breakpointValues` stay inert item-prop overrides. A fixed
+/// size applies on every tier the node is visible on.
+///
+/// COPY-SITE CONTRACT: `w`/`h` ride every `CanvasNode` reconstruction or an
+/// unrelated edit silently drops the size. Current carriers: every mutator
+/// in `canvas_store.dart`, both codegen `_withProps` copies, and group/ungroup
+/// helpers. KNOWN GAP (not this batch): `selection_model._withParentId`
+/// (ungroup path) rebuilds without `w`/`h` — ungrouping a sized node resets
+/// it to auto.
 class CanvasNode {
   final String id;
   final String screenId;
@@ -320,6 +380,15 @@ class CanvasNode {
   final String? crossAxis;
   final String? expand;
   final int? flex;
+
+  /// Fixed logical-px width, or null for auto (see the sizing table on
+  /// [CanvasNode]). Missing JSON keys parse to null; [toJson] omits nulls so
+  /// unsized docs round-trip byte-identically.
+  final double? w;
+
+  /// Fixed logical-px height, or null for auto (see the sizing table on
+  /// [CanvasNode]). Missing JSON keys parse to null; [toJson] omits nulls.
+  final double? h;
 
   /// Tiers this node is hidden on (subset of [kResponsiveTiers]).
   ///
@@ -353,6 +422,8 @@ class CanvasNode {
     this.crossAxis,
     this.expand,
     this.flex,
+    this.w,
+    this.h,
     this.hiddenOn = const {},
     this.breakpointValues = const {},
     this.slots = const {},
@@ -387,6 +458,9 @@ class CanvasNode {
       crossAxis: json['crossAxis'] as String?,
       expand: json['expand'] as String?,
       flex: (json['flex'] as num?)?.toInt(),
+      // Backward compatible + int-tolerant (same JSON-doubles trap as `gap`).
+      w: (json['w'] as num?)?.toDouble(),
+      h: (json['h'] as num?)?.toDouble(),
       hiddenOn: hiddenRaw.toSet(),
       breakpointValues: {
         for (final entry in breakpointRaw.entries)
@@ -413,6 +487,10 @@ class CanvasNode {
         'crossAxis': crossAxis,
         'expand': expand,
         'flex': flex,
+        // Omit-when-null (unlike the always-written keys above): unsized
+        // docs keep byte-identical JSON.
+        if (w != null) 'w': w,
+        if (h != null) 'h': h,
         'hiddenOn': (hiddenOn.toList()..sort()),
         'breakpointValues': {
           for (final entry in breakpointValues.entries)

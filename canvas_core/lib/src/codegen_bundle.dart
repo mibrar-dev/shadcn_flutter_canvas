@@ -3210,6 +3210,11 @@ CanvasNode _withBundleProps(
       crossAxis: node.crossAxis,
       expand: node.expand,
       flex: node.flex,
+      // Track U2: sizes are node-level, never item props — tier branches
+      // carry them so responsive + sized nodes keep their size per branch
+      // (mirrors `_withProps` in `codegen_single.dart`).
+      w: node.w,
+      h: node.h,
       hiddenOn: node.hiddenOn,
       breakpointValues: node.breakpointValues,
       slots: node.slots,
@@ -3247,6 +3252,12 @@ void _writeBundleNode(
         ..add('${indent}const SizedBox.shrink(),');
       return;
     }
+    // Track U2: size wraps the whole subtree (responsive conditional inside
+    // when responsive — see [_bundleSizedInnerExpr]).
+    if (_isBundleSized(node)) {
+      _writeBundleSizedNode(rows, doc, node, routes, ids, indent, visited);
+      return;
+    }
     if (!_isBundleResponsive(node)) {
       _writeBundleCore(rows, doc, node, routes, ids, indent, visited);
       return;
@@ -3263,6 +3274,127 @@ void _writeBundleNode(
   } finally {
     visited.remove(node.id);
   }
+}
+
+/// Whether [node] carries an explicit size (Track U2): gates ALL size
+/// emission, so unsized docs keep byte-identical output (mirrors `_isSized`
+/// in `codegen_single.dart`).
+bool _isBundleSized(CanvasNode node) => node.w != null || node.h != null;
+
+/// Single-expression content for a sized node (Track U2 — [node.id] is
+/// already in [visited]): the responsive `LayoutBuilder` capture when the
+/// node is responsive (size stays OUTSIDE the tier conditional, like the flex
+/// wrappers), else [_bundleBranchExpr] (already one expression for every
+/// shape — childless, row, container slot, below-fallback — tap wraps
+/// inside; per-item comments are emitted by the caller, mirroring
+/// [_writeBundleBranch]).
+String _bundleSizedInnerExpr(
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  if (_isBundleResponsive(node)) {
+    final tmp = <String>[];
+    _writeBundleResponsiveNode(tmp, doc, node, routes, ids, '', visited);
+    return _stripBundleTrailingComma(tmp.join('\n'));
+  }
+  return _bundleBranchExpr(doc, node, node.items, routes, ids, visited);
+}
+
+/// Writes `SizedBox([width][height]child: <content>)` for the single
+/// [content] expression (unindented, no trailing comma) at [indent] — the
+/// canvas `applyNodeSize` idiom in generated code.
+void _writeBundleSizedBox(
+  List<String> rows,
+  double? w,
+  double? h,
+  String content,
+  String indent,
+) {
+  final lines = [
+    for (final line in content.split('\n')) if (line.isNotEmpty) line,
+  ];
+  rows.add('${indent}SizedBox(');
+  if (w != null) rows.add('$indent  width: ${_bundleFlowNum(w)},');
+  if (h != null) rows.add('$indent  height: ${_bundleFlowNum(h)},');
+  if (lines.isEmpty) {
+    rows.add('${indent}  child: SizedBox.shrink(),');
+  } else {
+    rows.add('$indent  child: ${lines.first}');
+    for (final line in lines.skip(1)) {
+      rows.add('$indent  $line');
+    }
+  }
+  rows.add('$indent),');
+}
+
+/// Writes a sized node ([node.id] is already in [visited]): per-item doc
+/// comments (this file's convention — see [_writeBundleBranch]; responsive
+/// nodes carry theirs inside the tier branches instead) plus the `SizedBox`
+/// around the whole subtree expression.
+void _writeBundleSizedNode(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final responsive = _isBundleResponsive(node);
+  if (!responsive) {
+    for (final item in node.items) {
+      rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+    }
+  }
+  _writeBundleSizedBox(
+    rows,
+    node.w,
+    node.h,
+    _bundleSizedInnerExpr(doc, node, routes, ids, visited),
+    indent,
+  );
+}
+
+/// Writes a sized row child ([child.id] is already in [visited]): fixed `w`
+/// beats flex (documented precedence on [CanvasNode] — mirrors
+/// `codegen_single.dart`); `h`-only keeps the flex role outside the fixed
+/// height; per-item comments follow this file's convention for
+/// non-responsive content.
+void _writeBundleSizedRowChild(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode child,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final responsive = _isBundleResponsive(child);
+  if (!responsive) {
+    for (final item in child.items) {
+      rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+    }
+  }
+  final content = _bundleSizedInnerExpr(doc, child, routes, ids, visited);
+  final expand = child.expand;
+  if (child.w != null || (expand != 'expanded' && expand != 'flex')) {
+    _writeBundleSizedBox(rows, child.w, child.h, content, indent);
+    return;
+  }
+  final flex = child.flex ?? 1;
+  final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+  rows
+    ..add('${indent}$wrapper(')
+    ..add('$indent  flex: $flex,');
+  // Indent the SizedBox block one level: re-emit through a temp list so the
+  // wrapper close below aligns (the helper writes at its own indent).
+  final inner = <String>[];
+  _writeBundleSizedBox(inner, null, child.h, content, '$indent  ');
+  rows.addAll(inner);
+  rows.add('$indent),');
 }
 
 /// Non-responsive core for [_writeBundleNode] ([node.id] is already in
@@ -3647,6 +3779,11 @@ void _writeBundleRow(
 /// [_writeBundleResponsiveRowChild] (flex wrapper outside the tier
 /// conditional, mirroring `codegen_single.dart`); everything else uses the
 /// non-responsive core below.
+///
+/// Track U2: sized children take the sized path FIRST (fixed `w` beats flex;
+/// `h`-only keeps the flex role outside the fixed height — mirrors
+/// `codegen_single.dart`). Unsized children keep the historical paths
+/// byte-identically.
 void _writeBundleRowChild(
   List<String> rows,
   ScreenDoc doc,
@@ -3656,19 +3793,33 @@ void _writeBundleRowChild(
   String indent,
   Set<String> visited,
 ) {
-  if (_isBundleResponsive(child)) {
-    _writeBundleResponsiveRowChild(
-      rows,
-      doc,
-      child,
-      routes,
-      ids,
-      indent,
-      visited,
-    );
+  if (child.w == null && child.h == null) {
+    if (_isBundleResponsive(child)) {
+      _writeBundleResponsiveRowChild(
+        rows,
+        doc,
+        child,
+        routes,
+        ids,
+        indent,
+        visited,
+      );
+      return;
+    }
+    _writeBundleRowChildCore(rows, doc, child, routes, ids, indent, visited);
     return;
   }
-  _writeBundleRowChildCore(rows, doc, child, routes, ids, indent, visited);
+  // Sized row child: own cycle guard (this dispatcher never adds; the content
+  // builders below assume [child.id] is already a member).
+  if (!visited.add(child.id)) {
+    rows.add('$indent// ${_bundleCycleNote(child.id)}');
+    return;
+  }
+  try {
+    _writeBundleSizedRowChild(rows, doc, child, routes, ids, indent, visited);
+  } finally {
+    visited.remove(child.id);
+  }
 }
 
 /// Writes one row child — non-responsive core. Nested rows and children WITH

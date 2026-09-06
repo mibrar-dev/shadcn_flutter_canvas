@@ -4618,6 +4618,66 @@ String _crossAxisName(String? value) {
 bool _isResponsive(CanvasNode node) =>
     _hiddenTiers(node).isNotEmpty || _overrideTiers(node).isNotEmpty;
 
+/// Whether [node] carries an explicit size (Track U2): gates ALL size
+/// emission, so unsized docs keep byte-identical output.
+bool _isSized(CanvasNode node) => node.w != null || node.h != null;
+
+/// Single-expression content for a sized node (Track U2 — [node.id] is
+/// already in [visited]): the responsive `LayoutBuilder` capture when the
+/// node is responsive (size stays OUTSIDE the tier conditional — the layout
+/// role is tier-independent, like the flex wrappers), else
+/// [_nodeContentExpr] (already one expression for every shape: single item,
+/// multi-item `Column`, row, container slot, below-fallback — tap wraps
+/// inside, comments below).
+String _sizedInnerExpr(ScreenDoc doc, CanvasNode node, Set<String> visited) {
+  if (_isResponsive(node)) {
+    final buf = StringBuffer();
+    _writeResponsiveFlowChild(buf, doc, node, '', visited);
+    return _stripTrailingComma(buf.toString());
+  }
+  return _nodeContentExpr(doc, node, visited);
+}
+
+/// Writes `SizedBox([width][height]child: <content>)` for the single
+/// [content] expression (unindented, no trailing comma) at [indent] —
+/// the canvas `applyNodeSize` idiom in generated code.
+void _writeSizedBox(
+  StringBuffer out,
+  double? w,
+  double? h,
+  String content,
+  String indent,
+) {
+  final lines = [
+    for (final line in content.split('\n')) if (line.isNotEmpty) line,
+  ];
+  out.writeln('${indent}SizedBox(');
+  if (w != null) out.writeln('$indent  width: ${_flowNum(w)},');
+  if (h != null) out.writeln('$indent  height: ${_flowNum(h)},');
+  if (lines.isEmpty) {
+    out.writeln('${indent}  child: SizedBox.shrink(),');
+  } else {
+    out.writeln('$indent  child: ${lines.first}');
+    for (final line in lines.skip(1)) {
+      out.writeln('$indent  $line');
+    }
+  }
+  out.writeln('$indent),');
+}
+
+/// Tap comment for a childless single-item node with an action, or null
+/// (shared by [_writeBranch] and the Track U2 sized path so comments stay
+/// consistent: nodes with children carry theirs inside the capture).
+String? _tapCommentFor(ScreenDoc doc, CanvasNode node) {
+  if (!node.isRow &&
+      node.items.length == 1 &&
+      node.items.single.action != null &&
+      childrenOf(doc, node.id).isEmpty) {
+    return _tapCommentLine(node.items.single);
+  }
+  return null;
+}
+
 /// Known `hiddenOn` tiers, sorted (deterministic conditions/comments).
 List<String> _hiddenTiers(CanvasNode node) =>
     (node.hiddenOn.where(kResponsiveTiers.contains).toList()..sort());
@@ -4645,6 +4705,10 @@ CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
       crossAxis: node.crossAxis,
       expand: node.expand,
       flex: node.flex,
+      // Track U2: sizes are node-level, never item props — tier branches
+      // carry them so responsive + sized nodes keep their size per branch.
+      w: node.w,
+      h: node.h,
       hiddenOn: node.hiddenOn,
       breakpointValues: node.breakpointValues,
       slots: node.slots,
@@ -4869,6 +4933,20 @@ void _writeFlowChild(
     return;
   }
   try {
+    // Track U2: size wraps the whole subtree (responsive conditional inside
+    // when responsive — see [_sizedInnerExpr]).
+    if (_isSized(node)) {
+      final comment = _tapCommentFor(doc, node);
+      if (comment != null) out.writeln('$indent$comment');
+      _writeSizedBox(
+        out,
+        node.w,
+        node.h,
+        _sizedInnerExpr(doc, node, visited),
+        indent,
+      );
+      return;
+    }
     if (_isResponsive(node)) {
       _writeResponsiveFlowChild(out, doc, node, indent, visited);
       return;
@@ -4961,6 +5039,11 @@ void _writeFlowChildCore(
 /// Responsive children route to [_writeResponsiveRowChild]; everything else
 /// uses the non-responsive core below, unchanged.
 ///
+/// Track U2: sized children take the sized path FIRST (fixed `w` beats flex —
+/// the documented precedence on [CanvasNode]; `h`-only keeps the flex role
+/// outside the fixed height, mirroring the canvas cell). Unsized children
+/// keep the historical paths byte-identically.
+///
 /// Track C3: non-row children WITH children recurse through [_writeFlowChild]
 /// (container slot splice / below-fallback / nested rows at any depth, with
 /// the flex wrapper outside the whole subtree); childless children keep the
@@ -4972,11 +5055,40 @@ void _writeRowChild(
   String indent,
   Set<String> visited,
 ) {
-  if (_isResponsive(child)) {
-    _writeResponsiveRowChild(out, doc, child, indent, visited);
+  if (child.w == null && child.h == null) {
+    if (_isResponsive(child)) {
+      _writeResponsiveRowChild(out, doc, child, indent, visited);
+      return;
+    }
+    _writeRowChildCore(out, doc, child, indent, visited);
     return;
   }
-  _writeRowChildCore(out, doc, child, indent, visited);
+  // Sized row child: own cycle guard (this dispatcher never adds; the content
+  // builders below assume [child.id] is already a member — see
+  // [_writeFlowChild]).
+  if (!visited.add(child.id)) {
+    out.writeln('$indent// ${_cycleNote(child.id)}');
+    return;
+  }
+  try {
+    final comment = _tapCommentFor(doc, child);
+    if (comment != null) out.writeln('$indent$comment');
+    final content = _sizedInnerExpr(doc, child, visited);
+    final expand = child.expand;
+    if (child.w != null || (expand != 'expanded' && expand != 'flex')) {
+      _writeSizedBox(out, child.w, child.h, content, indent);
+      return;
+    }
+    final flex = child.flex ?? 1;
+    final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+    out
+      ..writeln('$indent$wrapper(')
+      ..writeln('$indent  flex: $flex,');
+    _writeSizedBox(out, null, child.h, content, '$indent  ');
+    out.writeln('$indent),');
+  } finally {
+    visited.remove(child.id);
+  }
 }
 
 /// Writes one row child — non-responsive core (see [_writeRowChild] for the

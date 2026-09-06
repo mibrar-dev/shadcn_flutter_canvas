@@ -59,7 +59,7 @@ import 'package:http/http.dart' as http;
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/state_scope.dart';
 import 'package:canvas_app/ui/phone_frame.dart'
-    show rowCrossAxis, rowMainAxis, wrapRowChild;
+    show applyNodeSize, rowCrossAxis, rowMainAxis, wrapRowChild;
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
@@ -580,8 +580,21 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// Recursive preview node builder (see [_stageContent]). Every level
   /// builds its items through [_previewItem] (per-level breakpoint merge via
   /// [visibleItems], per-item tap actions), so nested actions navigate and
-  /// nested overrides apply exactly like roots.
+  /// nested overrides apply exactly like roots. Node w/h pin via
+  /// [applyNodeSizeValues] (same helper as the editor canvas).
   Widget _buildPreviewNode(
+    CanvasNode node,
+    String tierName,
+    double stageWidth,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) =>
+      applyNodeSize(
+        node,
+        _buildPreviewNodeInner(node, tierName, stageWidth, hidden, ancestors),
+      );
+
+  Widget _buildPreviewNodeInner(
     CanvasNode node,
     String tierName,
     double stageWidth,
