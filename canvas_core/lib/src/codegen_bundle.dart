@@ -40,6 +40,14 @@
 /// tier-conditional idiom as `codegen_single.dart`; tap actions navigate
 /// with `Navigator.pushNamed` to the target screen's route (unknown `to`
 /// ids emit a comment and no navigation, never a crash).
+///
+/// Track H2 (screen wiring): each screen file imports the barrel of every
+/// catalog kind it renders (plus the cross-kind extras in
+/// [_screenExtraKinds] and the non-kind files in [_screenExtraTemplates]),
+/// resolved via [_barrelFile]. Import clashes disambiguate without private
+/// prefixes: Flutter-SDK names hide on the Flutter import, the `menu`
+/// barrel hides its shadowed names (mirroring the kit's own global barrel),
+/// and the `tabs` barrel imports `as tabs` with qualified call sites.
 library;
 
 import 'dart:convert';
@@ -398,7 +406,9 @@ const _dartAsync = 'dart:' 'async'; // split: same trick for the validator helpe
 /// harmless (every name material provides is used) and deterministic.
 /// `card_image`/`carousel` art is static (const color + text label, no
 /// `Theme`/`Icons`) precisely to stay widgets-only; see their builders.
-const _bundleNeedsMaterial = {'basic', 'toast', 'feature_carousel'};
+/// `popup` needs material for the catalog-mirroring `const Divider(height: 1)`
+/// in its body (Flutter's `Divider` lives in material, not widgets).
+const _bundleNeedsMaterial = {'basic', 'toast', 'feature_carousel', 'popup'};
 
 /// Real kit entry file per kind, relative to the kind's install prefix.
 ///
@@ -411,9 +421,9 @@ const _bundleNeedsMaterial = {'basic', 'toast', 'feature_carousel'};
 /// * `hsl` ships `hsl_color_slider.dart` (no `hsl.dart`).
 /// * `hsv` ships `hsv_color_slider.dart` (no `hsv.dart`).
 /// * `tab_list` ships NO top-level barrel — its only importable library root
-///   is `_impl/core/tab_list.dart` (a library with `part` directives whose
-///   `TabList(index:, onChanged:, children: [TabChild...])` shape the bundle
-///   body mirrors).
+///   is `_impl/core/tab_list.dart` (kept wired via the header comment for
+///   hand use; emitted tab-list bodies render the `tabs` barrel's `TabList`
+///   family instead, mirroring the canvas catalog — see [_bundleTabList]).
 /// Re-verify this map against a newer kit on upgrade (the bundle test pins
 /// every emitted barrel path against the checked-in list derived here).
 const _barrelFile = <String, String>{
@@ -421,6 +431,144 @@ const _barrelFile = <String, String>{
   'hsv': 'hsv_color_slider.dart',
   'tab_list': '_impl/core/tab_list.dart',
 };
+
+/// Track H2 (screen wiring): kinds whose screen bodies are `Text`
+/// placeholders (no catalog builder in [_bundleBody]) need no barrel import —
+/// the screen references no kit names for them. Every other known kind has a
+/// real body and gets a barrel import in screens that use it.
+const _bundlePlaceholderKinds = {
+  'chip',
+  'alert',
+  'circular_progress_indicator',
+  'linear_progress_indicator',
+  'triple_dots',
+  'dot_indicator',
+  'empty_state',
+  'code_snippet',
+  'number_ticker',
+  'text_area',
+};
+
+/// Track H2: extra kind barrels a screen body references beyond its own
+/// kind's barrel (verified per builder against the pinned kit checkout —
+/// kit barrels import but never re-export each other, so e.g. a `card`
+/// footer renders `PrimaryButton` which only the `button` barrel provides).
+/// Screens import these alongside the used kinds'; [buildCleanBundle] also
+/// `requireKind`s them so the barrels ship (never a dangling import).
+/// `menu` bodies render the *popup* barrel's `MenuPopup` (mirroring the
+/// canvas catalog, which reads it off the kit's global barrel where the
+/// menu barrel's own `MenuPopup` is hidden); `tab_list` renders the
+/// tab-container barrel's `TabChild` (its own barrel only declares
+/// `TabList`); `command` renders the popup barrel's `MenuPopup` the same way.
+const _screenExtraKinds = <String, List<String>>{
+  'card': ['button'],
+  'dialog': ['button'],
+  'tooltip': ['button'],
+  'alert_dialog': ['button'],
+  'popover': ['button', 'dialog'],
+  'menu': ['popup'],
+  'menubar': ['menu'],
+  'dropdown_menu': ['menu'],
+  'context_menu': ['button', 'menu'],
+  'hover_card': ['button', 'card'],
+  'command': ['popup'],
+  'swiper': ['drawer', 'outlined_container'],
+  'carousel': ['dot_indicator'],
+  'tab_pane': ['tab_container'],
+  'form': ['button'],
+  'validated': ['form'],
+  'color_picker': ['history'],
+  'color_input': ['history'],
+};
+
+/// Track H2: non-kind library files a screen body references. `TextField`
+/// lives in the `text_field` component library (no canvas kind, hence no
+/// `_KindSpec` — the `input` kind barrel imports it but never re-exports
+/// it); `ColorDerivative` lives in the `utility/color` library (imported the
+/// same way by the color barrels). Screens import these files directly;
+/// [buildCleanBundle] seeds them for emission (with manifest entries) when
+/// the source map carries them, so the imports never dangle.
+const _screenExtraTemplates = <String, String>{
+  'input': '{installPath}/components/form/text_field/text_field.dart',
+  'command': '{installPath}/components/form/text_field/text_field.dart',
+  'form': '{installPath}/components/form/text_field/text_field.dart',
+  'form_field': '{installPath}/components/form/text_field/text_field.dart',
+  'validated': '{installPath}/components/form/text_field/text_field.dart',
+  'color_picker': '{installPath}/components/utility/color/color.dart',
+  'color_input': '{installPath}/components/utility/color/color.dart',
+};
+
+/// Destination paths for [_screenExtraTemplates] values (via
+/// [_resolveDestination]), kept here so screens and the emission seed share
+/// one literal per file.
+String _screenExtraDest(String template) => _resolveDestination(template);
+
+/// Track H2: Flutter-SDK names to `hide` on the screen's Flutter import, per
+/// imported kind barrel. The kit reuses several Flutter names for its own
+/// widgets (`Table`, `Form`, `Tooltip`, …); Dart reports the use as
+/// ambiguous unless the Flutter one is hidden, and hiding keeps every
+/// kit call site bare and readable (mirroring how the kit's own
+/// `validated.dart` does `import 'package:flutter/widgets.dart' hide Form`).
+/// Only names the screen's own barrels provide are hidden — e.g. `Divider`
+/// is hidden only when the kit `divider` barrel is imported, because popup
+/// bodies intentionally render Flutter's `Divider`. The tables split by
+/// which Flutter library exports the hidden names: hiding a name the
+/// imported library never exported warns (`undefined_hidden_name`), so
+/// material-only names hide only on material imports. `TextField`
+/// (material) hides whenever the supplemental text-field file is imported
+/// on a material screen; `RadioGroup` hides always — Flutter 3.47 ships its
+/// own widgets-level `RadioGroup`.
+const _screenFlutterHideWidgets = <String, List<String>>{
+  'table': ['Table', 'TableCell', 'TableRow'],
+  'form': ['Form', 'FormField'],
+  'radio_group': ['RadioGroup'],
+};
+
+/// Material-only half of the Track H2 hide table (see
+/// [_screenFlutterHideWidgets]): applied only when the screen imports
+/// `package:flutter/material.dart`.
+const _screenFlutterHideMaterial = <String, List<String>>{
+  'selectable': ['SelectableText'],
+  'scrollbar': ['Scrollbar'],
+  'tooltip': ['Tooltip'],
+  'alert_dialog': ['AlertDialog'],
+  'stepper': ['Step', 'Stepper'],
+  'scaffold': ['AppBar', 'Scaffold'],
+  'switch': ['Switch'],
+  'slider': ['Slider'],
+  'checkbox': ['Checkbox'],
+  'divider': ['Divider'],
+  'badge': ['Badge'],
+  'card': ['Card'],
+  'dropdown_menu': ['DropdownMenu'],
+};
+
+/// Track H2 clash convention (documented once, applied per screen):
+/// * Kit-vs-Flutter clashes (`Tooltip`, `AlertDialog`, `Table`/`TableRow`/
+///   `TableCell`, `Form`/`FormField`, `SelectableText`, `Scrollbar`, `Step`/
+///   `Stepper`, `Scaffold`/`AppBar`, `Switch`, `Slider`, `Checkbox`,
+///   `Divider`, `Badge`, `Card`, `DropdownMenu`, `TextField`): `hide` the
+///   Flutter names on the screen's single Flutter import (see
+///   [_screenFlutterHide]) — call sites stay bare (`Tooltip(`, `Table(`).
+/// * Kit-vs-kit `MenuPopup`/`Menubar` (the `menu` barrel declares its own
+///   alongside the `popup`/`menubar` barrels'): `hide` them on the `menu`
+///   import — exactly the kit global barrel's own hide list — and import
+///   the `popup` barrel for the catalog-mirroring `MenuPopup`.
+/// * Kit-vs-kit tab family (the `tabs` barrel re-declares `TabItem`,
+///   `TabList`, `TabPane`, … alongside their home barrels): import the
+///   `tabs` barrel prefixed `as tabs` and qualify its two body names
+///   (`tabs.Tabs(`, `tabs.TabItem(`) — the canvas catalog's own convention
+///   (`component_catalog.dart` imports the same barrel `as tabs`).
+/// Private-prefix imports (`as _tooltip`) are deliberately NOT used: a
+/// leading-underscore prefix marks the import private to nowhere and reads
+/// worse than either combinator above.
+const _screenMenuHide = [
+  'Menubar',
+  'MenubarState',
+  'MenubarTheme',
+  'MenuPopup',
+  'MenuPopupTheme',
+];
 
 /// Builds the clean-folders bundle for [doc].
 BundleManifest buildCleanBundle(
@@ -451,6 +599,23 @@ BundleManifest buildCleanBundle(
       }
     }
   }
+  // Track H2 screen-wiring closure: screens import the barrels in
+  // [_screenExtraKinds] beyond the item kinds, so those barrels must ship
+  // (requireKind pulls their dependsOn transitively, same policy as items).
+  final screenExtraKinds = <String>{};
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      if (_kinds[item.kind] == null ||
+          _bundlePlaceholderKinds.contains(item.kind)) {
+        continue;
+      }
+      for (final extra in _screenExtraKinds[item.kind] ?? const <String>[]) {
+        if (screenExtraKinds.add(extra)) {
+          requireKind(extra, "screen wiring for '${item.kind}'");
+        }
+      }
+    }
+  }
   // Component bodies + manifest files[] (registry source -> resolved dest).
   final bodies = <String, String>{};
   final manifestFiles = <Map<String, String>>[];
@@ -469,6 +634,32 @@ BundleManifest buildCleanBundle(
       manifestFiles.add(
         {'source': _registrySource(template), 'destination': dest},
       );
+    }
+  }
+  // Track H2 supplemental seed: the non-kind library files screens import
+  // ([_screenExtraTemplates]) are not under any kind prefix, so the loop
+  // above never emits them — seed them here (with manifest entries) when a
+  // used catalog kind needs them. Missing templates (minimal test stubs)
+  // are skipped silently; the relative-URI fixpoint below then pulls
+  // whatever THEY relatively reference, exactly like kind bodies.
+  final supplemental = <String>{};
+  for (final node in doc.nodes) {
+    for (final item in node.items) {
+      final template = _screenExtraTemplates[item.kind];
+      if (template != null &&
+          kinds.contains(item.kind) &&
+          supplemental.add(template)) {
+        if (emittedTemplates.contains(template)) continue;
+        final content = sourcesByDestination[template];
+        if (content == null) continue;
+        final dest = _resolveDestination(template);
+        if (bodies.containsKey(dest)) continue;
+        bodies[dest] = content;
+        emittedTemplates.add(template);
+        manifestFiles.add(
+          {'source': _registrySource(template), 'destination': dest},
+        );
+      }
     }
   }
   // Track G2 closure fixpoint: every relative `import`/`export`/`part`/
@@ -683,6 +874,60 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   final needsServices = screenKinds.contains('keyboard_shortcut');
   final needsValidator = screenKinds.contains('validated');
   final flutterImport = needsMaterial ? _flutterMaterial : _flutterWidgets;
+  // Track H2 barrel imports: one relative import per used catalog kind
+  // (plus [_screenExtraKinds] extras and [_screenExtraTemplates] files),
+  // resolved via [_barrelFile] — the same entry files the header comments
+  // list. Clash disambiguation follows the convention documented above
+  // [_screenMenuHide]: Flutter names hide on the Flutter import, `menu`
+  // hides its shadowed names, `tabs` imports prefixed. Placeholder kinds
+  // reference no kit names, so they contribute no imports (their header
+  // comment still documents the shipped barrel for hand wiring).
+  final catalogUsed = {
+    for (final k in usedKinds)
+      if (!_bundlePlaceholderKinds.contains(k)) k,
+  };
+  final importKinds = {
+    ...catalogUsed,
+    for (final k in catalogUsed) ...(_screenExtraKinds[k] ?? const <String>[]),
+  }.toList()
+    ..sort();
+  final importFiles = {
+    for (final k in catalogUsed)
+      if (_screenExtraTemplates[k] != null)
+        _screenExtraDest(_screenExtraTemplates[k]!),
+  }.toList()
+    ..sort();
+  final hideNames = {
+    for (final k in importKinds)
+      ...(_screenFlutterHideWidgets[k] ?? const <String>[]),
+    if (needsMaterial)
+      for (final k in importKinds)
+        ...(_screenFlutterHideMaterial[k] ?? const <String>[]),
+    // The supplemental text-field file declares material's `TextField`
+    // (hidden only on material screens — widgets exports no such name and
+    // hiding it there would warn).
+    if (needsMaterial &&
+        importFiles.any((f) => f.endsWith('/text_field/text_field.dart')))
+      'TextField',
+  }.toList()
+    ..sort();
+  final flutterLine = hideNames.isEmpty
+      ? "import '$flutterImport';"
+      : "import '$flutterImport' hide ${hideNames.join(', ')};";
+  final kitImports = StringBuffer();
+  for (final k in importKinds) {
+    final uri = '../${_barrel(k).substring('lib/ui/'.length)}';
+    if (k == 'tabs') {
+      kitImports.writeln("import '$uri' as tabs;");
+    } else if (k == 'menu') {
+      kitImports.writeln("import '$uri' hide ${_screenMenuHide.join(', ')};");
+    } else {
+      kitImports.writeln("import '$uri';");
+    }
+  }
+  for (final f in importFiles) {
+    kitImports.writeln("import '../${f.substring('lib/ui/'.length)}';");
+  }
   final extraImports = StringBuffer();
   if (needsServices) extraImports.writeln("import '$_flutterServices';");
   if (needsValidator) extraImports.writeln("import '$_dartAsync';");
@@ -690,12 +935,18 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
     if (needsServices) '`package:flutter/services.dart` for keyboard shortcuts',
     if (needsValidator) '`dart:async` for form validators',
   ].join(' and ');
+  // Extra barrel imports are kind-based, not prop-based (a `card` screen
+  // imports the button barrel even with the footer off): hand-edits that
+  // flip such props never need new imports. The provably-unused remainder
+  // is an info-level lint, silenced file-wide like the kit's own barrels.
+  final ignoreLine =
+      kitImports.isEmpty ? '' : '// ignore_for_file: unused_import\n';
   return '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
-// Screen: ${screen.name} (id: ${screen.id}). Component bodies ship
+$ignoreLine// Screen: ${screen.name} (id: ${screen.id}). Component bodies ship
 // separately under lib/ui/shadcn/ — wire them here:
 $barrels
-import '$flutterImport';
-${extraImports}
+$flutterLine
+${extraImports}${kitImports}
 /// ${screen.name} screen.
 ///
 /// Vanilla [StatefulWidget] with no store dependency: bring your own state
@@ -1169,14 +1420,16 @@ List<String> _bundleProgress(Map<String, dynamic> props) {
 
 List<String> _bundleTabs(Map<String, dynamic> props) {
   final index = _bInt(props, 'index', 0, 0, 1);
+  // Track H2: the `tabs` barrel imports prefixed (`as tabs` — it re-declares
+  // the tab-family names alongside their home barrels), so its names qualify.
   return [
-    'Tabs(',
+    'tabs.Tabs(',
     '  index: $index,',
     '  expand: ${_bBool(props, 'expand', false)},',
     '  onChanged: (_) {},',
     '  children: [',
-    "    TabItem(child: Text(${_bundleStr(_bStr(props, 'tab1', 'Tab 1'))})),",
-    "    TabItem(child: Text(${_bundleStr(_bStr(props, 'tab2', 'Tab 2'))})),",
+    "    tabs.TabItem(child: Text(${_bundleStr(_bStr(props, 'tab1', 'Tab 1'))})),",
+    "    tabs.TabItem(child: Text(${_bundleStr(_bStr(props, 'tab2', 'Tab 2'))})),",
     '  ],',
     '),',
   ];
@@ -1905,21 +2158,24 @@ List<String> _bundleTabContainer(Map<String, dynamic> props) {
 }
 
 List<String> _bundleTabList(Map<String, dynamic> props) {
-  // NOTE: `TabList`/`TabChild` here are the standalone tab_list barrel's own
-  // types (wired via `_impl/core/tab_list.dart`, which requires
-  // `children`/`index`/`onChanged`) — not the tabs barrel's same-named ones.
+  // The catalog's tab-list cell renders the TABS barrel's `TabList` with the
+  // tabs barrel's `TabItem` children (qualified `tabs.` there) — mirrored
+  // here with the screen-level `as tabs` prefix. (The standalone tab_list
+  // barrel declares its own `TabList`, but its `TabChild` is the
+  // tab-container barrel's mixin, which cannot be instantiated — so the
+  // catalog family is the only compilable static form.)
   final index = _bInt(props, 'index', 0, 0, 1);
   return [
     'SizedBox(',
     '  height: 37,',
     '  child: SingleChildScrollView(',
     '    scrollDirection: Axis.horizontal,',
-    '    child: TabList(',
+    '    child: tabs.TabList(',
     '      index: $index,',
     '      onChanged: (i) {},',
     '      children: [',
-    "        TabChild(child: Text(${_bundleStr(_bStr(props, 'tab1', 'Tab 1'))})),",
-    "        TabChild(child: Text(${_bundleStr(_bStr(props, 'tab2', 'Tab 2'))})),",
+    "        tabs.TabItem(child: Text(${_bundleStr(_bStr(props, 'tab1', 'Tab 1'))})),",
+    "        tabs.TabItem(child: Text(${_bundleStr(_bStr(props, 'tab2', 'Tab 2'))})),",
     '      ],',
     '    ),',
     '  ),',

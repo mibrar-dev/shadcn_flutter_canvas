@@ -16,6 +16,17 @@ const kTestSources = {
       'class Card extends StatelessWidget {}',
 };
 
+/// Stub registry extended with the Track H2 supplemental non-kind files, so
+/// wiring-emission tests can assert the seed + manifest entries without the
+/// full embedded corpus (contents never parsed for directives here).
+const kWiringSources = {
+  ...kTestSources,
+  '{installPath}/components/form/text_field/text_field.dart':
+      'class TextField extends StatelessWidget {}',
+  '{installPath}/components/utility/color/color.dart':
+      'class ColorDerivative {}',
+};
+
 void main() {
   test('buildCleanBundle manifest has the Task 12 shape', () {
     final bundle = buildCleanBundle(buildTwoScreenDoc(), kTestSources);
@@ -648,7 +659,10 @@ void main() {
       'swiper': 'Swiper(',
       'refresh_trigger': 'RefreshTrigger(',
       'tab_container': 'TabContainer(',
-      'tab_list': 'TabChild(',
+      // Track H2: the tab-list body renders the tabs barrel's family
+      // (prefixed `as tabs`, mirroring the canvas catalog) — the standalone
+      // tab_list barrel's `TabChild` is an uninstantiable mixin.
+      'tab_list': 'tabs.TabItem(',
       'tab_pane': 'TabPane<String>(',
       'stepper': 'Stepper(',
       'slider': 'Slider(',
@@ -658,10 +672,15 @@ void main() {
       'time_picker': 'TimePicker(',
       'carousel': 'Carousel(',
       'tree': 'TreeView<String>(',
+      // Track H2: the table/form/step bodies below compile only with the
+      // disambiguated screen imports (Flutter `hide`s + `tabs` prefix) —
+      // covered by the wiring tests further down.
       'table': 'Table(',
       'form': 'Form(',
       'form_field': 'ObjectFormField<String>(',
       'formatted_input': 'FormattedInput(',
+      // Track H2: the validator rides the same-file `_CanvasRequiredValidator`
+      // helper (never a bare `Validator(` construction) — see below.
       'validated': 'Validated<String>(',
       'color_picker': 'ColorPicker(',
       'color_input': 'ColorInput(',
@@ -775,6 +794,343 @@ void main() {
       badgeBundle.files['lib/ui/screens/home_screen.dart']!,
       isNot(contains('_CanvasRequiredValidator')),
     );
+  });
+
+  test('screens import a barrel per used catalog kind plus wiring extras', () {
+    String screenFor(String kind, [Map<String, dynamic> props = const {}]) {
+      final bundle = buildCleanBundle(_singleKindDoc(kind, props), kTestSources);
+      return bundle.files['lib/ui/screens/home_screen.dart']!;
+    }
+
+    // Direct kind barrel, resolved via the `_barrelFile` map.
+    expect(
+      screenFor('button'),
+      contains("import '../shadcn/components/control/button/button.dart';"),
+    );
+    // Cross-kind extras: a card footer renders the button barrel's
+    // `PrimaryButton`; input bodies render the text-field library's
+    // `TextField` (a non-kind library the `input` barrel never re-exports).
+    final card = screenFor('card', {'showFooter': true});
+    expect(
+      card,
+      contains("import '../shadcn/components/layout/card/card.dart';"),
+    );
+    expect(
+      card,
+      contains("import '../shadcn/components/control/button/button.dart';"),
+    );
+    expect(card, contains('PrimaryButton('));
+    final input = screenFor('input');
+    expect(
+      input,
+      contains("import '../shadcn/components/form/input/input.dart';"),
+    );
+    expect(
+      input,
+      contains(
+        "import '../shadcn/components/form/text_field/text_field.dart';",
+      ),
+    );
+    expect(input, contains('TextField('));
+    // Placeholder kinds reference no kit names: header comment only, no
+    // import (so they can never clash with the Flutter SDK).
+    final chip = screenFor('chip');
+    expect(
+      chip,
+      contains('// - chip -> lib/ui/shadcn/components/display/chip/chip.dart'),
+    );
+    expect(chip, isNot(contains("import '../shadcn/")));
+    expect(chip, isNot(contains('ignore_for_file')));
+  });
+
+  test('screen wiring extras ship their barrels', () {
+    // A card-only doc still ships the button barrel its footer renders
+    // (requireKind closure, same dependsOn policy as items).
+    final card = buildCleanBundle(
+      _singleKindDoc('card', {'showFooter': true}),
+      kTestSources,
+    );
+    expect(
+      card.files.keys,
+      contains('lib/ui/shadcn/components/control/button/button.dart'),
+    );
+    // Supplemental non-kind files seed emission with manifest entries when
+    // the source map carries them.
+    final input = buildCleanBundle(_singleKindDoc('input'), kWiringSources);
+    expect(
+      input.files.keys,
+      contains('lib/ui/shadcn/components/form/text_field/text_field.dart'),
+    );
+    final manifest = jsonDecode(input.manifestJson) as Map<String, dynamic>;
+    final dests = {
+      for (final f in manifest['files'] as List)
+        (f as Map<String, dynamic>)['destination'] as String,
+    };
+    expect(
+      dests,
+      contains('lib/ui/shadcn/components/form/text_field/text_field.dart'),
+    );
+    // Minimal stubs without the supplemental template stay crash-free (the
+    // screen still wires the import for real source maps).
+    final stub = buildCleanBundle(_singleKindDoc('input'), kTestSources);
+    expect(
+      stub.files['lib/ui/screens/home_screen.dart']!,
+      contains("import '../shadcn/components/form/text_field/text_field.dart';"),
+    );
+  });
+
+  test('clash kinds disambiguate without private prefixes', () {
+    String screenForKinds(List<String> kinds) {
+      final doc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 16.0,
+            'y': 96.0,
+            'items': [
+              for (var i = 0; i < kinds.length; i++)
+                {'id': 'i$i', 'kind': kinds[i]},
+            ],
+          },
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'T', 'brief': ''},
+      });
+      final bundle = buildCleanBundle(doc, kTestSources);
+      return bundle.files['lib/ui/screens/home_screen.dart']!;
+    }
+
+    // Kit-vs-Flutter: the Flutter names hide, call sites stay bare.
+    final table = screenForKinds(['table']);
+    expect(
+      table,
+      contains(
+        "import 'package:flutter/widgets.dart' hide Table, TableCell, TableRow;",
+      ),
+    );
+    expect(table, contains('Table('));
+    final form = screenForKinds(['form']);
+    expect(
+      form,
+      contains("import 'package:flutter/widgets.dart' hide Form, FormField;"),
+    );
+    expect(form, contains('Form('));
+    expect(
+      form,
+      contains("import '../shadcn/components/control/button/button.dart';"),
+    );
+    final radio = screenForKinds(['radio_group']);
+    expect(
+      radio,
+      contains("import 'package:flutter/widgets.dart' hide RadioGroup;"),
+    );
+    // Material-only names hide only on material screens (hiding them from
+    // widgets would warn `undefined_hidden_name`).
+    final tipPlain = screenForKinds(['tooltip']);
+    expect(tipPlain, contains("import 'package:flutter/widgets.dart';"));
+    expect(
+      tipPlain,
+      contains("import '../shadcn/components/overlay/tooltip/tooltip.dart';"),
+    );
+    expect(tipPlain, contains('Tooltip('));
+    final tip = screenForKinds(['tooltip', 'basic']);
+    expect(
+      tip,
+      contains("import 'package:flutter/material.dart' hide Tooltip;"),
+    );
+    final alert = screenForKinds(['alert_dialog']);
+    expect(
+      alert,
+      contains("import 'package:flutter/widgets.dart';"),
+    );
+    final alertMaterial = screenForKinds(['alert_dialog', 'basic']);
+    expect(
+      alertMaterial,
+      contains("import 'package:flutter/material.dart' hide AlertDialog;"),
+    );
+    final stepper = screenForKinds(['stepper', 'basic']);
+    expect(
+      stepper,
+      contains("import 'package:flutter/material.dart' hide Step, Stepper;"),
+    );
+    expect(stepper, contains('Stepper('));
+    final scaffold = screenForKinds(['scaffold', 'basic']);
+    expect(
+      scaffold,
+      contains("import 'package:flutter/material.dart' hide AppBar, Scaffold;"),
+    );
+    // Kit-vs-kit tab family: the tabs barrel imports `as tabs` (the canvas
+    // catalog's own convention) and its bodies qualify; every other tab
+    // barrel stays bare, so no screen can import the same name twice.
+    final tabs = screenForKinds(['tabs', 'tab_container', 'tab_list']);
+    expect(
+      tabs,
+      contains(
+        "import '../shadcn/components/navigation/tabs/tabs.dart' as tabs;",
+      ),
+    );
+    expect(tabs, contains('tabs.Tabs('));
+    expect(tabs, contains('tabs.TabItem('));
+    expect(tabs, contains('TabContainer('));
+    expect(tabs, contains('tabs.TabList('));
+    // Kit-vs-kit menu family: the menu barrel hides its shadowed names
+    // (the kit global barrel's own hide list) and renders the popup
+    // barrel's `MenuPopup`, mirroring the catalog.
+    final menu = screenForKinds(['menu']);
+    expect(
+      menu,
+      contains(
+        'hide Menubar, MenubarState, MenubarTheme, MenuPopup, MenuPopupTheme;',
+      ),
+    );
+    expect(
+      menu,
+      contains("import '../shadcn/components/overlay/popup/popup.dart';"),
+    );
+    expect(menu, contains('MenuGroup('));
+    // Private-prefix imports (`as _x`) are never emitted anywhere.
+    for (final kinds in [
+      ['table'],
+      ['form'],
+      ['tooltip', 'basic'],
+      ['tabs', 'tab_container'],
+      ['menu', 'popup'],
+    ]) {
+      expect(screenForKinds(kinds), isNot(contains(' as _')));
+    }
+  });
+
+  test('validated screens wire the same-file validator helper', () {
+    final bundle = buildCleanBundle(_singleKindDoc('validated'), kTestSources);
+    final screen = bundle.files['lib/ui/screens/home_screen.dart']!;
+    // The body references the per-file helper, never a bare `Validator(`.
+    expect(screen, contains('validator: _CanvasRequiredValidator('));
+    expect(screen, isNot(contains(' Validator(')));
+    // ...whose `Validator` base rides the form barrel import.
+    expect(
+      screen,
+      contains("import '../shadcn/components/form/form/form.dart';"),
+    );
+    expect(
+      screen,
+      contains('class _CanvasRequiredValidator extends Validator<String>'),
+    );
+  });
+
+  test('every screen-relative import resolves within the files map', () {
+    // Offline proxy for `undefined_identifier`: with stub sources carrying
+    // every barrel template, each screen's relative imports must land on an
+    // emitted file — for every catalog kind, every placeholder kind, empty
+    // screens, and unknown kinds.
+    const categories = {
+      'button': 'control', 'card': 'layout', 'input': 'form',
+      'badge': 'display', 'switch': 'form', 'avatar': 'display',
+      'checkbox': 'form', 'divider': 'display', 'progress': 'display',
+      'tabs': 'navigation', 'accordion': 'layout', 'select': 'form',
+      'radio_group': 'form', 'skeleton': 'display',
+      'breadcrumb': 'navigation', 'dialog': 'overlay', 'tooltip': 'overlay',
+      'toast': 'overlay', 'drawer': 'overlay', 'chip': 'display',
+      'alert': 'layout',
+      'circular_progress_indicator': 'display',
+      'linear_progress_indicator': 'display', 'triple_dots': 'display',
+      'dot_indicator': 'display', 'empty_state': 'display',
+      'code_snippet': 'display', 'number_ticker': 'display',
+      'text_area': 'form', 'basic': 'layout', 'card_image': 'layout',
+      'scaffold': 'layout', 'collapsible': 'layout', 'steps': 'layout',
+      'timeline': 'layout', 'outlined_container': 'layout',
+      'hidden': 'layout', 'keyboard_shortcut': 'display',
+      'tracker': 'display', 'chat': 'display', 'selectable': 'display',
+      'star_rating': 'form', 'clickable': 'control', 'scrollbar': 'control',
+      'pagination': 'navigation', 'alert_dialog': 'overlay', 'menu': 'overlay',
+      'popover': 'overlay', 'popup': 'overlay', 'menubar': 'overlay',
+      'dropdown_menu': 'overlay', 'context_menu': 'overlay',
+      'hover_card': 'overlay', 'command': 'control', 'swiper': 'overlay',
+      'refresh_trigger': 'overlay', 'tab_container': 'navigation',
+      'tab_list': 'navigation', 'tab_pane': 'navigation',
+      'stepper': 'navigation', 'slider': 'form', 'input_otp': 'form',
+      'calendar': 'display', 'date_picker': 'form', 'time_picker': 'form',
+      'carousel': 'display', 'tree': 'display', 'table': 'layout',
+      'form': 'form', 'form_field': 'form', 'formatted_input': 'form',
+      'validated': 'form', 'color_picker': 'form', 'color_input': 'form',
+      'hsl': 'form', 'hsv': 'form', 'history': 'form',
+      'feature_carousel': 'display',
+    };
+    const entryFile = {
+      'hsl': 'hsl_color_slider.dart',
+      'hsv': 'hsv_color_slider.dart',
+      'tab_list': '_impl/core/tab_list.dart',
+    };
+    final stubSources = <String, String>{
+      for (final e in categories.entries)
+        '{installPath}/components/${e.value}/${e.key}/${entryFile[e.key] ?? '${e.key}.dart'}':
+            '',
+      '{installPath}/components/form/text_field/text_field.dart': '',
+      '{installPath}/components/utility/color/color.dart': '',
+    };
+    final doc = ScreenDoc.fromJson({
+      'screens': [
+        {'id': 's1', 'name': 'All', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+        {'id': 's2', 'name': 'Empty', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            for (var i = 0; i < categories.keys.length; i++)
+              {'id': 'i$i', 'kind': categories.keys.elementAt(i)},
+            {'id': 'ix', 'kind': 'not_a_component'},
+          ],
+        },
+      ],
+      'theme': {
+        'paletteKey': 'slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'T', 'brief': ''},
+    });
+    final bundle = buildCleanBundle(doc, stubSources);
+    final ref = RegExp(r"""^\s*import\s+'([^']+)'""", multiLine: true);
+    var checked = 0;
+    for (final entry in bundle.files.entries) {
+      if (!entry.key.startsWith('lib/ui/screens/')) continue;
+      checked++;
+      final dir = entry.key.split('/')..removeLast();
+      for (final match in ref.allMatches(entry.value)) {
+        final uri = match.group(1)!;
+        if (uri.startsWith('dart:') || uri.startsWith('package:')) continue;
+        var cur = [...dir];
+        for (final part in uri.split('/')) {
+          if (part.isEmpty || part == '.') continue;
+          if (part == '..') {
+            cur.removeLast();
+          } else {
+            cur.add(part);
+          }
+        }
+        expect(
+          bundle.files.keys,
+          contains(cur.join('/')),
+          reason: '${entry.key} -> $uri',
+        );
+      }
+      // No private-prefix imports (see the clash-convention test).
+      expect(entry.value, isNot(contains(' as _')));
+    }
+    expect(checked, 2);
   });
 
   test('shared closure emits referenced files under shared destinations', () {
@@ -990,11 +1346,19 @@ ScreenDoc _singleKindDoc(String kind, [Map<String, dynamic> props = const {}]) =
 /// scaffolds with `Text` placeholders for every known kind). The scaffold,
 /// header, and comment shape are unchanged; only the item expression is now
 /// the real catalog-mirroring body.
+///
+/// Track H2 rewrite (2026-09-06): the F3 golden still encoded the
+/// missing-wiring bug — the `PrimaryButton`/`ButtonSize` body referenced kit
+/// names with no import (`undefined_identifier` under analyze). The scaffold,
+/// header, comment, and body shape are unchanged; the file now carries the
+/// `unused_import` silence line plus the `button` barrel import.
 const kBundleScreenGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// ignore_for_file: unused_import
 // Screen: Home (id: s1). Component bodies ship
 // separately under lib/ui/shadcn/ — wire them here:
 // - button -> lib/ui/shadcn/components/control/button/button.dart
 import 'package:flutter/widgets.dart';
+import '../shadcn/components/control/button/button.dart';
 
 /// Home screen.
 ///

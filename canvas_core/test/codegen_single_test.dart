@@ -730,6 +730,171 @@ class Colors {
       expect(section, isNot(contains('__x1')));
     });
 
+    test('duplicate FormKey unifies to a single declaration (H1)', () {
+      // Shared minimal vs form superset (adds getValue): the subset decl is
+      // dropped, leaving one `FormKey` with NO `__dup2` — interface crossings
+      // (FormFieldHandle/ValidationResult vs form impls) cannot be satisfied
+      // with two types.
+      const sources = {
+        'r/components/cat/form/form.dart': '''
+import 'package:flutter/widgets.dart';
+
+class FormBody extends StatelessWidget {
+  const FormBody({super.key});
+  Widget build(BuildContext context) =>
+      const Text('f', key: FormKey<String>('a'));
+}
+''',
+        'r/components/cat/form/_impl/form_key.dart': '''
+import 'package:flutter/widgets.dart';
+
+class FormKey<T> extends LocalKey {
+  final Object key;
+  const FormKey(this.key);
+  T? getValue(Object values) => null;
+}
+''',
+      };
+      const shared = {
+        'r/shared/form_key.dart': '''
+import 'package:flutter/widgets.dart';
+
+class FormKey<T> extends LocalKey {
+  final Object key;
+  const FormKey(this.key);
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('form'),
+        sources,
+        sharedSources: shared,
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, contains('class FormKey<T>'));
+      expect(out, contains('getValue'));
+      expect(out, isNot(contains('FormKey__dup')));
+      expect(out, contains("FormKey<String>('a')"));
+    });
+
+    test('then formal and Future.then are never suffixed (H1)', () {
+      // Twin TextExtensions (same name/on-type, diverged `then` fallback so
+      // both survive carving) plus a field formal and an SDK use: none may
+      // gain `__text`. No qualifying Widget-ctor `.then` exists, so no keeper
+      // exists either — suffixing would erase the plain name residuals need.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class _TextThenWidget extends StatelessWidget {
+  final Text text;
+  final List<InlineSpan> then;
+  const _TextThenWidget({required this.text, required this.then});
+  Widget build(BuildContext context) => const SizedBox();
+}
+
+Future<void> runIt(Future<int> future) => future.then((v) {});
+''',
+        'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension TextExtension on Widget {
+  Widget then(InlineSpan span) {
+    throw Exception('only text');
+  }
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+''',
+        'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension TextExtension on Widget {
+  Widget then(InlineSpan span) {
+    return RichText(text: TextSpan(children: [span]));
+  }
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('aaa'),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, isNot(contains('then__text')));
+      expect(out, contains('required this.then'));
+      expect(out, contains('future.then('));
+      expect(out, contains('Widget then(InlineSpan span)'));
+    });
+
+    test('Typography getters are never suffixed (H1)', () {
+      // Twin TextExtensions disagree on an extra member each (neither subset,
+      // so both survive) while sharing `sans`; a Typography class declares
+      // its own `sans` field used via `theme.typography.sans`. The Typography
+      // use must stay plain — it binds to the class, never the extensions.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_a.dart';
+
+class Typography {
+  final TextStyle sans;
+  const Typography(this.sans);
+}
+
+void useIt(dynamic theme) {
+  theme.typography.sans;
+}
+''',
+        'r/components/cat/aaa/_impl/ext_a.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension TextExtension on Widget {
+  Widget get sans => this;
+  Widget get fooOnlyA => this;
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/widgets.dart';
+import '_impl/ext_b.dart';
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => const SizedBox();
+}
+''',
+        'r/components/cat/bbb/_impl/ext_b.dart': '''
+import 'package:flutter/widgets.dart';
+
+extension TextExtension on Widget {
+  Widget get sans => this;
+  Widget get barOnlyB => this;
+}
+''',
+      };
+      final out = buildSingleFile(
+        _singleItemDoc('aaa'),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(out, isNot(contains('sans__text')));
+      expect(out, contains('theme.typography.sans'));
+      expect(out, contains('final TextStyle sans;'));
+    });
+
     test('closure golden for a two-kind doc', () {      final doc = ScreenDoc.fromJson({
         'screens': [
           {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},

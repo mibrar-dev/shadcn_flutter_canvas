@@ -983,16 +983,26 @@ const _kExtensionSuffix = <String, String>{
 ///   skipped when part of `a.b`, `$a`, `:a`, `#a`, or `a:` (member access,
 ///   interpolation, symbols/labels/named arguments are never bare uses);
 /// * every `.m` in [memberRename] becomes `.replacement` (rival extension
-///   members, scope-gated by the caller);
+///   members, scope-gated by the caller AND receiver-gated by
+///   [shouldRewriteMember] when provided — only Widget-typed receivers
+///   qualify, so class fields, enum values, SDK methods, and initializing
+///   formals like `this.then` are never suffixed);
 /// * every bare [qualify] key becomes `alias.name` (its SDK import is hidden
 ///   by a kit declaration in the merged scope).
+///
+/// [chainNames] are the already-suffixed member names that mark Widget-typed
+/// call chains for [_receiverHead]. [shouldRewriteMember] gates each `.m`
+/// occurrence (called with the scanned [body], the `.` offset, and the member
+/// name); a false return leaves that occurrence untouched.
 String _rewriteNames(
   String body,
   Set<String> stripPrefixes,
   Map<String, String> rename,
   Map<String, String> memberRename,
-  Map<String, String> qualify,
-) {
+  Map<String, String> qualify, {
+  Set<String> chainNames = const <String>{},
+  bool Function(String body, int dot, String member)? shouldRewriteMember,
+}) {
   if (stripPrefixes.isEmpty &&
       rename.isEmpty &&
       memberRename.isEmpty &&
@@ -1059,6 +1069,25 @@ String _rewriteNames(
             j < body.length &&
             body[j] == '.' &&
             (j + 1 >= body.length || body[j + 1] != '.')) {
+          // Stripped-prefix dup rebinding (`t.FormKey` → `FormKey__dup2`):
+          // the trailing name binds to the stripped target's home, which the
+          // per-file [rename] map already resolves (no prefixed dup uses
+          // exist in the kit, so bare and stripped homes agree where it
+          // matters; anything else stays an honest residual).
+          var k = j + 1;
+          if (k < body.length && _isIdentChar(body[k])) {
+            var l = k + 1;
+            while (l < body.length && _isIdentChar(body[l])) {
+              l++;
+            }
+            final trailing = body.substring(k, l);
+            final repl = rename[trailing];
+            if (repl != null) {
+              out.write(repl);
+              i = l;
+              continue;
+            }
+          }
           i = j + 1;
           continue;
         }
@@ -1086,13 +1115,25 @@ String _rewriteNames(
         continue;
       }
       // Member access `.m` (single dot, not a cascade): rival-extension
-      // member rewrite, gated by the caller. A trailing dot (`a.m.c`)
-      // still rewrites the `m` link (each link gates independently).
+      // member rewrite, gated by the caller AND by the receiver
+      // ([shouldRewriteMember]). A trailing dot (`a.m.c`) still rewrites
+      // the `m` link (each link gates independently). Without a receiver
+      // gate this rewrote every same-named access in loser-exposed files —
+      // Typography getters, enum values, `Future.then`, and initializing
+      // formals like `this.then` — all of which must stay untouched.
       final memberReplacement = memberRename[name];
       if (memberReplacement != null) {
-        out.write(memberReplacement);
-        i = j;
-        continue;
+        var allow = true;
+        if (shouldRewriteMember != null) {
+          // `i` is the member-name start; the `.` sits at `i - 1`
+          // (`?.` included — [_receiverHead] skips the `?`).
+          allow = shouldRewriteMember(body, i - 1, name);
+        }
+        if (allow) {
+          out.write(memberReplacement);
+          i = j;
+          continue;
+        }
       }
       out.write(name);
       i = j;
@@ -1481,25 +1522,240 @@ _ClosureModel _resolveClosure(
   // declarations all live in earlier files).
   bool isVoidBody(String body) =>
       _normalizeBody(body).replaceAll(';', '').trim().isEmpty;
-  final survivors =
+  var survivors =
       [for (final dest in candidates) if (!isVoidBody(carvedBodies[dest]!)) dest];
+
+  // Subset-unify for same-name twins (H1 — FormKey/TextExtension first).
+  // Vendored copies are sometimes extended by the component (form's FormKey
+  // adds getValue/[], display's TextExtension adds thenButton/etc.): the
+  // subset decl is spliced out, leaving the single superset home with NO
+  // rename. Two types cannot satisfy interface crossings
+  // (FormFieldHandle/ValidationResult vs form impls use different FormKeys;
+  // every Widget use would be twin-ambiguous), while one superset serves
+  // every use. Neither-subset twins (StatedWidget ._/ .base, Clickable/Hover
+  // field differences) keep both with scope-aware rebinding below.
+  // Member sets: extensions via [_extensionDecls], classes/mixins via the
+  // class inner (same shapes as the later class index). Token sets guard
+  // against same-named-different-code (equal members, different bodies).
+  Set<String>? classMembersIn(String body, String className) {
+    final clean = _stripStrings(_stripComments(body));
+    final e = RegExp.escape(className);
+    final m = RegExp(
+      '^(?:abstract\\s+|final\\s+|sealed\\s+|base\\s+|interface\\s+)*'
+      '(?:class|mixin)\\s+$e(?![\\w\$])',
+      multiLine: true,
+    ).firstMatch(clean);
+    if (m == null) return null;
+    var i = m.end;
+    var open = -1;
+    while (i < clean.length) {
+      if (clean[i] == '{') {
+        open = i;
+        break;
+      }
+      if (clean[i] == ';' || clean[i] == '}') break;
+      i++;
+    }
+    if (open < 0) return null;
+    var depth = 0;
+    var close = -1;
+    for (var k = open; k < clean.length; k++) {
+      if (clean[k] == '{') depth++;
+      if (clean[k] == '}') {
+        depth--;
+        if (depth == 0) {
+          close = k;
+          break;
+        }
+      }
+    }
+    if (close < 0) return null;
+    return _extensionMembers(clean.substring(open + 1, close), true);
+  }
+
+  {
+    // Preliminary homes (pre-unify) to find subset candidates.
+    final preHomes = <String, List<String>>{};
+    for (final dest in survivors) {
+      for (final name in namesOf(dest)) {
+        preHomes.putIfAbsent(name, () => []).add(dest);
+      }
+    }
+    final toDrop = <String, List<({int s, int e})>>{};
+    void cutOut(String dest, int s, int e) {
+      toDrop.putIfAbsent(dest, () => []).add((s: s, e: e));
+    }
+
+    for (final entry in preHomes.entries) {
+      final name = entry.key;
+      final homes = entry.value;
+      if (homes.length < 2) continue;
+      // Enums/typedefs never unify (kept as residuals, like below).
+      var kindsOk = true;
+      var firstKind;
+      for (final home in homes) {
+        final kind = _topLevelKindOf(carvedBodies[home]!, name);
+        firstKind ??= kind;
+        if (kind == null ||
+            kind == 'enum' ||
+            kind == 'typedef' ||
+            kind != firstKind) {
+          kindsOk = false;
+          break;
+        }
+      }
+      if (!kindsOk) continue;
+      final kind = firstKind!;
+      if (kind != 'class' && kind != 'mixin' && kind != 'extension') continue;
+      // Extensions unify only on the identical on-type (different receivers
+      // never collided).
+      String? commonOnType;
+      var onTypesOk = true;
+      final membersByHome = <String, Set<String>>{};
+      final tokensByHome = <String, Set<String>>{};
+      for (final home in homes) {
+        final body = carvedBodies[home]!;
+        Set<String>? members;
+        if (kind == 'extension') {
+          final sites = [
+            for (final site in _extensionDecls(body))
+              if (site.name == name) site,
+          ];
+          if (sites.isEmpty) {
+            onTypesOk = false;
+            break;
+          }
+          final onTypes = {for (final s in sites) s.onType};
+          if (onTypes.length != 1) {
+            onTypesOk = false;
+            break;
+          }
+          final onType = onTypes.single;
+          commonOnType ??= onType;
+          if (onType != commonOnType) {
+            onTypesOk = false;
+            break;
+          }
+          members = <String>{};
+          for (final s in sites) {
+            members.addAll(s.members);
+          }
+        } else {
+          members = classMembersIn(body, name);
+          if (members == null) {
+            onTypesOk = false;
+            break;
+          }
+        }
+        membersByHome[home] = members;
+        // Token set of the declaring record(s) for [name] in this file.
+        final recs = _topLevelDecls(body);
+        if (recs == null) {
+          onTypesOk = false;
+          break;
+        }
+        final toks = <String>{};
+        var foundDecl = false;
+        for (final rec in recs) {
+          if (!_topLevelNames(rec.text).contains(name)) continue;
+          foundDecl = true;
+          for (final tok in rec.text.split(RegExp(r'[^A-Za-z0-9_$]+'))) {
+            if (tok.isNotEmpty) toks.add(tok);
+          }
+        }
+        if (!foundDecl) {
+          onTypesOk = false;
+          break;
+        }
+        tokensByHome[home] = toks;
+      }
+      if (!onTypesOk) continue;
+      // Single strict superset containing every other home?
+      String? superset;
+      for (final cand in homes) {
+        var coversAll = true;
+        for (final other in homes) {
+          if (other == cand) continue;
+          final mc = membersByHome[cand]!;
+          final mo = membersByHome[other]!;
+          if (mo.difference(mc).isNotEmpty) {
+            coversAll = false;
+            break;
+          }
+          if (mc.length <= mo.length) {
+            coversAll = false;
+            break;
+          }
+          final tc = tokensByHome[cand]!;
+          final to = tokensByHome[other]!;
+          if (to.difference(tc).isNotEmpty) {
+            coversAll = false;
+            break;
+          }
+        }
+        if (coversAll) {
+          if (superset != null) {
+            superset = null;
+            break; // two maximal: ambiguous, keep both.
+          }
+          superset = cand;
+        }
+      }
+      if (superset == null) continue;
+      for (final home in homes) {
+        if (home == superset) continue;
+        final recs = _topLevelDecls(carvedBodies[home]!)!;
+        for (final rec in recs) {
+          if (_topLevelNames(rec.text).contains(name)) {
+            cutOut(home, rec.start, rec.end);
+          }
+        }
+      }
+    }
+    if (toDrop.isNotEmpty) {
+      for (final e in toDrop.entries) {
+        final cuts = e.value..sort((a, b) => b.s.compareTo(a.s));
+        var body = carvedBodies[e.key]!;
+        for (final cut in cuts) {
+          body = body.substring(0, cut.s) + body.substring(cut.e);
+        }
+        carvedBodies[e.key] = body;
+      }
+      namesCache.clear();
+      groupNamesCache.clear();
+      exportNamesCache.clear();
+      survivors = [
+        for (final dest in candidates)
+          if (!isVoidBody(carvedBodies[dest]!)) dest,
+      ];
+    }
+  }
 
   // Duplicate top-level TYPE names among survivors (F): the kit's separate
   // libraries may declare the same type (shared-vs-kit twins like
-  // `StatedWidget`). Homes come from the structural index only
+  // `StatedWidget`, `FormKey`). Homes come from the structural index only
   // ([_topLevelNames] over comment/string-cleaned bodies — fragments can
   // never pose as declarations), so false homes are impossible; post-carve
   // survivors sharing a name are diverged by construction (identical texts
   // were carved). The first survivor in emission order keeps the name; later
-  // homes are renamed (`Name__dup2`, bumped while taken) and rebound within
-  // their own part-group (companions provably mean the renamed declaration —
-  // any other meaning would already conflict in the kit). Rebind crosses
-  // file boundaries only for UpperCamel-letter names (lint-clean code never
-  // shadows those with locals). Enums and typedefs are NOT renamed: their
-  // companions are bare cross-group users, so renaming trades one dupe error
-  // for redirect-style cascades (measured on `InputFeaturePosition`, whose
-  // copies also diverge in members); classes, mixins, and extensions rename
-  // because their companions (states, factories) live in the covered group.
+  // homes are renamed (`Name__dup2`, bumped while taken).
+  //
+  // Rebinding is scope-aware (H1): every bare UpperCamel use resolves through
+  // its file's kit scope (own part-group first, then the combinator-aware
+  // import closure) to exactly one home, and is renamed iff that home is a
+  // dup. The old part-group-only rebind left cross-group uses (e.g. form
+  // files importing the shared `FormKey`, `ClickableState extends
+  // State<Clickable>` binding to the keeper) split across the two types —
+  // `FormKey<String>` vs `FormKey__dup2<String>`, `State<Clickable__dup2>`
+  // returning `ClickableState`, `super.base()` missing on the keeper. Private
+  // (`_`-prefixed) names never cross libraries via imports, so their resolve
+  // stays group-local by construction. Rebind crosses file boundaries only
+  // for UpperCamel-letter names (lint-clean code never shadows those with
+  // locals). Enums and typedefs are NOT renamed: their companions are bare
+  // cross-group users, so renaming trades one dupe error for redirect-style
+  // cascades (measured on `InputFeaturePosition`, whose copies also diverge
+  // in members); classes, mixins, and extensions rename because their
+  // companions (states, factories) resolve through the same scope.
   final renameByDest = <String, Map<String, String>>{};
   final dupeHomes = <String, List<String>>{};
   final allNames = <String>{};
@@ -1510,6 +1766,83 @@ _ClosureModel _resolveClosure(
       dupeHomes.putIfAbsent(name, () => []).add(dest);
     }
   }
+  // Homes of [name] visible THROUGH [target] (its own part-group plus the
+  // combinator-aware export closure). Memoized per (target, name); cycle-safe
+  // (a re-entrant edge contributes nothing). Mirrors [exportScopeNames] but
+  // keeps per-home provenance so duplicate uses resolve to one twin.
+  final exportHomesMemo = <String, Set<String>>{};
+  Set<String> homesThrough(String target, String name,
+      [Set<String>? visiting]) {
+    final key = '$target\x00$name';
+    final hit = exportHomesMemo[key];
+    if (hit != null) return hit;
+    visiting ??= <String>{};
+    if (!visiting.add(target)) return const <String>{};
+    final out = <String>{};
+    final tgkey = groupKeyOf(target);
+    for (final h in dupeHomes[name] ?? const <String>[]) {
+      if (groupKeyOf(h) == tgkey) out.add(h);
+    }
+    final tbody = bodies[target] ?? combined[target];
+    if (tbody != null) {
+      for (final stmt in stmtsOf(target, tbody)) {
+        if (stmt.kind != 'export') continue;
+        if (!stmt.exposes(name)) continue;
+        for (final uri in stmt.uris) {
+          if (uri.startsWith('dart:') || uri.startsWith('package:')) continue;
+          final t2 = _resolveRelativeDest(target, uri, combined);
+          if (t2 == null) continue;
+          out.addAll(homesThrough(t2, name, visiting));
+        }
+      }
+    }
+    visiting.remove(target);
+    return exportHomesMemo[key] = out;
+  }
+
+  // Which duplicate home does a bare [name] in [dest] bind to? Own part-group
+  // first (shadows imports, per Dart); otherwise the union over bare
+  // (unprefixed, combinator-visible) import edges — own file's plus its
+  // library's for parts — of homes visible through each target. Exactly one
+  // home wins; zero (local/SDK/no use) or many (kit-ambiguous, impossible for
+  // valid kit) returns null (leave alone — residual, never corruption).
+  // Private names never travel via imports.
+  String? resolveDupeHome(String dest, String name) {
+    final homes = dupeHomes[name];
+    if (homes == null || homes.length < 2) return null;
+    final ownKey = groupKeyOf(dest);
+    for (final h in homes) {
+      if (groupKeyOf(h) == ownKey) return h;
+    }
+    if (name.startsWith('_')) return null;
+    final lib = partOf[dest];
+    final libBody =
+        (lib == null || lib == dest) ? null : (bodies[lib] ?? combined[lib]);
+    final ownStmts = stmtsOf(dest, bodies[dest]!);
+    final libStmts = libBody == null
+        ? const <_DirectiveStmt>[]
+        : stmtsOf('lib:$lib', libBody);
+    final found = <String>{};
+    void scan(List<_DirectiveStmt> stmts, String base) {
+      for (final stmt in stmts) {
+        if (stmt.kind != 'import') continue;
+        if (stmt.alias != null) continue; // prefixed: no bare exposure.
+        if (!stmt.exposes(name)) continue;
+        for (final uri in stmt.uris) {
+          if (uri.startsWith('dart:') || uri.startsWith('package:')) continue;
+          final target = _resolveRelativeDest(base, uri, combined);
+          if (target == null || partOf.containsKey(target)) continue;
+          found.addAll(homesThrough(target, name));
+        }
+      }
+    }
+
+    scan(ownStmts, dest);
+    if (libBody != null) scan(libStmts, lib!);
+    if (found.length != 1) return null;
+    return found.single;
+  }
+
   for (final entry in dupeHomes.entries) {
     final name = entry.key;
     final homes = entry.value;
@@ -1523,6 +1856,9 @@ _ClosureModel _resolveClosure(
       }
     }
     if (!renameWorthy) continue;
+    // Candidates per dup home (emission order, bumped while taken) so every
+    // use site maps to the same replacement for its home.
+    final candidateForHome = <String, String>{};
     var k = 2;
     for (final dup in homes.skip(1)) {
       var candidate = '${name}__dup$k';
@@ -1531,16 +1867,22 @@ _ClosureModel _resolveClosure(
         candidate = '${name}__dup$k';
       }
       allNames.add(candidate);
-      if (_isRebindableName(name)) {
-        final gkey = groupKeyOf(dup);
-        for (final member in survivors) {
-          if (groupKeyOf(member) != gkey) continue;
-          renameByDest.putIfAbsent(member, () => {})[name] = candidate;
-        }
-      } else {
-        renameByDest.putIfAbsent(dup, () => {})[name] = candidate;
-      }
+      candidateForHome[dup] = candidate;
       k++;
+    }
+    if (!_isRebindableName(name)) {
+      for (final dup in homes.skip(1)) {
+        renameByDest.putIfAbsent(dup, () => {})[name] =
+            candidateForHome[dup]!;
+      }
+      continue;
+    }
+    for (final dest in survivors) {
+      final resolved = resolveDupeHome(dest, name);
+      if (resolved == null) continue;
+      final candidate = candidateForHome[resolved];
+      if (candidate == null) continue; // keeper: keep the name.
+      renameByDest.putIfAbsent(dest, () => {})[name] = candidate;
     }
   }
 
@@ -1889,7 +2231,11 @@ _ClosureModel _resolveClosure(
   // of renamed parties are renamed at their declaration lines only
   // ([_renameMemberDecls] substitutes exactly the declaration occurrence —
   // named arguments, locals, enum values, and neighboring tokens in the
-  // same file are untouched).
+  // same file are untouched). Gated on observed ambiguity (H1): a member
+  // suffixes only when its (member, on-type) elected a keeper (at least one
+  // qualifying Widget-typed use in survivors). Without a keeper there is no
+  // manifest collision — suffixing both twins (they share the party suffix
+  // from other members) would erase the plain name every residual use needs.
   final homeDeclRenames =
       <String, List<({int s, int e, Map<String, String> renames})>>{};
   for (final dest in survivors) {
@@ -1902,7 +2248,9 @@ _ClosureModel _resolveClosure(
       for (final m in site.members) {
         final byType = rivals[m];
         if (byType == null || !byType.containsKey(site.onType)) continue;
-        if (keeperOf[m]?[site.onType] == p) continue;
+        final keeper = keeperOf[m]?[site.onType];
+        if (keeper == null) continue;
+        if (keeper == p) continue;
         renames[m] = m + sfx;
       }
       if (renames.isNotEmpty) {
@@ -1927,6 +2275,25 @@ _ClosureModel _resolveClosure(
         }
       }
     }
+  }
+
+  // Receiver gate for the (G3) rewrite below (H1): a `.m` occurrence rewrites
+  // only when its receiver is Widget-typed — a bare `Name(`/`const Name(`
+  // constructor whose class lacks the member, or a renamed-member call chain.
+  // Anything else (identifiers, property paths like `theme.typography.sans`,
+  // enum accesses like `StepSize.medium`/`TextDecoration.underline`, SDK calls
+  // like `future.then`, field accesses like `this.then`, cascades, spreads,
+  // literals) stays untouched. This is what stops `__textN` suffixes from
+  // hitting non-rivals: the suffix still disambiguates the true Widget
+  // extension collision, but `Typography` getters, `then` formals, and friends
+  // never qualify as Widget extension uses.
+  bool qualifiesForRewrite(String body, int dot, String member) {
+    final head = _receiverHead(body, dot, suffixedNames);
+    if (head == null) return false;
+    if (head.chain) return true;
+    final ctor = head.ctor;
+    if (ctor == null) return false;
+    return !classDeclares(ctor, member);
   }
 
   for (final dest in survivors) {
@@ -2040,7 +2407,12 @@ _ClosureModel _resolveClosure(
     // without the keeper (single-exposure: the use unambiguously meant the
     // loser, whose declaration was suffixed). Keeper-only scopes keep the
     // name; scopes exposing both stay untouched (genuinely ambiguous —
-    // rewriting would corrupt keeper intent; documented residual).
+    // rewriting would corrupt keeper intent; documented residual). Members
+    // without a keeper (no qualifying Widget-typed use observed anywhere)
+    // never rewrite — there is no manifest collision to disambiguate. Each
+    // surviving `.m` is additionally receiver-gated ([qualifiesForRewrite]):
+    // only Widget-typed receivers rewrite, so `Typography` fields, enum
+    // values, `Future.then`, and `this.then` formals never suffix.
     final memberRename = <String, String>{};
     final exposures = exposuresCache[dest];
     if (exposures != null) {
@@ -2049,7 +2421,8 @@ _ClosureModel _resolveClosure(
         if (!rivals.containsKey(m)) continue;
         for (final tEntry in mEntry.value.entries) {
           final keeper = keeperOf[m]?[tEntry.key];
-          if (keeper != null && tEntry.value.contains(keeper)) continue;
+          if (keeper == null) continue;
+          if (tEntry.value.contains(keeper)) continue;
           for (final p in tEntry.value) {
             final sfx = suffixOfParty[p];
             if (sfx == null) continue;
@@ -2064,6 +2437,8 @@ _ClosureModel _resolveClosure(
       renameByDest[dest] ?? const <String, String>{},
       memberRename,
       qualify,
+      chainNames: suffixedNames,
+      shouldRewriteMember: qualifiesForRewrite,
     );
     // Shadow imports are emitted only for aliases the rewrite actually
     // used (a firing rule with no occurrences must not drag an import in).
