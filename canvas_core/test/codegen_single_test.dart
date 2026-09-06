@@ -387,6 +387,39 @@ void main() {
     expect(out, contains('Checkbox('));
   });
 
+  test('known tap target wraps in a pushNamed GestureDetector', () {
+    // buildTwoScreenDoc: the Pay button taps s2 (Done → route /done, slide).
+    final out = buildSingleFile(buildTwoScreenDoc(), kTestSources);
+    // The existing comment is kept verbatim.
+    expect(out, contains('// taps -> s2'));
+    // Bundle-equivalent navigation: GestureDetector + pushNamed, with the
+    // transition as a comment since pushNamed carries none.
+    expect(out, contains('GestureDetector('));
+    expect(
+      out,
+      contains(
+        "onTap: () => Navigator.of(context).pushNamed('/done'), "
+        '// transition: slide',
+      ),
+    );
+    expect(out, contains("pushNamed('/done')"));
+  });
+
+  test('unknown tap target keeps the comment with no navigation', () {
+    final out = buildSingleFile(
+      _singleItemDoc('button', {
+        'label': 'Lost',
+        'action': {'to': 'missing', 'transition': 'fade'},
+      }),
+      kTestSources,
+    );
+    expect(out, contains('// taps -> missing'));
+    expect(out, contains('PrimaryButton('));
+    // Never a crash, never navigation: no wrapper, no route push.
+    expect(out, isNot(contains('pushNamed')));
+    expect(out, isNot(contains('GestureDetector(')));
+  });
+
   test('keyboard_shortcut adds the services import; others do not', () {
     final kb =
         buildSingleFile(_singleItemDoc('keyboard_shortcut'), kTestSources);
@@ -589,6 +622,108 @@ double halfPi() => math.pi / 2;
       expect(out, contains("import 'dart:math';"));
       expect(out, contains("import 'dart:math' as math;"));
       expect(out, contains('math.pi'));
+    });
+
+    test('multi-prefix sdk imports canonicalize to one alias (K1 dedupe)', () {
+      // The kit aliases material.dart three ways (`m`/`mat`/`material`):
+      // the header keeps one bare + one aliased form (plus the distinct
+      // shadow alias, covered elsewhere) and loser uses rebind to it.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/material.dart' as m;
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) => m.Text('a');
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/material.dart' as mat;
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) => mat.Text('b');
+}
+''',
+      };
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      // One bare + one aliased material line (keeper is the
+      // lexicographically smallest prefix, `m`); the loser alias line is
+      // gone and its use rebound to the keeper.
+      final matLines = [
+        for (final line in out.split('\n'))
+          if (line.startsWith('import ') &&
+              line.contains('flutter/material.dart'))
+            line,
+      ];
+      expect(matLines, [
+        "import 'package:flutter/material.dart';",
+        "import 'package:flutter/material.dart' as m;",
+      ]);
+      expect(out, isNot(contains('mat.')));
+      expect(out, contains("m.Text('b')"));
+      // No import line repeats, and nothing is silenced anymore.
+      final lines = [
+        for (final line in out.split('\n'))
+          if (line.startsWith('import ')) line,
+      ];
+      expect(lines.toSet().length, lines.length);
+      expect(out, isNot(contains('duplicate_import')));
+    });
+
+    test('shadowed prefix blocks canonicalization (keeps loser import)', () {
+      // bbb's `mat` is a local (bare occurrences), so its `mat.*` uses may
+      // not mean the import: the body is left untouched and the loser import
+      // stays. aaa (two keeper uses, all qualifier-shaped) is unaffected.
+      const sources = {
+        'r/components/cat/aaa/aaa.dart': '''
+import 'package:flutter/material.dart' as m;
+
+class Aaa extends StatelessWidget {
+  const Aaa({super.key});
+  Widget build(BuildContext context) =>
+      Column(children: [m.Text('a'), m.Text('b')]);
+}
+''',
+        'r/components/cat/bbb/bbb.dart': '''
+import 'package:flutter/material.dart' as mat;
+
+class Box {
+  final String label;
+  const Box(this.label);
+}
+
+class Bbb extends StatelessWidget {
+  const Bbb({super.key});
+  Widget build(BuildContext context) {
+    final mat = const Box('b');
+    return m_scope_placeholder(mat.label);
+  }
+}
+
+Widget m_scope_placeholder(String s) => Text(s);
+''',
+      };
+      final out = buildSingleFile(
+        _twoKindDoc(),
+        sources,
+        sharedSources: const {},
+        extraImports: const [],
+        partOf: const {},
+      );
+      expect(
+        out,
+        contains("import 'package:flutter/material.dart' as mat;"),
+      );
+      expect(out, contains("import 'package:flutter/material.dart' as m;"));
+      expect(out, contains('final mat = const Box('));
+      expect(out, contains('mat.label'));
     });
 
     test('relative import prefixes stripped when the target is claimed', () {
@@ -2045,6 +2180,10 @@ const _kAllSmokeKinds = [
 /// Byte-identical golden for [buildSingleFile] on [buildTwoScreenDoc]
 /// (responsive emission must not alter output for docs without
 /// responsive fields). Regenerate only by reviewing the exporter diff.
+///
+/// Track K1: the Pay button's known-target tap (`s2`) is wrapped in the
+/// bundle-equivalent `GestureDetector` navigation; the `// taps -> s2`
+/// comment above it is kept verbatim.
 const kSingleFileGolden = '''// generated by shadcn canvas — DO NOT EDIT.
 // pubspec: gap, data_widget
 // screens: Pay, Done
@@ -2062,11 +2201,14 @@ class CanvasScreen_Pay extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // taps -> s2
-          PrimaryButton(
-            onPressed: () {},
-            enabled: true,
-            size: ButtonSize.normal,
-            child: Text('Pay'),
+          GestureDetector(
+            onTap: () => Navigator.of(context).pushNamed('/done'), // transition: slide
+            child: PrimaryButton(
+              onPressed: () {},
+              enabled: true,
+              size: ButtonSize.normal,
+              child: Text('Pay'),
+            ),
           ),
         ],
       ),
@@ -2233,6 +2375,11 @@ class Ccc extends StatelessWidget {
 
 /// Byte-identical golden for the closure path on the two-kind stub doc.
 /// Regenerate only by reviewing the exporter diff.
+///
+/// Track K1: the header ignore line no longer lists `duplicate_import` —
+/// the header emits each distinct import line once (pass (S)
+/// canonicalization plus line dedupe), so a duplicate would surface as an
+/// honest analyzer warning instead of being silenced.
 const kClosureGolden = '''// generated by shadcn canvas — DO NOT EDIT.
 // pubspec: (none)
 // screens: Home
@@ -2240,7 +2387,7 @@ const kClosureGolden = '''// generated by shadcn canvas — DO NOT EDIT.
 import 'package:data_widget/data_widget.dart';
 import 'package:flutter/widgets.dart';
 
-// ignore_for_file: duplicate_import, unnecessary_import, unused_import, unnecessary_null_comparison, dead_code, deprecated_member_use, use_null_aware_elements, sort_child_properties_last
+// ignore_for_file: unnecessary_import, unused_import, unnecessary_null_comparison, dead_code, deprecated_member_use, use_null_aware_elements, sort_child_properties_last
 
 class CanvasScreen_Home extends StatelessWidget {
   const CanvasScreen_Home({super.key});

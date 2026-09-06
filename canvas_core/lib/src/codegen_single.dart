@@ -74,6 +74,13 @@ import 'screen_doc.dart';
 /// the `form`/`formatter` kinds (their bodies import `package:expressions`;
 /// every other closure URI is SDK or already in the per-kind pubspec
 /// comment).
+///
+/// TAP ACTIONS: items whose `action.to` matches a screen id are wrapped in
+/// the bundle-equivalent `GestureDetector` pushing that screen's route by
+/// name (same slug mapping as `codegen_bundle.dart`; the transition rides as
+/// a `// transition:` comment since `pushNamed` carries none). Unknown
+/// targets keep the `// taps -> ...` comment with the bare expression —
+/// never a crash.
 String buildSingleFile(
   ScreenDoc doc,
   Map<String, String> sourcesByDestination, {
@@ -123,17 +130,29 @@ String buildSingleFile(
         'package:flutter/services.dart',
     };
     final sorted = uris.toList()..sort();
+    // Each distinct import line goes out once (duplicate lines are dropped,
+    // never silenced: `duplicate_import` is intentionally absent from
+    // [_kClosureIgnores] so a regression surfaces in analysis).
+    final seenImports = <String>{};
+    void emitImport(String line) {
+      if (seenImports.add(line)) out.writeln(line);
+    }
+
     for (final uri in sorted) {
-      out.writeln("import '$uri';");
+      emitImport("import '$uri';");
       // The kit aliases some SDK imports (`dart:math as math`,
-      // `material.dart as m/mat/material`, …): re-emit every observed
-      // prefix or the qualified uses stay undefined. Bare + aliased imports
-      // of one URI are legal side by side.
+      // `material.dart as m`, …): re-emit the surviving prefix or the
+      // qualified uses stay undefined. At most one alias per URI survives —
+      // [_resolveClosure] pass (S) canonicalizes multi-prefix URIs (e.g.
+      // `m`/`mat`/`material`) to the smallest prefix and rebinds the losers'
+      // qualified uses, so the bare + single-aliased imports of one URI are
+      // the only repetition left (legal side by side). Shadow aliases
+      // (`as _shadowMaterial`) are a distinct mechanism and stay.
       final prefixes = model.sdkPrefixes[uri];
       if (prefixes != null) {
         final sortedPrefixes = prefixes.toList()..sort();
         for (final prefix in sortedPrefixes) {
-          out.writeln("import '$uri' as $prefix;");
+          emitImport("import '$uri' as $prefix;");
         }
       }
     }
@@ -141,7 +160,7 @@ String buildSingleFile(
     // hidden by kit declarations get a private alias.
     final shadowUris = model.shadowImports.keys.toList()..sort();
     for (final uri in shadowUris) {
-      out.writeln("import '$uri' as ${model.shadowImports[uri]};");
+      emitImport("import '$uri' as ${model.shadowImports[uri]};");
     }
     out
       ..writeln()
@@ -226,8 +245,10 @@ String buildSingleFile(
 /// The kit stamps every file with this list; inlining repeats it hundreds of
 /// times, which trips `duplicate_ignore`. Kept in sync with the kit stamp by
 /// inspection (the embed tool does not ship the list as data).
+/// `duplicate_import` is deliberately NOT listed: the header emits each
+/// distinct import line once (pass (S) canonicalization plus line dedupe),
+/// so a duplicate would be an honest analyzer warning, never silenced.
 const _kClosureIgnores = <String>[
-  'duplicate_import',
   'unnecessary_import',
   'unused_import',
   'unnecessary_null_comparison',
@@ -2436,6 +2457,11 @@ _ClosureModel _resolveClosure(
   final shadowImports = <String, String>{};
   final rewritten = <String, String>{};
 
+  /// Pass (S) provenance: rewritten file → SDK URI → `as` prefixes bound in
+  /// that file's import scope (own imports plus, for parts, the library's).
+  /// Filled by `collect` inside the survivor loop below.
+  final scopeSdk = <String, Map<String, Set<String>>>{};
+
   // Part-group key: parts (and their library) share one scope of sibling
   // declarations. Unclaimed libraries still count via [combined].
   String groupKeyOf(String dest) {
@@ -3699,6 +3725,13 @@ _ClosureModel _resolveClosure(
               sdkPrefixes.putIfAbsent(uri, () => <String>{}).add(
                     stmt.alias!,
                   );
+              // Pass (S) provenance: which SDK prefixes this file's scope
+              // (own plus, for parts, library imports) actually binds.
+              // Keyed by the rewritten file [dest], not [base].
+              scopeSdk
+                  .putIfAbsent(dest, () => <String, Set<String>>{})
+                  .putIfAbsent(uri, () => <String>{})
+                  .add(stmt.alias!);
             }
           }
         }
@@ -3846,14 +3879,144 @@ _ClosureModel _resolveClosure(
     }
   }
 
+  // (S) SDK-prefix canonicalization: at most one `as` alias per URI survives
+  // into the header (plus the bare import and the distinct shadow alias).
+  // Multi-prefix URIs (the kit uses `m`/`mat`/`material` for material.dart)
+  // elect the lexicographically smallest prefix as keeper and rebind safe
+  // loser uses to it; prefixes with no surviving qualified use are dropped
+  // from the header. See [_rebindSdkPrefix] for the safety rule.
+  final canonPrefixes = _canonicalSdkPrefixes(
+    sdkPrefixes,
+    rewritten,
+    scopeSdk,
+    shadowImports.values.toSet(),
+  );
+
   return _ClosureModel(
     grouped: survivors,
     bodies: rewritten,
+    // Bare imports are never pruned: proving one unused is out of scope, and
+    // an unused bare import is only an info-level lint, silenced in the
+    // header.
     sdkUris: sdkUris,
-    sdkPrefixes: sdkPrefixes,
+    sdkPrefixes: canonPrefixes,
     shadowImports: shadowImports,
     missingKinds: missingKinds,
   );
+}
+
+/// Canonicalizes multi-prefix SDK URIs to a single surviving alias per URI.
+///
+/// For each URI with 2+ observed prefixes (shadow aliases excluded — they are
+/// a separate mechanism and are never elected, rewritten, or dropped here),
+/// the lexicographically smallest prefix is the keeper (deterministic and
+/// stable; e.g. material.dart keeps `m` over `mat`/`material`). Every other
+/// prefix is a loser: files whose scope binds the loser get [_rebindSdkPrefix]
+/// treatment, and afterwards a prefix survives iff it still has a
+/// qualifier-shaped use anywhere in the emitted bodies (raw text:
+/// strings/comments over-keep, which is the safe direction) or it is the
+/// keeper of at least one performed rebind.
+///
+/// Never throws: unknown shapes keep their imports (honest output over
+/// clever breakage).
+Map<String, Set<String>> _canonicalSdkPrefixes(
+  Map<String, Set<String>> sdkPrefixes,
+  Map<String, String> bodies,
+  Map<String, Map<String, Set<String>>> scopeSdk,
+  Set<String> shadowAliases,
+) {
+  final out = <String, Set<String>>{};
+  for (final entry in sdkPrefixes.entries) {
+    final uri = entry.key;
+    final cands =
+        entry.value.where((p) => !shadowAliases.contains(p)).toSet();
+    if (cands.length < 2) {
+      out[uri] = Set<String>.of(entry.value);
+      continue;
+    }
+    final ranked = cands.toList()..sort();
+    final keeper = ranked.first;
+    var reboundToKeeper = false;
+    for (final loser in cands) {
+      if (loser == keeper) continue;
+      for (final dest in bodies.keys) {
+        if (!(scopeSdk[dest]?[uri]?.contains(loser) ?? false)) continue;
+        final next = _rebindSdkPrefix(bodies[dest]!, loser, keeper);
+        // Null = unsafe body (a bare/local/member `loser` or `keeper`
+        // shadows the import there): left untouched, loser import stays.
+        if (next == null) continue;
+        if (next != bodies[dest]) {
+          bodies[dest] = next;
+          reboundToKeeper = true;
+        }
+      }
+    }
+    // Survivors: prefixes with a remaining qualifier-shaped use (raw text,
+    // so interpolation code and even strings/comments keep the import —
+    // safe direction), plus the keeper when a rebind landed on it.
+    final keep = <String>{};
+    for (final p in entry.value) {
+      if (shadowAliases.contains(p)) {
+        keep.add(p);
+        continue;
+      }
+      var remaining = 0;
+      for (final body in bodies.values) {
+        remaining += _qualifierUses(body, p);
+      }
+      if (remaining > 0) keep.add(p);
+    }
+    if (reboundToKeeper) keep.add(keeper);
+    out[uri] = keep;
+  }
+  return out;
+}
+
+/// Counts qualifier-shaped uses of import prefix [p] in [text]: occurrences
+/// of the word [p] (identifier-boundary aware, so `format.` never poses as
+/// `mat.`) immediately followed by `.` and not preceded by `.` (member
+/// accesses like `x.mat` never count).
+int _qualifierUses(String text, String p) {
+  final pat = RegExp(
+    '(?<![A-Za-z0-9_\$.])${RegExp.escape(p)}\\.',
+  );
+  return pat.allMatches(text).length;
+}
+
+/// Rebinds qualifier uses of SDK import-prefix [loser] to [keeper] in [body]
+/// (code positions only: comments/strings keep their text), or returns null
+/// when the body is unsafe to rewrite.
+///
+/// Unsafe (returns null, caller keeps the loser import) when any code word
+/// occurrence of [loser] or [keeper] is NOT qualifier-shaped: a bare
+/// occurrence means a declaration, local, parameter, field formal, named
+/// argument, or label by that name shadows (or simply reuses) the word, so
+/// rebinding could corrupt it. Member-position uses (`x.mat`) never match
+/// the boundary pattern and are left untouched without vetoing.
+///
+/// Residual risk (documented, pathological): a same-scope keeper-named value
+/// with members used only in qualifier shape alongside loser import-prefix
+/// uses (the kit would still compile). The export harness (`flutter analyze`,
+/// 0 errors) guards it empirically.
+String? _rebindSdkPrefix(String body, String loser, String keeper) {
+  final clean = _stripStrings(_stripComments(body));
+  final pat = RegExp(
+    '(?<![A-Za-z0-9_\$.])(?:${RegExp.escape(loser)}|${RegExp.escape(keeper)})(?![A-Za-z0-9_\$])',
+  );
+  final starts = <int>[];
+  for (final m in pat.allMatches(clean)) {
+    if (m.end >= clean.length || clean[m.end] != '.') return null;
+    if (clean.substring(m.start, m.end) == loser) starts.add(m.start);
+  }
+  // Back-to-front splice: replacement lengths differ, so earlier offsets
+  // must not shift. Length-preserving cleaning guarantees these offsets are
+  // valid in the original body.
+  starts.sort((a, b) => b.compareTo(a));
+  var out = body;
+  for (final s in starts) {
+    out = out.substring(0, s) + keeper + out.substring(s + loser.length);
+  }
+  return out;
 }
 
 /// Writes the resolved closure: TODOs for missing kinds, then survivor
@@ -4363,12 +4526,18 @@ CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
 /// non-responsive core (nested responsive children keep their own builders
 /// through the dispatcher); a single-item leaf renders that item; a
 /// multi-item leaf renders a `Column`; an empty leaf renders
-/// `SizedBox.shrink()`. Tap comments are NOT included — [_writeBranch] emits
-/// those above the return.
+/// `SizedBox.shrink()`. Tap `// taps -> ...` comments are NOT included —
+/// [_writeBranch] emits those above the return — but known-target items ARE
+/// GestureDetector-wrapped here (see [_wrapTapExpr]) so responsive branch
+/// returns navigate like the non-responsive paths.
 String _nodeContentExpr(ScreenDoc doc, CanvasNode node) {
   if (!node.isRow) {
     if (node.items.length == 1) {
-      return _stripTrailingComma(_itemExpression(node.items.single));
+      final item = node.items.single;
+      final route = _tapTargets(doc).routeFor(item);
+      final expr = _itemExpression(item);
+      if (route == null) return _stripTrailingComma(expr);
+      return _wrapTapExpr(expr, item.action!, route);
     }
     if (node.items.isEmpty) return 'SizedBox.shrink()';
     final buf = StringBuffer()
@@ -4376,7 +4545,7 @@ String _nodeContentExpr(ScreenDoc doc, CanvasNode node) {
       ..writeln('mainAxisSize: MainAxisSize.min,')
       ..writeln('crossAxisAlignment: CrossAxisAlignment.start,')
       ..writeln('children: [');
-    _writeItemBlock(buf, node.items, '  ');
+    _writeItemBlock(buf, doc, node.items, '  ');
     buf
       ..writeln('],')
       ..write(')');
@@ -4563,7 +4732,7 @@ void _writeFlowChildCore(
   String indent,
 ) {
   if (!node.isRow) {
-    _writeItemBlock(out, node.items, indent);
+    _writeItemBlock(out, doc, node.items, indent);
     return;
   }
   final stretch = node.crossAxis == 'stretch';
@@ -4589,7 +4758,7 @@ void _writeFlowChildCore(
   if (node.items.isNotEmpty) {
     empty = false;
     separator();
-    _writeItemBlock(out, node.items, childIndent);
+    _writeItemBlock(out, doc, node.items, childIndent);
   }
   for (final child in doc.nodes) {
     if (child.parentId != node.id) continue;
@@ -4639,7 +4808,7 @@ void _writeRowChildCore(
     if (child.isRow) {
       _writeFlowChild(out, doc, child, indent);
     } else {
-      _writeItemBlock(out, child.items, indent);
+      _writeItemBlock(out, doc, child.items, indent);
     }
     return;
   }
@@ -4664,7 +4833,12 @@ void _writeRowChildCore(
     if (item.action != null) {
       out.writeln('$indent// taps -> ${item.action!.to}');
     }
-    final exprLines = _itemExpression(item).split('\n');
+    // Known-target taps navigate like the bundle exporter (see [_wrapTapExpr]);
+    // the flex wrapper stays outside so the layout role is tap-independent.
+    var expr = _itemExpression(item);
+    final route = _tapTargets(doc).routeFor(item);
+    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+    final exprLines = expr.split('\n');
     out
       ..writeln('${indent}$wrapper(')
       ..writeln('$indent  flex: $flex,')
@@ -4680,19 +4854,89 @@ void _writeRowChildCore(
 }
 
 /// Writes item constructor expressions (with tap comments) at [indent].
+///
+/// Items whose tap action targets a known screen are wrapped in the
+/// bundle-equivalent `GestureDetector` navigation (see [_wrapTapExpr]);
+/// unknown targets (and action-less items) render the bare expression — the
+/// `// taps -> ...` comment above is always kept, never a crash.
 void _writeItemBlock(
   StringBuffer out,
+  ScreenDoc doc,
   List<CanvasItem> items,
   String indent,
 ) {
+  final taps = _tapTargets(doc);
   for (final item in items) {
     if (item.action != null) {
       out.writeln('$indent// taps -> ${item.action!.to}');
     }
-    for (final line in _itemExpression(item).split('\n')) {
+    var expr = _itemExpression(item);
+    final route = taps.routeFor(item);
+    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+    for (final line in expr.split('\n')) {
       out.writeln('$indent$line');
     }
   }
+}
+
+/// Tap-action navigation targets for [doc]: screen id → route plus the id
+/// set, mirroring `codegen_bundle.dart` (`_routeOf`/`routes`/`ids` there).
+/// A `to` that matches no screen id is unknown: comment-only, never a crash.
+class _TapTargets {
+  final Map<String, String> routes;
+  final Set<String> ids;
+
+  const _TapTargets(this.routes, this.ids);
+
+  /// Route for [item]'s tap action, or null when action-less or unknown.
+  String? routeFor(CanvasItem item) {
+    final to = item.action?.to;
+    if (to == null) return null;
+    return ids.contains(to) ? routes[to] : null;
+  }
+}
+
+/// Builds the tap targets for [doc] (cheap: two small collections over the
+/// screen list; callers derive once per emission block).
+_TapTargets _tapTargets(ScreenDoc doc) => _TapTargets(
+      {for (final s in doc.screens) s.id: _tapRouteOf(s.name)},
+      {for (final s in doc.screens) s.id},
+    );
+
+/// Route slug for a screen name — the same mapping the bundle exporter uses
+/// for `pushNamed`, so single-file taps navigate to the bundle's routes.
+String _tapRouteOf(String name) {
+  final slug = name
+      .toLowerCase()
+      .replaceAll(RegExp('[^a-z0-9]+'), '-')
+      .replaceAll(RegExp('^-+|-\$'), '');
+  return '/${slug.isEmpty ? 'screen' : slug}';
+}
+
+/// Wraps item expression [expr] (an unindented [_itemExpression] with
+/// trailing comma) in the bundle-equivalent tap navigation: a
+/// `GestureDetector` pushing the route by name. The transition rides along
+/// as a comment — `pushNamed` carries none. Returns the wrapped expression
+/// with NO trailing comma (mirrors [_nodeContentExpr]); statement contexts
+/// add their own comma.
+String _wrapTapExpr(String expr, NodeAction action, String route) {
+  final lines = _stripTrailingComma(expr).split('\n');
+  // Restore the inner trailing comma (statement style is comma-terminated,
+  // whatever the input had); the outer close below stays comma-free for
+  // expression contexts, statement callers add their own comma.
+  lines[lines.length - 1] = '${lines.last},';
+  final buf = StringBuffer()
+    ..writeln('GestureDetector(')
+    ..writeln(
+      "  onTap: () => Navigator.of(context).pushNamed('$route'), "
+      '// transition: ${action.transition}',
+    )
+    ..writeln('  child: ${lines.first}');
+  for (final line in lines.skip(1)) {
+    buf.writeln('  $line');
+  }
+  buf.write(')');
+  return buf.toString();
 }
 
 /// Flow number literal: whole values print without `.0` to match the

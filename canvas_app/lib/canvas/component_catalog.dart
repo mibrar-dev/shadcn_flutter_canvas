@@ -730,6 +730,13 @@ Widget _buildDrawer(Map<String, dynamic> props) {
   // but only feeds drag math — the visible width comes from the `SizedBox`.
   // Track M: `position` maps the canvas-level edge enum onto `OverlayPosition`
   // (unknown values fall back to `end`, matching the old hardcoded value).
+  // Track K2 contrast: the panel content binds `scheme.foreground`
+  // explicitly — `DrawerWrapper` paints `scheme.background` with no
+  // background override and leaves the foreground to the ambient
+  // `DefaultTextStyle`, so the split-theme combo (light components under a
+  // dark chrome) measured 1.20:1 here too. `DrawerWrapper` exposes no
+  // background param, so only the foreground binds (the on-role for its
+  // fixed `background` surface).
   final title = (props['title'] ?? 'Drawer') as String;
   final content = (props['content'] ?? 'Drawer content') as String;
   final position = switch (props['position']) {
@@ -740,24 +747,32 @@ Widget _buildDrawer(Map<String, dynamic> props) {
     'start' => shadcn.OverlayPosition.start,
     _ => shadcn.OverlayPosition.end,
   };
-  return shadcn.DrawerWrapper(
-    position: position,
-    size: const Size(240, 480),
-    stackIndex: 0,
-    draggable: false,
-    showDragHandle: false,
-    child: SizedBox(
-      width: 240,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(title),
-          const SizedBox(height: 16),
-          Text(content),
-        ],
-      ),
-    ),
+  return Builder(
+    builder: (context) {
+      final scheme = shadcn.Theme.of(context).colorScheme;
+      return shadcn.DrawerWrapper(
+        position: position,
+        size: const Size(240, 480),
+        stackIndex: 0,
+        draggable: false,
+        showDragHandle: false,
+        child: SizedBox(
+          width: 240,
+          child: DefaultTextStyle.merge(
+            style: TextStyle(color: scheme.foreground),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title),
+                const SizedBox(height: 16),
+                Text(content),
+              ],
+            ),
+          ),
+        ),
+      );
+    },
   );
 }
 
@@ -850,21 +865,44 @@ Widget _buildScaffold(Map<String, dynamic> props) {
   // plus a body line. Dropping a scaffold yields the default app shell —
   // the real kit `Scaffold` (its `Overlay` + `DrawerOverlay` build bare)
   // with a default `AppBar` titled from props and the body text as the
-  // content slot. Colors stay null so the components theme supplies the
-  // default background (`ScaffoldTheme.backgroundColor` then
-  // `colorScheme.background`). The fixed height mirrors the drawer
-  // builder's fixed width: the kit flex needs bounded height, which root
-  // canvas columns do not provide.
+  // content slot. The fixed height mirrors the drawer builder's fixed width:
+  // the kit flex needs bounded height, which root canvas columns do not
+  // provide.
+  //
+  // Track K2 contrast (P11 J2): bar/body colors AND their foregrounds bind
+  // explicitly to kit scheme roles (`card`/`cardForeground` for the bar,
+  // `background`/`foreground` for the body) instead of leaving nulls. The
+  // kit defaults resolve the surfaces from the INNER components scheme but
+  // leave the title/body foreground to the ambient `DefaultTextStyle`, which
+  // on canvas comes from the OUTER (chrome) material theme — dark chrome
+  // under light components (supabase/light under clean-slate/dark) inherited
+  // near-white text onto near-white surfaces (measured 1.20:1). The `Builder`
+  // reads the nearest `shadcn.Theme` so both bindings follow the components
+  // scheme in every chrome/components combination, light and dark.
   final title = (props['title'] ?? 'My App') as String;
   final body = (props['body'] ?? 'Welcome') as String;
   return SizedBox(
     height: 320,
-    child: shadcn.Scaffold(
-      headers: [shadcn.AppBar(title: Text(title))],
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Text(body),
-      ),
+    child: Builder(
+      builder: (context) {
+        final scheme = shadcn.Theme.of(context).colorScheme;
+        return shadcn.Scaffold(
+          backgroundColor: scheme.background,
+          headers: [
+            shadcn.AppBar(
+              title: Text(
+                title,
+                style: TextStyle(color: scheme.cardForeground),
+              ),
+              backgroundColor: scheme.card,
+            ),
+          ],
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(body, style: TextStyle(color: scheme.foreground)),
+          ),
+        );
+      },
     ),
   );
 }

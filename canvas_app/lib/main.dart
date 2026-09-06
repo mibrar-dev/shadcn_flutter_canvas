@@ -149,8 +149,6 @@ class _EditorShellState extends State<EditorShell> {
     return ListenableBuilder(
       listenable: _relay,
       builder: (context, _) {
-        // ignore: avoid_print
-        print("SHELL_BUILD sel=$_selectedNodeId");
         final doc = widget.store.doc;
         // Track G split: the editor chrome (rail/panels/toolbar/zoom) renders
         // under the chrome override while the canvas area keeps the main
