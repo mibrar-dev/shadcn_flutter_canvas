@@ -15,6 +15,7 @@ import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/export_panel.dart';
+import 'package:canvas_app/ui/forge_topbar.dart';
 import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/keyboard_shortcuts.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
@@ -207,9 +208,46 @@ class _EditorShellState extends State<EditorShell> {
                   theme: chrome,
                   child: Scaffold(
                     backgroundColor: colors.surface,
-                    body: Row(
+                    body: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
+                        // Track Y2 (FORGE.md §1-1a–1g): Forge topbar mounted
+                        // above the shell columns. Pure mount wiring: tabs
+                        // read `store.doc.screens`, "current" is the existing
+                        // shell screen selection, Preview/Export/Open
+                        // delegate to the existing callbacks. No shell-model
+                        // changes (full cutover stays Y6-owned).
+                        ForgeTopbar(
+                          projectTitle: doc.meta.title,
+                          screens: [
+                            for (final s in doc.screens)
+                              ForgeScreenTab(id: s.id, name: s.name),
+                          ],
+                          selectedScreenId: _selectedScreenId,
+                          onSelectScreen: (id) => setState(() {
+                            _selectedScreenId = id;
+                            _selectedNodeIds.clear();
+                            _selectionAnchorId = null;
+                          }),
+                          onAddScreen: _addScreen,
+                          onRenameScreen: (id, name) =>
+                              widget.store.renameScreen(id, name),
+                          onDeleteScreen: _deleteTopbarScreen,
+                          onUndo: widget.store.canUndo
+                              ? () => widget.store.undo()
+                              : null,
+                          onRedo: widget.store.canRedo
+                              ? () => widget.store.redo()
+                              : null,
+                          onPreview: () => setState(() => _preview = true),
+                          onExport: () =>
+                              showExportDialog(context, widget.store),
+                          onOpen: () => showOpenDialog(context, widget.store),
+                        ),
+                        Expanded(
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
                         SizedBox(
                           width: EditorMetrics.sidePanelWidth,
                           child: Row(
@@ -242,6 +280,9 @@ class _EditorShellState extends State<EditorShell> {
                               _selectedNodeIds.clear();
                               _selectionAnchorId = null;
                             }),
+                          ),
+                        ),
+                            ],
                           ),
                         ),
                       ],
@@ -454,6 +495,26 @@ class _EditorShellState extends State<EditorShell> {
   }
 
   void _addScreen() => widget.store.addScreen();
+
+  /// Topbar screen-tab "×": deletes the tab's screen via
+  /// [CanvasStore.deleteScreen], keeping the dangling-action refusal +
+  /// SnackBar path from [_deleteSelection]'s screen branch. Clears the shell
+  /// screen selection when it pointed at the removed screen; node selection
+  /// is already empty on this path (a tab tap selects the screen first).
+  void _deleteTopbarScreen(String id) {
+    final dangling = widget.store.deleteScreen(id);
+    if (dangling.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Cannot delete screen: ${dangling.join('; ')}',
+          ),
+        ),
+      );
+      return;
+    }
+    if (_selectedScreenId == id) setState(() => _selectedScreenId = null);
+  }
 
   /// Layers-panel plain tap: collapses the set to the single tapped node
   /// (null clears). Ctrl/Cmd and Shift taps arrive on [_toggleLayerNode] and

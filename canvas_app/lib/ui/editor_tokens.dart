@@ -44,6 +44,18 @@ class EditorColors {
   /// Phone bezel. Reference: rgb(228, 225, 231).
   final Color bezel;
 
+  /// Forge accent (Export action, links). APPROXIMATE from the Forge
+  /// reference description (FORGE.md §2): light `#2563EB`, dark a lighter
+  /// blue `#60A5FA`. Y-waves re-measure and pin.
+  final Color accent;
+
+  /// Text/icons on [accent]. White in both modes.
+  final Color onAccent;
+
+  /// Destructive actions (inspector Delete). APPROXIMATE (FORGE.md §2):
+  /// light `#DC2626`, dark `#F87171`.
+  final Color danger;
+
   const EditorColors({
     required this.surface,
     required this.surfaceContainer,
@@ -56,6 +68,9 @@ class EditorColors {
     required this.toolbarActive,
     required this.onToolbarActive,
     required this.bezel,
+    required this.accent,
+    required this.onAccent,
+    required this.danger,
   });
 
   /// Measured directly from the reference in its default (dark) theme.
@@ -71,6 +86,9 @@ class EditorColors {
     toolbarActive: Color(0xFFD2BCFC),
     onToolbarActive: Color(0xFF32226F),
     bezel: Color(0xFFE4E1E7),
+    accent: Color(0xFF60A5FA),
+    onAccent: Color(0xFFFFFFFF),
+    danger: Color(0xFFF87171),
   );
 
   /// Light counterpart, measured from the reference's light mode (body
@@ -88,6 +106,9 @@ class EditorColors {
     toolbarActive: Color(0xFF6750A4),
     onToolbarActive: Color(0xFFFFFFFF),
     bezel: Color(0xFF322F35),
+    accent: Color(0xFF2563EB),
+    onAccent: Color(0xFFFFFFFF),
+    danger: Color(0xFFDC2626),
   );
 }
 

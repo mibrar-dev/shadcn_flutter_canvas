@@ -1,15 +1,48 @@
-/// Searchable sectioned parts palette, measured from the m3e-canvas reference
-/// (https://lnkiai.github.io/m3e-canvas/) at a 1440x900 viewport.
-/// Uses [EditorMetrics] / [EditorColors] for every size and color.
-/// Tiles source from [kRegistry] (grouped by [kRegistrySectionOrder]) and
-/// stay draggable by kind, so drop/drop-target behavior is unchanged.
+/// Forge Library panel (Track Y3 — FORGE.md §1-2a/2b/2c, §3 "Left Library").
+///
+/// Rebuilds the old "Parts" palette as the Forge Library: eyebrow + title +
+/// helper header, the same kit search field, and sectioned 2-column tile
+/// cards sourced from [kRegistry] in [kRegistrySectionOrder] order.
+///
+/// Tile anatomy (FORGE.md §3): icon chip (tinted rounded square) + name
+/// (humanized kind) + one-line manifest-desc ellipsis + a full-width dashed
+/// "+ Add" button at the tile bottom. Each tile's "+ Add" button carries
+/// `ValueKey('forge-add-<kind>')` so widget tests can target one kind.
+///
+/// Tap-to-add reuses the DnD creation path: [_PartsPaletteState._addPart]
+/// funnels through [DesignCanvas.onAccept] — the exact method palette drops
+/// land in via `ScreenSurface.onDropKind` — with an explicit append index, so
+/// catalog defaults, the `row` branch, and undo semantics are identical to
+/// drops by construction (no second creation path). DnD itself is unchanged
+/// in behavior: `Draggable<String>` with `data` = kind, the same
+/// transparent-material drag feedback, and the same `childWhenDragging` dim.
+///
+/// Search still filters via [registryMatchesQuery] (word-start, kind words
+/// only) and sections stay collapsible (forced open while a query is active).
+///
+/// Token notes (FORGE.md §5/§6 — `editor_tokens.dart` is frozen for Y2's
+/// agent, and every §3 number is APPROXIMATE): every *color* comes from
+/// [EditorTheme]/[EditorColors] (no hex literals); sizes/type reuse
+/// [EditorMetrics]/[EditorType] with `copyWith` derivations where no token
+/// exists yet (17px title, 11px eyebrow, 12px desc, 32px icon chip). The icon
+/// chip tint uses `surfaceContainerHigh` until Y2's `accent` token lands. The
+/// dashed "+ Add" border is a local [CustomPainter] — a documented FORGE.md
+/// §2 exception in the same class as the registry's `_DashPainter`.
+///
+/// Deferred to the Y6 cutover (needs `main.dart` shell wiring, owned by the
+/// other agent): the "Library | Layers" pills and the bottom "Theme"
+/// disclosure. Until then the panel takes an optional [PartsPalette.store]:
+/// without it the "+ Add" buttons render disabled; Y6 passes the live store
+/// plus the selected screen id.
 library;
 
 import 'package:flutter/material.dart';
 
+import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/canvas/component_registry.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 
 /// Legacy section map from the 19-kind era (section → kinds). The palette
@@ -71,12 +104,40 @@ String _tileLabel(String kind) {
       .join(' ');
 }
 
-/// Searchable 2-column tile grid replacing the old flat palette list.
+/// Icon chip box (FORGE.md §3 APPROXIMATE ~32px; no token exists yet and
+/// `editor_tokens.dart` is frozen for Y2's agent — see the file docs).
+const double _kIconChipSize = 32;
+
+/// Glyph size inside the icon chip.
+const double _kIconChipGlyph = 18;
+
+/// Forge Library: eyebrow/title/helper header, kit search field, and
+/// sectioned 2-column tile cards with tap-to-add.
 class PartsPalette extends StatefulWidget {
   /// Called when the collapse button at the panel's top-right is tapped.
   final VoidCallback? onCollapse;
 
-  const PartsPalette({super.key, this.onCollapse});
+  /// Live store for tap-to-add. Null (the pre-Y6 shell mount) renders the
+  /// "+ Add" buttons disabled; Y6 passes the shell store plus the selected
+  /// screen id. Additive optional param — `const PartsPalette()` still
+  /// compiles, so the pre-cutover shell is untouched.
+  final CanvasStore? store;
+
+  /// Screen tap-to-add appends to (the shell's selected screen; `'s1'` keeps
+  /// single-screen hosts and widget tests working).
+  final String screenId;
+
+  /// Fires with the fresh node id after a tap-to-add, so the shell can
+  /// select/reveal it (Y6 wiring).
+  final ValueChanged<String>? onNodeAdded;
+
+  const PartsPalette({
+    super.key,
+    this.onCollapse,
+    this.store,
+    this.screenId = 's1',
+    this.onNodeAdded,
+  });
 
   @override
   State<PartsPalette> createState() => _PartsPaletteState();
@@ -93,6 +154,27 @@ class _PartsPaletteState extends State<PartsPalette> {
     _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// Tap-to-add through the SAME creation path palette drops use.
+  ///
+  /// Drops land in [DesignCanvas.onAccept] (via `ScreenSurface.onDropKind`),
+  /// so calling it here inherits the catalog defaults, the `row`
+  /// container branch, and the store's commit/undo behavior by construction
+  /// instead of inventing a second creation path. The explicit [index] is
+  /// the current root count on [PartsPalette.screenId], so taps append;
+  /// `Offset.zero` metadata matches what [CanvasStore.addRow] itself stores
+  /// (the flow renderer lays out by doc order and ignores x/y).
+  void _addPart(String kind) {
+    final store = widget.store;
+    if (store == null) return;
+    var at = 0;
+    for (final n in store.doc.nodes) {
+      if (n.screenId == widget.screenId && n.parentId == null) at++;
+    }
+    final id = DesignCanvas(store: store, screenId: widget.screenId)
+        .onAccept(kind, Offset.zero, index: at);
+    widget.onNodeAdded?.call(id);
   }
 
   @override
@@ -125,12 +207,31 @@ class _PartsPaletteState extends State<PartsPalette> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Parts',
-                style: EditorType.sectionHeader.copyWith(
-                  color: colors.onSurface,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'WIDGETS · FLUTTER',
+                      style: EditorType.tileLabel.copyWith(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 1.6,
+                        color: colors.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(
+                        height: EditorMetrics.toolbarButtonGap),
+                    Text(
+                      'Library',
+                      style: EditorType.tileLabel.copyWith(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: colors.onSurface,
+                      ),
+                    ),
+                  ],
                 ),
               ),
               shadcn.Tooltip(
@@ -153,6 +254,14 @@ class _PartsPaletteState extends State<PartsPalette> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: EditorMetrics.toolbarButtonGap),
+          Text(
+            'Drag a tile onto the canvas, or tap + Add to append it to the current screen.',
+            style: EditorType.tileLabel.copyWith(
+              fontWeight: FontWeight.w400,
+              color: colors.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 18),
           SizedBox(
@@ -234,6 +343,9 @@ class _PartsPaletteState extends State<PartsPalette> {
                                   _collapsed.add(section.key);
                                 }
                               }),
+                              onAdd: widget.store == null
+                                  ? null
+                                  : _addPart,
                             ),
                           const SizedBox(height: 16),
                         ],
@@ -254,16 +366,22 @@ class _Section extends StatelessWidget {
   final bool collapsed;
   final VoidCallback onToggle;
 
+  /// Tap-to-add sink (kind → node); null while the panel has no store, which
+  /// renders every "+ Add" button disabled until Y6 wires it.
+  final ValueChanged<String>? onAdd;
+
   const _Section({
     required this.name,
     required this.entries,
     required this.collapsed,
     required this.onToggle,
+    required this.onAdd,
   });
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    final onAdd = this.onAdd;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -284,7 +402,7 @@ class _Section extends StatelessWidget {
                   child: Text(
                     name,
                     style: EditorType.sectionHeader.copyWith(
-                      color: colors.onSurface,
+                      color: colors.onSurfaceVariant,
                     ),
                   ),
                 ),
@@ -307,27 +425,53 @@ class _Section extends StatelessWidget {
         if (!collapsed)
           Padding(
             padding: const EdgeInsets.only(top: 8, bottom: 16),
-            child: Wrap(
-              spacing: EditorMetrics.tileGap,
-              runSpacing: EditorMetrics.tileGap,
-              children: [
-                for (final entry in entries)
-                  Draggable<String>(
-                    data: entry.kind,
-                    feedback: Material(
-                      type: MaterialType.transparency,
-                      child: Opacity(
-                        opacity: 0.9,
-                        child: _TileContent(entry: entry),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                // Two columns at any panel width (Y6 narrows 320 → ~300);
+                // unbounded fallback keeps tests/tools with loose
+                // constraints on the old measured tile width.
+                final gap = EditorMetrics.tileGap;
+                final max = constraints.maxWidth;
+                final tileWidth =
+                    max.isFinite ? (max - gap) / 2 : EditorMetrics.tileWidth;
+                return Wrap(
+                  spacing: gap,
+                  runSpacing: gap,
+                  children: [
+                    for (final entry in entries)
+                      SizedBox(
+                        width: tileWidth,
+                        child: Draggable<String>(
+                          data: entry.kind,
+                          feedback: Material(
+                            type: MaterialType.transparency,
+                            child: Opacity(
+                              opacity: 0.9,
+                              child: SizedBox(
+                                width: tileWidth,
+                                child: _LibraryTile(entry: entry),
+                              ),
+                            ),
+                          ),
+                          childWhenDragging: Opacity(
+                            opacity: 0.4,
+                            child: _LibraryTile(entry: entry),
+                          ),
+                          child: _PressableTile(
+                            child: _LibraryTile(
+                              entry: entry,
+                              addButtonKey:
+                                  ValueKey('forge-add-${entry.kind}'),
+                              onAdd: onAdd == null
+                                  ? null
+                                  : () => onAdd(entry.kind),
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
-                    childWhenDragging: Opacity(
-                      opacity: 0.4,
-                      child: _TileContent(entry: entry),
-                    ),
-                    child: _PressableTile(entry: entry),
-                  ),
-              ],
+                  ],
+                );
+              },
             ),
           ),
       ],
@@ -337,9 +481,9 @@ class _Section extends StatelessWidget {
 
 /// Tile with hover lift and press scale per the reference motion spec.
 class _PressableTile extends StatefulWidget {
-  final RegistryEntry entry;
+  final Widget child;
 
-  const _PressableTile({required this.entry});
+  const _PressableTile({required this.child});
 
   @override
   State<_PressableTile> createState() => _PressableTileState();
@@ -378,7 +522,7 @@ class _PressableTileState extends State<_PressableTile> {
             scale: _pressed ? 0.96 : 1.0,
             duration: const Duration(milliseconds: 140),
             curve: Curves.easeOutCubic,
-            child: _TileContent(entry: widget.entry),
+            child: widget.child,
           ),
         ),
       ),
@@ -386,46 +530,153 @@ class _PressableTileState extends State<_PressableTile> {
   }
 }
 
-/// Fixed 114x72 tile: centered icon over the part label.
-class _TileContent extends StatelessWidget {
+/// Forge tile card: icon chip + name row, one-line manifest desc, and the
+/// full-width dashed "+ Add" button at the bottom.
+class _LibraryTile extends StatelessWidget {
   final RegistryEntry entry;
 
-  const _TileContent({required this.entry});
+  /// Tap-to-add handler; null renders the "+ Add" button disabled (panel
+  /// mounted without a store — pre-Y6 shell).
+  final VoidCallback? onAdd;
+
+  /// Key for the "+ Add" button (`ValueKey('forge-add-<kind>')` on the live
+  /// tile; null on drag feedback/dimming copies so the key stays unique).
+  final Key? addButtonKey;
+
+  const _LibraryTile({
+    required this.entry,
+    this.onAdd,
+    this.addButtonKey,
+  });
 
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
+    final name = _tileLabel(entry.kind);
+    // The `row` pseudo-kind's manifest label IS its name — a second
+    // identical line would duplicate the tile's text (and break the
+    // one-tile-per-kind DnD regression tests), so the desc line renders
+    // only when it adds information.
+    final showDesc = entry.label != name;
     return shadcn.Tooltip(
       tooltip: (context) =>
           shadcn.TooltipContainer(child: Text(entry.label)),
       child: Container(
-        width: EditorMetrics.tileWidth,
-        height: EditorMetrics.tileHeight,
         decoration: BoxDecoration(
           color: colors.surfaceContainer,
           borderRadius: BorderRadius.circular(EditorMetrics.tileRadius),
+          border: Border.all(
+            color: colors.onSurfaceVariant.withValues(alpha: 0.22),
+          ),
         ),
+        padding: const EdgeInsets.all(EditorMetrics.panelInset),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Icon(
-              entry.icon,
-              size: 20,
-              color: colors.onSurfaceVariant,
+            Row(
+              children: [
+                Container(
+                  width: _kIconChipSize,
+                  height: _kIconChipSize,
+                  decoration: BoxDecoration(
+                    color: colors.surfaceContainerHigh,
+                    borderRadius: BorderRadius.circular(
+                      EditorMetrics.segmentInnerRadius,
+                    ),
+                  ),
+                  child: Icon(
+                    entry.icon,
+                    size: _kIconChipGlyph,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ),
+                const SizedBox(width: EditorMetrics.tileGap),
+                Expanded(
+                  child: Text(
+                    name,
+                    style: EditorType.tileLabel.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: colors.onSurface,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: EditorMetrics.toolbarButtonGap),
-            Text(
-              _tileLabel(entry.kind),
-              style: EditorType.tileLabel.copyWith(
-                color: colors.onSurface,
+            if (showDesc) ...[
+              const SizedBox(height: EditorMetrics.toolbarButtonGap),
+              Text(
+                entry.label,
+                style: EditorType.tileLabel.copyWith(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  color: colors.onSurfaceVariant,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
+            ],
+            const SizedBox(height: EditorMetrics.tileGap),
+            CustomPaint(
+              painter: _DashedBorder(
+                color:
+                    colors.onSurfaceVariant.withValues(alpha: 0.45),
+              ),
+              child: SizedBox(
+                width: double.infinity,
+                child: shadcn.GhostButton(
+                  key: addButtonKey,
+                  onPressed: onAdd,
+                  size: shadcn.ButtonSize.small,
+                  density: shadcn.ButtonDensity.compact,
+                  child: const Text('+ Add'),
+                ),
+              ),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Dashed rounded-rectangle border for the "+ Add" button — the FORGE.md §2
+/// documented exception (no kit dashed-box exists), following the same dash
+/// idiom as the registry's `_DashPainter`.
+class _DashedBorder extends CustomPainter {
+  final Color color;
+
+  const _DashedBorder({required this.color});
+
+  static const _dash = 5.0;
+  static const _gap = 3.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    final rect = Offset.zero & size;
+    final path = Path()
+      ..addRRect(
+        RRect.fromRectAndRadius(
+          rect,
+          Radius.circular(EditorMetrics.segmentInnerRadius),
+        ),
+      );
+    final metrics = path.computeMetrics().single;
+    var distance = 0.0;
+    while (distance < metrics.length) {
+      final end = (distance + _dash).clamp(0.0, metrics.length);
+      canvas.drawPath(metrics.extractPath(distance, end), paint);
+      distance += _dash + _gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DashedBorder oldDelegate) =>
+      oldDelegate.color != color;
 }

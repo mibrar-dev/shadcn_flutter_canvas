@@ -37,6 +37,14 @@ void _useReferenceViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
+/// Canvas screen label tap target (Y2: the Forge topbar tabs render the same
+/// screen names, so bare `find.text` is ambiguous — scope to the canvas to
+/// keep the canvas-tap selection path these tests cover).
+Finder _canvasScreenLabel(String name) => find.descendant(
+      of: find.byType(DesignCanvas),
+      matching: find.text(name),
+    );
+
 void main() {
   group('CanvasStore.deleteScreen', () {
     test('success removes the screen and its nodes, undo restores', () {
@@ -426,7 +434,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Done'));
+      await tester.tap(_canvasScreenLabel('Done'));
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
@@ -457,7 +465,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('Done'));
+      await tester.tap(_canvasScreenLabel('Done'));
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(

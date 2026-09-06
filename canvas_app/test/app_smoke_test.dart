@@ -2,6 +2,7 @@ import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
+import 'package:canvas_app/ui/forge_topbar.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/preview_player.dart';
@@ -41,7 +42,17 @@ void main() {
         );
     expect(toolbarIcon(Icons.play_arrow), findsOneWidget);
     expect(toolbarIcon(Icons.folder_open), findsOneWidget);
-    expect(find.text('Preview'), findsNothing);
+    // Toolbar entries stay icon-only: the text Preview action lives in the
+    // Forge topbar (Y2 mount), not in the floating toolbar.
+    expect(
+      find.descendant(
+        of: find.byType(CanvasToolbar),
+        matching: find.text('Preview'),
+      ),
+      findsNothing,
+    );
+    expect(find.byType(ForgeTopbar), findsOneWidget);
+    expect(find.text('Export Flutter'), findsOneWidget);
   });
 
   testWidgets('inspector tab shows the empty hint with no selection',
