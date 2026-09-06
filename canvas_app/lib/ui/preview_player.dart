@@ -35,6 +35,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/ui/phone_frame.dart'
+    show rowCrossAxis, rowMainAxis, wrapRowChild;
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
@@ -296,12 +298,24 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
 
   /// The doc content subtree — identical for every device (one-tree rule).
   ///
+  /// Recursive composition (Track C1 — `canvas/COMPOSITION.md` §1): root
+  /// nodes lay out vertically; rows lay out horizontally at any depth;
+  /// containers splice built children into their spec slot; leaves with
+  /// children stack them below via the fallback column. Childless nodes
+  /// take the exact pre-composition path.
+  ///
   /// Responsive filtering: [stageWidth] resolves the tier via [tierForWidth]
   /// and nodes hidden on that tier ([isNodeHiddenOnWidth]) are skipped. A
-  /// hidden ROW container hides its whole subtree (descendants are skipped
-  /// even when individually visible); every other node filters independently.
-  /// The active tier's [CanvasNode.breakpointValues] merge over each item's
-  /// props at build time (`{...item.props, ...overrides}`).
+  /// hidden node hides its whole subtree (descendants are skipped even when
+  /// individually visible — the cascade walks EVERY ancestor, not just
+  /// rows). The active tier's [CanvasNode.breakpointValues] merge over each
+  /// item's props at build time (`{...item.props, ...overrides}`), per level.
+  ///
+  /// Cycle safety: roots are `parentId == null` plus dangling-`parentId`
+  /// nodes (same honesty rule as codegen); self-parented/cyclic nodes are
+  /// unreachable and never render (`validateNesting` reports them). Every
+  /// level additionally filters ids already on its build path, so corrupt
+  /// docs terminate.
   ///
   /// Slot semantics (assumed — the doc model stores [CanvasNode.slots] as a
   /// slot-name → item-id map with no renderer contract yet, so this is
@@ -330,8 +344,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     }
     final tierName = tierForWidth(stageWidth).name;
     final byId = {for (final n in widget.doc.nodes) n.id: n};
-    // A node is hidden when it — or any ancestor row up its parentId chain —
-    // is hidden on the active tier (cycle-safe via [seen]).
+    // A node is hidden when it — or any ancestor up its parentId chain — is
+    // hidden on the active tier (cycle-safe via [seen]).
     bool effectivelyHidden(CanvasNode node) {
       CanvasNode? cursor = node;
       final seen = <String>{};
@@ -343,41 +357,175 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       return false;
     }
 
-    List<CanvasItem> visibleItems(CanvasNode node) {
-      var items = node.items;
-      final overrides = node.breakpointValues[tierName];
-      if (overrides != null && overrides.isNotEmpty) {
-        items = [
-          for (final item in items)
-            item.copyWith(props: {...item.props, ...overrides}),
-        ];
-      }
-      if (node.slots.isEmpty) return items;
-      final named = <String>{
-        for (final key in node.slots.keys)
-          if (items.any((item) => item.id == key)) key,
-      };
-      if (named.isEmpty) return items;
-      return [for (final item in items) if (named.contains(item.id)) item];
-    }
+    final roots = [
+      for (final node in widget.doc.nodes)
+        if (node.screenId == current.id && !effectivelyHidden(node))
+          if (node.parentId == null ||
+              byId[node.parentId] == null ||
+              byId[node.parentId]!.screenId != node.screenId)
+            node,
+    ];
+
+    bool hidden(CanvasNode node) => effectivelyHidden(node);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        for (final node in widget.doc.nodes)
-          if (node.screenId == current.id && !effectivelyHidden(node))
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (final item in visibleItems(node)) _previewItem(item),
-                ],
-              ),
-            ),
+        for (final node in roots)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: _buildPreviewNode(node, tierName, stageWidth, hidden, {
+              node.id,
+            }),
+          ),
       ],
     );
+  }
+
+  /// Visible direct children of [node] for the preview tree: core
+  /// [childrenOf] order (document order), same-screen only, hidden subtrees
+  /// pruned, self-parents and ids already on the build path ([ancestors])
+  /// excluded so corrupt cyclic docs terminate. Never reimplements
+  /// traversal — filtering over the core helper.
+  List<CanvasNode> _previewChildren(
+    CanvasNode node,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) => [
+    for (final child in childrenOf(widget.doc, node.id))
+      if (child.screenId == node.screenId &&
+          child.id != node.id &&
+          !ancestors.contains(child.id) &&
+          !hidden(child))
+        child,
+  ];
+
+  /// Whether [items] (already slot-filtered, breakpoint-merged) render
+  /// children inside chrome: a non-row node whose first visible item's kind
+  /// is in [kContainerKinds] (`canvas/COMPOSITION.md` §2; first-item rule
+  /// documented on [kContainerKinds]).
+  bool _isPreviewContainer(CanvasNode node, List<CanvasItem> items) =>
+      !node.isRow &&
+      items.isNotEmpty &&
+      kContainerKinds.contains(items.first.kind);
+
+  /// Recursive preview node builder (see [_stageContent]). Every level
+  /// builds its items through [_previewItem] (per-level breakpoint merge via
+  /// [visibleItems], per-item tap actions), so nested actions navigate and
+  /// nested overrides apply exactly like roots.
+  Widget _buildPreviewNode(
+    CanvasNode node,
+    String tierName,
+    double stageWidth,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) {
+    if (node.isRow) {
+      return _buildPreviewRow(node, tierName, stageWidth, hidden, ancestors);
+    }
+    final items = visibleItems(node, tierName);
+    final kids = _previewChildren(node, hidden, ancestors);
+    if (kids.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [for (final item in items) _previewItem(item)],
+      );
+    }
+    final next = {...ancestors, node.id};
+    final builtKids = [
+      for (final kid in kids)
+        _buildPreviewNode(kid, tierName, stageWidth, hidden, next),
+    ];
+    if (_isPreviewContainer(node, items)) {
+      final first = items.first;
+      final container = first.action == null
+          ? buildCatalogItem(first.kind, first.props, builtKids)
+          : _TapCatcher(
+              onTap: () => _onItemTap(first),
+              child: buildCatalogItem(first.kind, first.props, builtKids),
+            );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          container,
+          for (final item in items.skip(1)) _previewItem(item),
+        ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final item in items) _previewItem(item),
+        for (var i = 0; i < builtKids.length; i++) ...[
+          const SizedBox(height: kFlowScreenGap),
+          builtKids[i],
+        ],
+      ],
+    );
+  }
+
+  /// One preview row: horizontal `Row` of recursively-built children (doc
+  /// order, node `gap` separators, W3 alignment, [wrapRowChild] shares so
+  /// kit widgets with internal `Expanded` rows never see unbounded width).
+  /// `crossAxis == stretch` needs [IntrinsicHeight] (the surrounding
+  /// `ListView` measures with unbounded height), mirroring the canvas
+  /// renderer. An empty row renders the same empty `Column` as before.
+  Widget _buildPreviewRow(
+    CanvasNode node,
+    String tierName,
+    double stageWidth,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) {
+    final next = {...ancestors, node.id};
+    final kids = _previewChildren(node, hidden, ancestors);
+    if (kids.isEmpty) {
+      return const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [],
+      );
+    }
+    final gap = node.gap < 0 ? 0.0 : node.gap;
+    final cross = rowCrossAxis(node.crossAxis);
+    Widget row = Row(
+      mainAxisAlignment: rowMainAxis(node.mainAxis),
+      crossAxisAlignment: cross,
+      children: [
+        for (var i = 0; i < kids.length; i++) ...[
+          if (i > 0) SizedBox(width: gap),
+          wrapRowChild(
+            kids[i],
+            _buildPreviewNode(kids[i], tierName, stageWidth, hidden, next),
+          ),
+        ],
+      ],
+    );
+    if (cross == CrossAxisAlignment.stretch) {
+      row = IntrinsicHeight(child: row);
+    }
+    return row;
+  }
+
+  List<CanvasItem> visibleItems(CanvasNode node, String tierName) {
+    var items = node.items;
+    final overrides = node.breakpointValues[tierName];
+    if (overrides != null && overrides.isNotEmpty) {
+      items = [
+        for (final item in items)
+          item.copyWith(props: {...item.props, ...overrides}),
+      ];
+    }
+    if (node.slots.isEmpty) return items;
+    final named = <String>{
+      for (final key in node.slots.keys)
+        if (items.any((item) => item.id == key)) key,
+    };
+    if (named.isEmpty) return items;
+    return [for (final item in items) if (named.contains(item.id)) item];
   }
 
   /// Action-less items render bare so every gesture reaches the real widget.

@@ -195,7 +195,10 @@ String buildSingleFile(
             '          const SizedBox(height: ${_flowNum(kFlowScreenGap)}),');
       }
       first = false;
-      _writeFlowChild(out, doc, root, '          ');
+      // Fresh ancestor path per root (roots are disjoint subtrees; corrupt
+      // cycles are unreachable from roots but guarded anyway — see
+      // [_writeFlowChild]).
+      _writeFlowChild(out, doc, root, '          ', <String>{});
     }
     out
       ..writeln('        ],')
@@ -4441,6 +4444,85 @@ List<CanvasNode> _rootNodes(ScreenDoc doc, String screenId) {
   ];
 }
 
+/// Track C3 (COMPOSITION.md §2): kinds whose child slot codegen splices
+/// recursively generated children into. The `row` pseudo-kind is structural
+/// (`isRow == true`, handled by the Row emitters) and is NOT listed here.
+/// Every other kind is a leaf: children use the below-fallback (§1).
+const _kContainerKinds = {
+  'card',
+  'outlined_container',
+  'scaffold',
+  'dialog',
+  'alert_dialog',
+  'drawer',
+  'form',
+  'hidden',
+  'clickable',
+  'scrollbar',
+};
+
+/// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with
+/// the codegen action appended): emitted as a comment where the revisit would
+/// recurse, then the subtree is skipped — never a hang, never a crash.
+String _cycleNote(String nodeId) =>
+    'cycle: node $nodeId is its own ancestor (skipped)';
+
+/// Splices recursively emitted child [units] (unindented multi-line statement
+/// strings from [_childUnits]) into a container slot whose children sit at
+/// [slotIndent] in the unindented composer output. Units join with
+/// `kFlowScreenGap` separators, with a leading separator from the chrome
+/// above (vertical-stack rule, COMPOSITION.md §5).
+String _spliceSlotChildren(List<String> units, String slotIndent) {
+  final gap =
+      '${slotIndent}const SizedBox(height: ${_flowNum(kFlowScreenGap)}),';
+  final buf = StringBuffer();
+  for (final unit in units) {
+    buf.writeln(gap);
+    for (final line in unit.split('\n')) {
+      if (line.isEmpty) continue;
+      buf.writeln('$slotIndent$line');
+    }
+  }
+  return buf.toString();
+}
+
+/// Unindented statement strings for [kids] (each: tap comments, tap wraps,
+/// and its own responsive wrapper when responsive), skipping kids that emit
+/// nothing (e.g. empty leaves). Recursion funnels through [_writeFlowChild],
+/// which is cycle-guarded via [visited].
+List<String> _childUnits(
+  ScreenDoc doc,
+  List<CanvasNode> kids,
+  Set<String> visited,
+) {
+  final units = <String>[];
+  for (final kid in kids) {
+    final buf = StringBuffer();
+    _writeFlowChild(buf, doc, kid, '', visited);
+    final text = buf.toString().trimRight();
+    if (text.isNotEmpty) units.add(text);
+  }
+  return units;
+}
+
+/// Unindented single-statement strings for [items] (tap `// taps -> …`
+/// comment plus the bundle-equivalent `GestureDetector` wrap for known
+/// targets). Statement-for-statement identical to [_writeItemBlock].
+List<String> _ownItemUnits(ScreenDoc doc, List<CanvasItem> items) {
+  final taps = _tapTargets(doc);
+  final units = <String>[];
+  for (final item in items) {
+    final lines = <String>[];
+    if (item.action != null) lines.add('// taps -> ${item.action!.to}');
+    var expr = _itemExpression(item);
+    final route = taps.routeFor(item);
+    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+    lines.addAll(expr.split('\n'));
+    units.add(lines.join('\n'));
+  }
+  return units;
+}
+
 /// W3 alignment names: row `mainAxis` strings to `MainAxisAlignment` const
 /// names (`null`/unknown → start, preserving the pre-W3 default output).
 String _mainAxisName(String? value) {
@@ -4530,29 +4612,41 @@ CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
 /// [_writeBranch] emits those above the return — but known-target items ARE
 /// GestureDetector-wrapped here (see [_wrapTapExpr]) so responsive branch
 /// returns navigate like the non-responsive paths.
-String _nodeContentExpr(ScreenDoc doc, CanvasNode node) {
+///
+/// Track C3: nodes WITH children capture their statement form (container slot
+/// splice or below-fallback, see [_writeNonRowCore]) through a buffer and
+/// strip the trailing comma, so every branch carries the whole subtree.
+/// [visited] guards the capture (the node's own id is already a member —
+/// [_writeFlowChild] adds it before dispatching here).
+String _nodeContentExpr(ScreenDoc doc, CanvasNode node, Set<String> visited) {
+  final kids = childrenOf(doc, node.id);
   if (!node.isRow) {
-    if (node.items.length == 1) {
-      final item = node.items.single;
-      final route = _tapTargets(doc).routeFor(item);
-      final expr = _itemExpression(item);
-      if (route == null) return _stripTrailingComma(expr);
-      return _wrapTapExpr(expr, item.action!, route);
+    if (kids.isEmpty) {
+      if (node.items.length == 1) {
+        final item = node.items.single;
+        final route = _tapTargets(doc).routeFor(item);
+        final expr = _itemExpression(item);
+        if (route == null) return _stripTrailingComma(expr);
+        return _wrapTapExpr(expr, item.action!, route);
+      }
+      if (node.items.isEmpty) return 'SizedBox.shrink()';
+      final buf = StringBuffer()
+        ..writeln('Column(')
+        ..writeln('mainAxisSize: MainAxisSize.min,')
+        ..writeln('crossAxisAlignment: CrossAxisAlignment.start,')
+        ..writeln('children: [');
+      _writeItemBlock(buf, doc, node.items, '  ');
+      buf
+        ..writeln('],')
+        ..write(')');
+      return buf.toString();
     }
-    if (node.items.isEmpty) return 'SizedBox.shrink()';
-    final buf = StringBuffer()
-      ..writeln('Column(')
-      ..writeln('mainAxisSize: MainAxisSize.min,')
-      ..writeln('crossAxisAlignment: CrossAxisAlignment.start,')
-      ..writeln('children: [');
-    _writeItemBlock(buf, doc, node.items, '  ');
-    buf
-      ..writeln('],')
-      ..write(')');
-    return buf.toString();
+    final buf = StringBuffer();
+    _writeNonRowCore(buf, doc, node, kids, '', visited);
+    return _stripTrailingComma(buf.toString());
   }
   final buf = StringBuffer();
-  _writeFlowChildCore(buf, doc, node, '');
+  _writeFlowChildCore(buf, doc, node, '', visited);
   return _stripTrailingComma(buf.toString());
 }
 
@@ -4589,21 +4683,26 @@ void _writeReturn(
 /// Writes one tier branch (or the default branch when [guard] is null) for
 /// [node]'s content, preserving the `// taps -> ...` comment for
 /// single-item leaves.
+///
+/// Track C3: nodes with children carry their tap comments inside the captured
+/// subtree expression, so the outer comment is childless-only (no duplicates).
 void _writeBranch(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode node,
   String indent,
   String? guard,
+  Set<String> visited,
 ) {
   if (!node.isRow &&
       node.items.length == 1 &&
-      node.items.single.action != null) {
+      node.items.single.action != null &&
+      childrenOf(doc, node.id).isEmpty) {
     out.writeln('$indent// taps -> ${node.items.single.action!.to}');
   }
   _writeReturn(
     out,
-    _nodeContentExpr(doc, node),
+    _nodeContentExpr(doc, node, visited),
     indent,
     guard == null ? 'return ' : 'if ($guard) return ',
   );
@@ -4626,6 +4725,7 @@ void _writeResponsiveFlowChild(
   ScreenDoc doc,
   CanvasNode node,
   String indent,
+  Set<String> visited,
 ) {
   final hidden = _hiddenTiers(node);
   final tiers = _overrideTiers(node);
@@ -4658,9 +4758,10 @@ void _writeResponsiveFlowChild(
       _withProps(node, node.breakpointValues[tier]!),
       '$indent    ',
       "tier == '$tier'",
+      visited,
     );
   }
-  _writeBranch(out, doc, node, '$indent    ', null);
+  _writeBranch(out, doc, node, '$indent    ', null, visited);
   out
     ..writeln('$indent  },')
     ..writeln('$indent),');
@@ -4674,10 +4775,11 @@ void _writeResponsiveRowChild(
   ScreenDoc doc,
   CanvasNode child,
   String indent,
+  Set<String> visited,
 ) {
   final expand = child.expand;
   if (expand != 'expanded' && expand != 'flex') {
-    _writeResponsiveFlowChild(out, doc, child, indent);
+    _writeResponsiveFlowChild(out, doc, child, indent, visited);
     return;
   }
   final flex = child.flex ?? 1;
@@ -4686,7 +4788,7 @@ void _writeResponsiveRowChild(
     ..writeln('$indent$wrapper(')
     ..writeln('$indent  flex: $flex,')
     ..writeln('$indent  child:');
-  _writeResponsiveFlowChild(out, doc, child, '$indent    ');
+  _writeResponsiveFlowChild(out, doc, child, '$indent    ', visited);
   out.writeln('$indent),');
 }
 
@@ -4697,18 +4799,32 @@ void _writeResponsiveRowChild(
 /// Responsive nodes (`hiddenOn`/`breakpointValues`) route to
 /// [_writeResponsiveFlowChild]; everything else uses the non-responsive core
 /// below, unchanged.
+///
+/// Track C3: the cycle-guarded entry — [visited] holds the ancestor path
+/// (added here, removed when this subtree is done). A revisit means a corrupt
+/// `parentId` cycle: comment + skip, never a hang. Roots start with an empty
+/// set (see [buildSingleFile]); every deeper recursion funnels through here.
 
 void _writeFlowChild(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode node,
   String indent,
+  Set<String> visited,
 ) {
-  if (_isResponsive(node)) {
-    _writeResponsiveFlowChild(out, doc, node, indent);
+  if (!visited.add(node.id)) {
+    out.writeln('$indent// ${_cycleNote(node.id)}');
     return;
   }
-  _writeFlowChildCore(out, doc, node, indent);
+  try {
+    if (_isResponsive(node)) {
+      _writeResponsiveFlowChild(out, doc, node, indent, visited);
+      return;
+    }
+    _writeFlowChildCore(out, doc, node, indent, visited);
+  } finally {
+    visited.remove(node.id);
+  }
 }
 
 /// Writes one root flow child — non-responsive core (see [_writeFlowChild]
@@ -4725,14 +4841,25 @@ void _writeFlowChild(
 /// `crossAxis == stretch` wraps the Row in `IntrinsicHeight`: a stretch Row
 /// inside the screen Column (unbounded height) asserts without it, in both
 /// the renderer and the generated app.
+///
+/// Track C3: non-row nodes WITH children take the composition branches
+/// ([_writeNonRowCore]) — container slot splice or below-fallback; childless
+/// nodes keep the historical [_writeItemBlock] path byte-identically.
+/// [visited] already contains [node.id] (added by [_writeFlowChild]).
 void _writeFlowChildCore(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode node,
   String indent,
+  Set<String> visited,
 ) {
   if (!node.isRow) {
-    _writeItemBlock(out, doc, node.items, indent);
+    final kids = childrenOf(doc, node.id);
+    if (kids.isEmpty) {
+      _writeItemBlock(out, doc, node.items, indent);
+      return;
+    }
+    _writeNonRowCore(out, doc, node, kids, indent, visited);
     return;
   }
   final stretch = node.crossAxis == 'stretch';
@@ -4760,11 +4887,10 @@ void _writeFlowChildCore(
     separator();
     _writeItemBlock(out, doc, node.items, childIndent);
   }
-  for (final child in doc.nodes) {
-    if (child.parentId != node.id) continue;
+  for (final child in childrenOf(doc, node.id)) {
     empty = false;
     separator();
-    _writeRowChild(out, doc, child, childIndent);
+    _writeRowChild(out, doc, child, childIndent, visited);
   }
   if (empty) {
     out.writeln('${childIndent}// (empty row)');
@@ -4782,17 +4908,23 @@ void _writeFlowChildCore(
 ///
 /// Responsive children route to [_writeResponsiveRowChild]; everything else
 /// uses the non-responsive core below, unchanged.
+///
+/// Track C3: non-row children WITH children recurse through [_writeFlowChild]
+/// (container slot splice / below-fallback / nested rows at any depth, with
+/// the flex wrapper outside the whole subtree); childless children keep the
+/// historical paths byte-identically.
 void _writeRowChild(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode child,
   String indent,
+  Set<String> visited,
 ) {
   if (_isResponsive(child)) {
-    _writeResponsiveRowChild(out, doc, child, indent);
+    _writeResponsiveRowChild(out, doc, child, indent, visited);
     return;
   }
-  _writeRowChildCore(out, doc, child, indent);
+  _writeRowChildCore(out, doc, child, indent, visited);
 }
 
 /// Writes one row child — non-responsive core (see [_writeRowChild] for the
@@ -4802,11 +4934,12 @@ void _writeRowChildCore(
   ScreenDoc doc,
   CanvasNode child,
   String indent,
+  Set<String> visited,
 ) {
   final expand = child.expand;
   if (expand != 'expanded' && expand != 'flex') {
-    if (child.isRow) {
-      _writeFlowChild(out, doc, child, indent);
+    if (child.isRow || childrenOf(doc, child.id).isNotEmpty) {
+      _writeFlowChild(out, doc, child, indent, visited);
     } else {
       _writeItemBlock(out, doc, child.items, indent);
     }
@@ -4821,10 +4954,30 @@ void _writeRowChildCore(
       ..writeln('${indent}  child:');
     final nestedIndent = '$indent    ';
     final nested = StringBuffer();
-    _writeFlowChild(nested, doc, child, nestedIndent);
+    _writeFlowChild(nested, doc, child, nestedIndent, visited);
     for (final line in nested.toString().split('\n')) {
       if (line.isEmpty) continue;
       out.writeln(line);
+    }
+    out.writeln('$indent),');
+    return;
+  }
+  final kids = childrenOf(doc, child.id);
+  if (kids.isNotEmpty) {
+    // Flex stays outside the whole subtree (the layout role is
+    // tap-independent and tier-independent, like the row/responsive
+    // wrappers); the subtree carries its own tap wraps and conditionals.
+    final nested = StringBuffer();
+    _writeFlowChild(nested, doc, child, '', visited);
+    var text = nested.toString().trimRight();
+    if (text.isEmpty) text = 'SizedBox.shrink()';
+    final exprLines = text.split('\n');
+    out
+      ..writeln('${indent}$wrapper(')
+      ..writeln('$indent  flex: $flex,')
+      ..writeln('${indent}  child: ${exprLines.first}');
+    for (final line in exprLines.skip(1)) {
+      out.writeln('$indent  $line');
     }
     out.writeln('$indent),');
     return;
@@ -4865,18 +5018,100 @@ void _writeItemBlock(
   List<CanvasItem> items,
   String indent,
 ) {
-  final taps = _tapTargets(doc);
-  for (final item in items) {
-    if (item.action != null) {
-      out.writeln('$indent// taps -> ${item.action!.to}');
-    }
-    var expr = _itemExpression(item);
-    final route = taps.routeFor(item);
-    if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
-    for (final line in expr.split('\n')) {
+  for (final unit in _ownItemUnits(doc, items)) {
+    for (final line in unit.split('\n')) {
       out.writeln('$indent$line');
     }
   }
+}
+
+/// Writes a non-row node WITH children ([kids] is non-empty; [node.id] is
+/// already in [visited]): a single-item container node splices the children
+/// into its §2 slot ([_writeContainerNode]); anything else (multi-item,
+/// leaf-kind, empty, or unknown-kind nodes) stacks the children BELOW the
+/// node's own widget ([_writeLeafFallback], COMPOSITION.md §1).
+void _writeNonRowCore(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasNode> kids,
+  String indent,
+  Set<String> visited,
+) {
+  if (node.items.length == 1 &&
+      _kContainerKinds.contains(node.items.single.kind)) {
+    _writeContainerNode(out, doc, node.items.single, kids, indent, visited);
+    return;
+  }
+  _writeLeafFallback(out, doc, node, kids, indent, visited);
+}
+
+/// Writes a container node: its item expression with recursively emitted
+/// children spliced into the §2 slot (see [_spliceSlotChildren]). The whole
+/// expression — chrome plus spliced children — keeps the item's tap comment
+/// and `GestureDetector` navigation (tap wraps apply per item at every
+/// level, COMPOSITION.md §5).
+void _writeContainerNode(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasItem item,
+  List<CanvasNode> kids,
+  String indent,
+  Set<String> visited,
+) {
+  final taps = _tapTargets(doc);
+  if (item.action != null) {
+    out.writeln('$indent// taps -> ${item.action!.to}');
+  }
+  var expr = _itemExpression(item, _childUnits(doc, kids, visited));
+  final route = taps.routeFor(item);
+  if (route != null) expr = '${_wrapTapExpr(expr, item.action!, route)},';
+  for (final line in expr.split('\n')) {
+    out.writeln('$indent$line');
+  }
+}
+
+/// Writes the leaf fallback for a node WITH children: `Column([own, ...])`
+/// — the node's own item expressions first, then one subtree per child node
+/// below them, all joined with `kFlowScreenGap` separators (COMPOSITION.md
+/// §§1/5). Each level keeps its own tap comments/wraps and responsive
+/// wrappers (see [_childUnits]).
+void _writeLeafFallback(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasNode> kids,
+  String indent,
+  Set<String> visited,
+) {
+  final units = [
+    ..._ownItemUnits(doc, node.items),
+    ..._childUnits(doc, kids, visited),
+  ];
+  if (units.isEmpty) {
+    out.writeln('${indent}SizedBox.shrink(),');
+    return;
+  }
+  final childIndent = '$indent    ';
+  final gap = '$childIndent'
+      'const SizedBox(height: ${_flowNum(kFlowScreenGap)}),';
+  out
+    ..writeln('${indent}Column(')
+    ..writeln('${indent}  mainAxisSize: MainAxisSize.min,')
+    ..writeln('${indent}  crossAxisAlignment: CrossAxisAlignment.start,')
+    ..writeln('${indent}  children: [');
+  var first = true;
+  for (final unit in units) {
+    if (!first) out.writeln(gap);
+    first = false;
+    for (final line in unit.split('\n')) {
+      if (line.isEmpty) continue;
+      out.writeln('$childIndent$line');
+    }
+  }
+  out
+    ..writeln('$indent  ],')
+    ..writeln('$indent),');
 }
 
 /// Tap-action navigation targets for [doc]: screen id → route plus the id
@@ -5263,9 +5498,291 @@ class _CanvasStepperCellState extends State<CanvasStepperCell> {
 }
 ''';
 
+/// Track C3 container composers (COMPOSITION.md §2): each takes the item
+/// props plus recursively emitted child units ([nested], see
+/// [_spliceSlotChildren]) and splices them into the kind's documented child
+/// slot. Empty [nested] reproduces the historical childless emission
+/// byte-identically.
+///
+/// Two deliberate slot readings (spec-literal, reported in the C3 notes):
+/// * `outlined_container`/`hidden`/`clickable`: the spec names `child` as
+///   `Column([label, ...children])`; the historical emission wraps the label
+///   in its chrome (`Padding`/`Hidden`/`Clickable`), so children splice into
+///   a `Column` placed INSIDE that chrome — childless output unchanged.
+/// * `alert_dialog`/`scrollbar`: the historical emission has no `Column`
+///   (`content:`/`SizedBox` directly hold the label), so children splice into
+///   a `Column` that keeps the label first — childless output unchanged.
+String _cardExpr(Map<String, dynamic> props, List<String> nested) {
+  final footer = _bool(props, 'showFooter')
+      ? '    const SizedBox(height: 12),\n'
+          '    PrimaryButton(\n'
+          "      size: ButtonSize.small,\n"
+          '      onPressed: () {},\n'
+          "      child: Text('Action'),\n"
+          '    ),\n'
+      : '';
+  // Slot: inner Column after description, before the footer action.
+  final slot =
+      nested.isEmpty ? '' : _spliceSlotChildren(nested, '      ');
+  return 'Card(\n'
+      '  padding: const EdgeInsets.all(16),\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      Text(${_str(props['title'] ?? 'Card Title')}),\n'
+      '      const SizedBox(height: 4),\n'
+      '      Text(${_str(props['description'] ?? 'Card description')}),\n'
+      '$slot$footer'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _outlinedContainerExpr(
+  Map<String, dynamic> props,
+  List<String> nested,
+) {
+  final label = 'Text(${_str(_prop(props, 'label', 'Outlined'))})';
+  if (nested.isEmpty) {
+    return 'OutlinedContainer(\n'
+        '  child: Padding(\n'
+        '    padding: const EdgeInsets.all(12),\n'
+        '    child: $label,\n'
+        '  ),\n'
+        '),';
+  }
+  // Slot: OutlinedContainer.child (Column([label, ...children])), kept inside
+  // the historical Padding chrome.
+  return 'OutlinedContainer(\n'
+      '  child: Padding(\n'
+      '    padding: const EdgeInsets.all(12),\n'
+      '    child: Column(\n'
+      '      mainAxisSize: MainAxisSize.min,\n'
+      '      crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '      children: [\n'
+      '        $label,\n'
+      '${_spliceSlotChildren(nested, '        ')}'
+      '      ],\n'
+      '    ),\n'
+      '  ),\n'
+      '),';
+}
+
+String _scaffoldExpr(Map<String, dynamic> props, List<String> nested) {
+  final body = 'Text(${_str(_prop(props, 'body', 'Welcome'))})';
+  final padded = nested.isEmpty
+      ? '    child: Padding(\n'
+          '      padding: const EdgeInsets.all(16),\n'
+          '      child: $body,\n'
+          '    ),\n'
+      // Slot: body Padding column under the body text.
+      : '    child: Padding(\n'
+          '      padding: const EdgeInsets.all(16),\n'
+          '      child: Column(\n'
+          '        mainAxisSize: MainAxisSize.min,\n'
+          '        crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '        children: [\n'
+          '          $body,\n'
+          '${_spliceSlotChildren(nested, '          ')}'
+          '        ],\n'
+          '      ),\n'
+          '    ),\n';
+  return 'SizedBox(\n'
+      '  height: 320,\n'
+      '  child: Scaffold(\n'
+      '    headers: [AppBar(title: Text(${_str(_prop(props, 'title', 'My App'))}))],\n'
+      '$padded'
+      '  ),\n'
+      '),';
+}
+
+String _dialogExpr(Map<String, dynamic> props, List<String> nested) {
+  final dActions = _boolT(props, 'showActions')
+      ? '      const SizedBox(height: 20),\n'
+          '      Row(\n'
+          '        children: [\n'
+          '          const Spacer(),\n'
+          '          OutlineButton(\n'
+          '            onPressed: () {},\n'
+          "            child: const Text('Close'),\n"
+          '          ),\n'
+          '        ],\n'
+          '      ),\n'
+      : '';
+  // Slot: ModalContainer column after message, before the action row.
+  final slot =
+      nested.isEmpty ? '' : _spliceSlotChildren(nested, '      ');
+  return 'ModalContainer(\n'
+      '  filled: true,\n'
+      '  padding: const EdgeInsets.all(24),\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      Text(${_str(_prop(props, 'title', 'Dialog title'))}),\n'
+      '      const SizedBox(height: 12),\n'
+      '      Text(${_str(_prop(props, 'message', 'Use dialogs for important confirmations.'))}),\n'
+      '$slot$dActions'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _alertDialogExpr(Map<String, dynamic> props, List<String> nested) {
+  final adActions = _boolT(props, 'showActions')
+      ? "    OutlineButton(onPressed: () {}, child: const Text('Close')),\n"
+      : '';
+  final content = nested.isEmpty
+      ? '  content: Text(${_str(_prop(props, 'message', 'This action cannot be undone.'))}),\n'
+      // Slot: content area after message, before actions.
+      : '  content: Column(\n'
+          '    mainAxisSize: MainAxisSize.min,\n'
+          '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '    children: [\n'
+          '      Text(${_str(_prop(props, 'message', 'This action cannot be undone.'))}),\n'
+          '${_spliceSlotChildren(nested, '      ')}'
+          '    ],\n'
+          '  ),\n';
+  return 'AlertDialog(\n'
+      '  title: Text(${_str(_prop(props, 'title', 'Are you sure?'))}),\n'
+      '$content'
+      '  actions: [\n'
+      '$adActions'
+      '  ],\n'
+      '),';
+}
+
+String _drawerExpr(Map<String, dynamic> props, List<String> nested) {
+  final drawerPos = switch (props['position']) {
+    'left' => 'OverlayPosition.left',
+    'right' => 'OverlayPosition.right',
+    'top' => 'OverlayPosition.top',
+    'bottom' => 'OverlayPosition.bottom',
+    'start' => 'OverlayPosition.start',
+    _ => 'OverlayPosition.end',
+  };
+  // Slot: panel column after the content text.
+  final slot =
+      nested.isEmpty ? '' : _spliceSlotChildren(nested, '        ');
+  return 'DrawerWrapper(\n'
+      '  position: $drawerPos,\n'
+      '  size: const Size(240, 480),\n'
+      '  stackIndex: 0,\n'
+      '  draggable: false,\n'
+      '  showDragHandle: false,\n'
+      '  child: SizedBox(\n'
+      '    width: 240,\n'
+      '    child: Column(\n'
+      '      mainAxisSize: MainAxisSize.min,\n'
+      '      crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '      children: [\n'
+      '        Text(${_str(_prop(props, 'title', 'Drawer'))}),\n'
+      '        const SizedBox(height: 16),\n'
+      '        Text(${_str(_prop(props, 'content', 'Drawer content'))}),\n'
+      '$slot'
+      '      ],\n'
+      '    ),\n'
+      '  ),\n'
+      '),';
+}
+
+String _formExpr(Map<String, dynamic> props, List<String> nested) {
+  // Slot: inner Column after the field layout, before submit.
+  final slot = nested.isEmpty ? '' : _spliceSlotChildren(nested, '      ');
+  return 'Form(\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    children: [\n'
+      '      FormTableLayout(\n'
+      '        rows: [\n'
+      '          FormField<String>(\n'
+      '            key: const FormKey<String>(#name),\n'
+      '            label: Text(${_str(_prop(props, 'label', 'Name'))}),\n'
+      '            child: TextField(placeholder: Text(${_str(_prop(props, 'placeholder', 'Jane Doe'))})),\n'
+      '          ),\n'
+      '        ],\n'
+      '      ),\n'
+      '$slot'
+      '      const SizedBox(height: 16),\n'
+      '      PrimaryButton(\n'
+      '        onPressed: () {},\n'
+      '        child: Text(${_str(_prop(props, 'submitLabel', 'Submit'))}),\n'
+      '      ),\n'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _hiddenExpr(Map<String, dynamic> props, List<String> nested) {
+  final label = 'Text(${_str(_prop(props, 'label', 'Hidden content'))})';
+  if (nested.isEmpty) {
+    return 'Hidden(hidden: ${_bool(props, 'hidden')}, child: $label),';
+  }
+  // Slot: Hidden.child (Column([label, ...children])).
+  return 'Hidden(\n'
+      '  hidden: ${_bool(props, 'hidden')},\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      $label,\n'
+      '${_spliceSlotChildren(nested, '      ')}'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _clickableExpr(Map<String, dynamic> props, List<String> nested) {
+  final label = 'Text(${_str(_prop(props, 'label', 'Tap me'))})';
+  if (nested.isEmpty) {
+    return 'Clickable(onPressed: () {}, child: $label),';
+  }
+  // Slot: Clickable.child (Column([label, ...children])).
+  return 'Clickable(\n'
+      '  onPressed: () {},\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      $label,\n'
+      '${_spliceSlotChildren(nested, '      ')}'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _scrollbarExpr(Map<String, dynamic> props, List<String> nested) {
+  final label = 'Text(${_str(_prop(props, 'label', 'Scrollable content'))})';
+  if (nested.isEmpty) {
+    return 'Scrollbar(child: SizedBox(height: 64, child: $label)),';
+  }
+  // Slot: box column under the label.
+  return 'Scrollbar(\n'
+      '  child: SizedBox(\n'
+      '    height: 64,\n'
+      '    child: Column(\n'
+      '      mainAxisSize: MainAxisSize.min,\n'
+      '      crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '      children: [\n'
+      '        $label,\n'
+      '${_spliceSlotChildren(nested, '        ')}'
+      '      ],\n'
+      '    ),\n'
+      '  ),\n'
+      '),';
+}
+
 /// Catalog-equivalent constructor call as text, mirroring
 /// `component_catalog.dart` prop→parameter mapping.
-String _itemExpression(CanvasItem item) {
+///
+/// Track C3: container kinds (see [_kContainerKinds]) accept recursively
+/// emitted child units in [nested] (unindented statement strings from
+/// [_childUnits]), spliced into their COMPOSITION.md §2 slot. Empty [nested]
+/// emits the historical childless form byte-identically; every other kind
+/// ignores [nested] (leaf children use the [_writeLeafFallback] branch, never
+/// the item expression).
+String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
   final props = item.props;
   switch (item.kind) {
     case 'button':
@@ -5292,27 +5809,7 @@ String _itemExpression(CanvasItem item) {
           '  child: Text(${_str(props['label'] ?? 'Button')}),\n'
           '),';
     case 'card':
-      final footer = _bool(props, 'showFooter')
-          ? '    const SizedBox(height: 12),\n'
-              '    PrimaryButton(\n'
-              "      size: ButtonSize.small,\n"
-              '      onPressed: () {},\n'
-              "      child: Text('Action'),\n"
-              '    ),\n'
-          : '';
-      return 'Card(\n'
-          '  padding: const EdgeInsets.all(16),\n'
-          '  child: Column(\n'
-          '    mainAxisSize: MainAxisSize.min,\n'
-          '    crossAxisAlignment: CrossAxisAlignment.start,\n'
-          '    children: [\n'
-          '      Text(${_str(props['title'] ?? 'Card Title')}),\n'
-          '      const SizedBox(height: 4),\n'
-          '      Text(${_str(props['description'] ?? 'Card description')}),\n'
-          '$footer'
-          '    ],\n'
-          '  ),\n'
-          '),';
+      return _cardExpr(props, nested);
     case 'input':
       // `initialValue`/`readOnly` wire into the kit's `TextField` super params
       // (mirroring the catalog builder); emitted only when non-default so docs
@@ -5369,16 +5866,7 @@ String _itemExpression(CanvasItem item) {
           '  destructive: ${_bool(props, 'destructive')},\n'
           '),';
     case 'alert_dialog':
-      final adActions = _boolT(props, 'showActions')
-          ? "    OutlineButton(onPressed: () {}, child: const Text('Close')),\n"
-          : '';
-      return 'AlertDialog(\n'
-          '  title: Text(${_str(_prop(props, 'title', 'Are you sure?'))}),\n'
-          '  content: Text(${_str(_prop(props, 'message', 'This action cannot be undone.'))}),\n'
-          '  actions: [\n'
-          '$adActions'
-          '  ],\n'
-          '),';
+      return _alertDialogExpr(props, nested);
     case 'avatar':
       final avatarSize = _num(props, 'size', 40.0).clamp(16.0, 96.0).toDouble();
       return 'Avatar(initials: ${_str(_prop(props, 'initials', 'AB'))}, size: ${_flowNum(avatarSize)}),';
@@ -5455,7 +5943,7 @@ String _itemExpression(CanvasItem item) {
       final cpiValue = _num(props, 'value', 0.6).clamp(0.0, 1.0).toDouble();
       return 'CircularProgressIndicator(value: ${_flowNum(cpiValue)}),';
     case 'clickable':
-      return 'Clickable(onPressed: () {}, child: Text(${_str(_prop(props, 'label', 'Tap me'))})),';
+      return _clickableExpr(props, nested);
     case 'code_snippet':
       return 'CodeSnippet(code: Text(${_str(_prop(props, 'code', 'const x = 1;'))})),';
     case 'collapsible':
@@ -5542,32 +6030,7 @@ String _itemExpression(CanvasItem item) {
           '  ],\n'
           '),';
     case 'dialog':
-      final dActions = _boolT(props, 'showActions')
-          ? '      const SizedBox(height: 20),\n'
-              '      Row(\n'
-              '        children: [\n'
-              '          const Spacer(),\n'
-              '          OutlineButton(\n'
-              '            onPressed: () {},\n'
-              "            child: const Text('Close'),\n"
-              '          ),\n'
-              '        ],\n'
-              '      ),\n'
-          : '';
-      return 'ModalContainer(\n'
-          '  filled: true,\n'
-          '  padding: const EdgeInsets.all(24),\n'
-          '  child: Column(\n'
-          '    mainAxisSize: MainAxisSize.min,\n'
-          '    crossAxisAlignment: CrossAxisAlignment.start,\n'
-          '    children: [\n'
-          '      Text(${_str(_prop(props, 'title', 'Dialog title'))}),\n'
-          '      const SizedBox(height: 12),\n'
-          '      Text(${_str(_prop(props, 'message', 'Use dialogs for important confirmations.'))}),\n'
-          '$dActions'
-          '    ],\n'
-          '  ),\n'
-          '),';
+      return _dialogExpr(props, nested);
     case 'divider':
       final thickness =
           _num(props, 'thickness', 1.0).clamp(1.0, 8.0).toDouble();
@@ -5594,33 +6057,7 @@ String _itemExpression(CanvasItem item) {
       final diIndex = _int(props, 'index', 0).clamp(0, diLength - 1).toInt();
       return 'DotIndicator(index: $diIndex, length: $diLength),';
     case 'drawer':
-      final drawerPos = switch (props['position']) {
-        'left' => 'OverlayPosition.left',
-        'right' => 'OverlayPosition.right',
-        'top' => 'OverlayPosition.top',
-        'bottom' => 'OverlayPosition.bottom',
-        'start' => 'OverlayPosition.start',
-        _ => 'OverlayPosition.end',
-      };
-      return 'DrawerWrapper(\n'
-          '  position: $drawerPos,\n'
-          '  size: const Size(240, 480),\n'
-          '  stackIndex: 0,\n'
-          '  draggable: false,\n'
-          '  showDragHandle: false,\n'
-          '  child: SizedBox(\n'
-          '    width: 240,\n'
-          '    child: Column(\n'
-          '      mainAxisSize: MainAxisSize.min,\n'
-          '      crossAxisAlignment: CrossAxisAlignment.start,\n'
-          '      children: [\n'
-          '        Text(${_str(_prop(props, 'title', 'Drawer'))}),\n'
-          '        const SizedBox(height: 16),\n'
-          '        Text(${_str(_prop(props, 'content', 'Drawer content'))}),\n'
-          '      ],\n'
-          '    ),\n'
-          '  ),\n'
-          '),';
+      return _drawerExpr(props, nested);
     case 'dropdown_menu':
       return 'DropdownMenu(\n'
           '  children: [\n'
@@ -5655,27 +6092,7 @@ String _itemExpression(CanvasItem item) {
           '  ],\n'
           '),';
     case 'form':
-      return 'Form(\n'
-          '  child: Column(\n'
-          '    mainAxisSize: MainAxisSize.min,\n'
-          '    children: [\n'
-          '      FormTableLayout(\n'
-          '        rows: [\n'
-          '          FormField<String>(\n'
-          '            key: const FormKey<String>(#name),\n'
-          '            label: Text(${_str(_prop(props, 'label', 'Name'))}),\n'
-          '            child: TextField(placeholder: Text(${_str(_prop(props, 'placeholder', 'Jane Doe'))})),\n'
-          '          ),\n'
-          '        ],\n'
-          '      ),\n'
-          '      const SizedBox(height: 16),\n'
-          '      PrimaryButton(\n'
-          '        onPressed: () {},\n'
-          '        child: Text(${_str(_prop(props, 'submitLabel', 'Submit'))}),\n'
-          '      ),\n'
-          '    ],\n'
-          '  ),\n'
-          '),';
+      return _formExpr(props, nested);
     case 'form_field':
       final ffValue = _prop(props, 'value', '');
       return 'ObjectFormField<String>(\n'
@@ -5710,7 +6127,7 @@ String _itemExpression(CanvasItem item) {
           '  ],\n'
           '),';
     case 'hidden':
-      return 'Hidden(hidden: ${_bool(props, 'hidden')}, child: Text(${_str(_prop(props, 'label', 'Hidden content'))})),';
+      return _hiddenExpr(props, nested);
     case 'history':
       final columns = _int(props, 'columns', 6).clamp(2, 10).toInt();
       return 'RecentColorsScope(\n'
@@ -5866,12 +6283,7 @@ String _itemExpression(CanvasItem item) {
           '  formatter: (v) => v.toStringAsFixed(0),\n'
           '),';
     case 'outlined_container':
-      return 'OutlinedContainer(\n'
-          '  child: Padding(\n'
-          '    padding: const EdgeInsets.all(12),\n'
-          '    child: Text(${_str(_prop(props, 'label', 'Outlined'))}),\n'
-          '  ),\n'
-          '),';
+      return _outlinedContainerExpr(props, nested);
     case 'pagination':
       final pgTotal = _int(props, 'totalPages', 5).clamp(1, 20).toInt();
       final pgPage = _int(props, 'page', 1).clamp(1, pgTotal).toInt();
@@ -5958,18 +6370,9 @@ String _itemExpression(CanvasItem item) {
           '  ),\n'
           '),';
     case 'scaffold':
-      return 'SizedBox(\n'
-          '  height: 320,\n'
-          '  child: Scaffold(\n'
-          '    headers: [AppBar(title: Text(${_str(_prop(props, 'title', 'My App'))}))],\n'
-          '    child: Padding(\n'
-          '      padding: const EdgeInsets.all(16),\n'
-          '      child: Text(${_str(_prop(props, 'body', 'Welcome'))}),\n'
-          '    ),\n'
-          '  ),\n'
-          '),';
+      return _scaffoldExpr(props, nested);
     case 'scrollbar':
-      return 'Scrollbar(child: SizedBox(height: 64, child: Text(${_str(_prop(props, 'label', 'Scrollable content'))}))),';
+      return _scrollbarExpr(props, nested);
     case 'select':
       final selOpt1 = _prop(props, 'option1', 'Option 1');
       final selOpt2 = _prop(props, 'option2', 'Option 2');

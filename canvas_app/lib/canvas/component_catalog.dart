@@ -60,6 +60,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_core/canvas_core.dart' show kFlowScreenGap;
 // Direct component-library import: the barrel exports `TabItem`/`TabChild`
 // from three navigation libraries (`tabs`, `tab_container`, `tab_list`), so
 // the prefixed barrel names do not resolve to the `Tabs`-compatible ones.
@@ -72,15 +73,70 @@ import 'package:flutter_shadcn_kit/registry/components/navigation/tabs/tabs.dart
 import 'package:flutter_shadcn_kit/registry/components/layout/table/table.dart'
     as table;
 
-/// Builds a canvas node widget from stringly-typed props.
-typedef NodeBuilder = Widget Function(Map<String, dynamic> props);
+/// Builds a canvas node widget from stringly-typed props plus already-built
+/// child widgets (Track C1 composition — `canvas/COMPOSITION.md` §3).
+///
+/// Optional positional `children` (default `const []`): the §2 container
+/// builders consume it; builders that don't (yet) take children keep their
+/// 1-arg shape and ignore the arg — their nodes' children render via the
+/// §1 below-fallback, never inside chrome. Component `props` stay
+/// stringly-typed; `children` are already-built widgets (builders never
+/// look up nodes).
+///
+/// Dart-variance note: a 1-arg function is NOT a subtype of this 2-optional
+/// type, so [CatalogEntry.build] stays 1-arg (all 68 registrations compile
+/// untouched — a 2-optional tear-off IS a subtype of the 1-arg type) and
+/// [buildCatalogItem] recovers migrated builders with an `is NodeBuilder`
+/// check instead.
+typedef NodeBuilder = Widget Function(
+  Map<String, dynamic> props, [
+  List<Widget> children,
+]);
+
+/// Container kinds (Track C1 composition — `canvas/COMPOSITION.md` §2).
+///
+/// A non-row node is a container **iff** its first item's kind is in this
+/// set (row pseudo-kind excluded: `isRow` is structural, handled by the
+/// renderers). Nodes carry item *lists* while the spec names a singular
+/// "kind" — the first item defines the chrome and receives the children;
+/// any further items on a container node stack below the chrome (same
+/// separator-less rhythm as leaf own-items). Never a name heuristic: kinds
+/// promote into this set only per the §2 rule (verified generic child slot).
+const Set<String> kContainerKinds = {
+  'card',
+  'outlined_container',
+  'scaffold',
+  'dialog',
+  'alert_dialog',
+  'drawer',
+  'form',
+  'hidden',
+  'clickable',
+  'scrollbar',
+};
+
+/// Vertical nested-child stack with [kFlowScreenGap] separators
+/// (`canvas/COMPOSITION.md` §1: container children stack vertically inside
+/// the parent chrome). Callers emit the leading gap before this stack;
+/// empty lists never reach here (childless builders return their exact old
+/// tree so existing docs render byte-identically).
+List<Widget> _nestedStack(List<Widget> children) => [
+  for (var i = 0; i < children.length; i++) ...[
+    if (i > 0) const SizedBox(height: kFlowScreenGap),
+    children[i],
+  ],
+];
 
 /// One draggable component kind.
 class CatalogEntry {
   final String kind;
   final String label;
   final Map<String, dynamic> defaults;
-  final NodeBuilder build;
+
+  /// The builder. Stays 1-arg so every registration — migrated containers
+  /// and untouched leaves alike — compiles as-is (see the [NodeBuilder]
+  /// variance note); [buildCatalogItem] recovers the migrated shape.
+  final Widget Function(Map<String, dynamic> props) build;
 
   const CatalogEntry({
     required this.kind,
@@ -164,10 +220,12 @@ Widget _buildButton(Map<String, dynamic> props) {
   }
 }
 
-Widget _buildCard(Map<String, dynamic> props) {
+Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // Fallbacks mirror the card canvas block's propsSchema defaults
   // (`components.json`): `Card` takes a bare child, so title/description are
   // canvas-level content props with no constructor counterpart.
+  // C1 container slot (COMPOSITION.md §2): inner `Column` after the
+  // description, before the footer action.
   final title = (props['title'] ?? 'Title') as String;
   final description = (props['description'] ?? 'Description') as String;
   final showFooter = (props['showFooter'] ?? false) as bool;
@@ -180,6 +238,10 @@ Widget _buildCard(Map<String, dynamic> props) {
         Text(title),
         const SizedBox(height: 4),
         Text(description),
+        if (children.isNotEmpty) ...[
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
         if (showFooter) ...[
           const SizedBox(height: 12),
           shadcn.PrimaryButton(
@@ -634,7 +696,7 @@ Widget _buildBreadcrumb(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildDialog(Map<String, dynamic> props) {
+Widget _buildDialog(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`overlay/dialog/preview.dart`), whose
   // `showDialog` builder content is a padded title + body + Close action
@@ -642,6 +704,8 @@ Widget _buildDialog(Map<String, dynamic> props) {
   // `BuildContext` + overlay), so the catalog renders that same content
   // inside the real `ModalContainer` primitive (bare-capable: its only
   // context read is a null-safe `Model.maybeOf`).
+  // C1 container slot (COMPOSITION.md §2): `ModalContainer` column after the
+  // message, before the action row.
   final title = (props['title'] ?? 'Dialog title') as String;
   final message =
       (props['message'] ?? 'Use dialogs for important confirmations.')
@@ -657,6 +721,10 @@ Widget _buildDialog(Map<String, dynamic> props) {
         Text(title),
         const SizedBox(height: 12),
         Text(message),
+        if (children.isNotEmpty) ...[
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
         if (showActions) ...[
           const SizedBox(height: 20),
           Row(
@@ -721,7 +789,7 @@ Widget _buildToast(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildDrawer(Map<String, dynamic> props) {
+Widget _buildDrawer(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: a title plus
   // body content. The real `DrawerWrapper` builds bare (its overlay-layer
   // lookup is null-safe and it owns its `AnimationController`); with
@@ -767,6 +835,12 @@ Widget _buildDrawer(Map<String, dynamic> props) {
                 Text(title),
                 const SizedBox(height: 16),
                 Text(content),
+                // C1 container slot (COMPOSITION.md §2): panel column after
+                // the content text.
+                if (children.isNotEmpty) ...[
+                  const SizedBox(height: kFlowScreenGap),
+                  ..._nestedStack(children),
+                ],
               ],
             ),
           ),
@@ -860,7 +934,7 @@ Widget _buildCardImage(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildScaffold(Map<String, dynamic> props) {
+Widget _buildScaffold(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: an app title
   // plus a body line. Dropping a scaffold yields the default app shell —
   // the real kit `Scaffold` (its `Overlay` + `DrawerOverlay` build bare)
@@ -899,7 +973,19 @@ Widget _buildScaffold(Map<String, dynamic> props) {
           ],
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Text(body, style: TextStyle(color: scheme.foreground)),
+            // C1 container slot (COMPOSITION.md §2): body `Padding` column
+            // under the body text.
+            child: children.isEmpty
+                ? Text(body, style: TextStyle(color: scheme.foreground))
+                : Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(body, style: TextStyle(color: scheme.foreground)),
+                      const SizedBox(height: kFlowScreenGap),
+                      ..._nestedStack(children),
+                    ],
+                  ),
           ),
         );
       },
@@ -968,27 +1054,62 @@ Widget _buildTimeline(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildOutlinedContainer(Map<String, dynamic> props) {
+Widget _buildOutlinedContainer(
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
   // No canvas block in `components.json` — default invented. The real
   // `OutlinedContainer` requires only `child`; the canvas-level `label` prop
   // renders as that child (same content-prop pattern as the card builder).
+  // C1 container slot (COMPOSITION.md §2): `OutlinedContainer.child`
+  // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Outlined') as String;
+  if (children.isEmpty) {
+    return shadcn.OutlinedContainer(
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Text(label),
+      ),
+    );
+  }
   return shadcn.OutlinedContainer(
     child: Padding(
       padding: const EdgeInsets.all(12),
-      child: Text(label),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label),
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
+      ),
     ),
   );
 }
 
-Widget _buildHidden(Map<String, dynamic> props) {
+Widget _buildHidden(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented. The real
   // `Hidden` needs `hidden` + `child` (durations/curves all defaulted); the
   // canvas-level `label` prop renders as that child so the visible state is
   // obvious on canvas.
+  // C1 container slot (COMPOSITION.md §2): `Hidden.child`
+  // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Hidden content') as String;
   final hidden = (props['hidden'] ?? false) as bool;
-  return shadcn.Hidden(hidden: hidden, child: Text(label));
+  if (children.isEmpty) return shadcn.Hidden(hidden: hidden, child: Text(label));
+  return shadcn.Hidden(
+    hidden: hidden,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        const SizedBox(height: kFlowScreenGap),
+        ..._nestedStack(children),
+      ],
+    ),
+  );
 }
 
 /// Parses a canvas-level shortcut string (`'Ctrl+K'`, `'Shift+Alt+S'`) into
@@ -1140,24 +1261,59 @@ Widget _buildStarRating(Map<String, dynamic> props) {
   return _StarRatingCell(initialValue: value, max: max);
 }
 
-Widget _buildClickable(Map<String, dynamic> props) {
+Widget _buildClickable(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real
   // `Clickable` is a state-aware gesture surface requiring only `child`
   // (all hover/focus/press handling defaults to the theme); the
   // canvas-level `label` prop renders as that child. `onPressed` stays a
   // no-op so the canvas node never navigates.
+  // C1 container slot (COMPOSITION.md §2): `Clickable.child`
+  // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Tap me') as String;
-  return shadcn.Clickable(onPressed: () {}, child: Text(label));
+  if (children.isEmpty) {
+    return shadcn.Clickable(onPressed: () {}, child: Text(label));
+  }
+  return shadcn.Clickable(
+    onPressed: () {},
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label),
+        const SizedBox(height: kFlowScreenGap),
+        ..._nestedStack(children),
+      ],
+    ),
+  );
 }
 
-Widget _buildScrollbar(Map<String, dynamic> props) {
+Widget _buildScrollbar(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real kit
   // `Scrollbar` (qualified: material's `Scrollbar` is also imported here)
   // requires only `child`; the canvas-level `label` prop renders inside a
   // fixed-height box so the wrapper has a visible footprint on canvas.
+  // C1 container slot (COMPOSITION.md §2): box column under the label. The
+  // fixed 64px shell stays for the childless case; with children the column
+  // sizes to content (a fixed shell would overflow) behind a 64px floor.
   final label = (props['label'] ?? 'Scrollable content') as String;
+  if (children.isEmpty) {
+    return shadcn.Scrollbar(
+      child: SizedBox(height: 64, child: Text(label)),
+    );
+  }
   return shadcn.Scrollbar(
-    child: SizedBox(height: 64, child: Text(label)),
+    child: ConstrainedBox(
+      constraints: const BoxConstraints(minHeight: 64),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label),
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
+      ),
+    ),
   );
 }
 
@@ -1210,20 +1366,32 @@ Widget _buildPagination(Map<String, dynamic> props) {
   return _PaginationCell(initialPage: page, totalPages: total);
 }
 
-Widget _buildAlertDialog(Map<String, dynamic> props) {
+Widget _buildAlertDialog(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`overlay/alert_dialog/preview.dart`: a title,
   // a message, and a Close action). The real `AlertDialog` (qualified:
   // material's `AlertDialog` is also imported here) is all-optional and
   // builds bare on the same `ModalBackdrop`/`ModalContainer` primitives as
   // the dialog catalog builder.
+  // C1 container slot (COMPOSITION.md §2): content area after the message,
+  // before the actions.
   final title = (props['title'] ?? 'Are you sure?') as String;
   final message =
       (props['message'] ?? 'This action cannot be undone.') as String;
   final showActions = (props['showActions'] ?? true) as bool;
   return shadcn.AlertDialog(
     title: Text(title),
-    content: Text(message),
+    content: children.isEmpty
+        ? Text(message)
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(message),
+              const SizedBox(height: kFlowScreenGap),
+              ..._nestedStack(children),
+            ],
+          ),
     actions: [
       if (showActions)
         shadcn.OutlineButton(onPressed: () {}, child: const Text('Close')),
@@ -2063,13 +2231,15 @@ Widget _buildTable(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildForm(Map<String, dynamic> props) {
+Widget _buildForm(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`form/form/preview.dart`: a `FormTableLayout`
   // row plus a submit button). The real `Form` (qualified: material's `Form`
   // is also imported here) builds bare with an internal controller;
   // validation/submission execute at runtime, so the submit button is a
   // no-op on canvas and the field shows no error state.
+  // C1 container slot (COMPOSITION.md §2): inner `Column` after the field
+  // layout, before the submit button.
   final label = (props['label'] ?? 'Name') as String;
   final placeholder = (props['placeholder'] ?? 'Jane Doe') as String;
   final submitLabel = (props['submitLabel'] ?? 'Submit') as String;
@@ -2086,6 +2256,10 @@ Widget _buildForm(Map<String, dynamic> props) {
             ),
           ],
         ),
+        if (children.isNotEmpty) ...[
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
         const SizedBox(height: 16),
         shadcn.PrimaryButton(
           onPressed: () {},
@@ -3090,12 +3264,28 @@ CatalogEntry? findEntry(String kind) {
   return null;
 }
 
-/// Builds the widget for [kind] with [props], or [fallbackBuilder] output for
-/// unknown kinds. Builders tolerate missing keys (each prop has a fallback),
-/// so hand-written docs without full defaults still render.
-Widget buildCatalogItem(String kind, Map<String, dynamic> props) {
+/// Builds the widget for [kind] with [props] and already-built [children],
+/// or [fallbackBuilder] output for unknown kinds. Builders tolerate missing
+/// keys (each prop has a fallback), so hand-written docs without full
+/// defaults still render. Migrated container builders receive [children]
+/// (spliced into their spec slot); every other builder keeps its 1-arg
+/// shape and never sees them (their nodes' children render via the
+/// renderers' below-fallback, never inside chrome).
+Widget buildCatalogItem(
+  String kind,
+  Map<String, dynamic> props, [
+  List<Widget> children = const [],
+]) {
   final entry = findEntry(kind);
   if (entry == null) return fallbackBuilder(kind);
+  if (children.isNotEmpty) {
+    final build = entry.build;
+    // Recovers the migrated 2-arg shape (see the [NodeBuilder] variance
+    // note): true exactly for migrated container builders, so a future
+    // 11th migration Just Works and unmigrated builders stay unreachable
+    // with children.
+    if (build is NodeBuilder) return build(props, children);
+  }
   return entry.build(props);
 }
 

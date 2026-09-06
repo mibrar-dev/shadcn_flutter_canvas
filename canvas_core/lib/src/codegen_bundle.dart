@@ -841,22 +841,36 @@ String _barrel(String kind) =>
 String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   final routes = {for (final s in doc.screens) s.id: _routeOf(s.name)};
   final ids = {for (final s in doc.screens) s.id};
-  final nodes = [
+  // Track C3: recursive tree walk — roots (nodes whose `parentId` is null or
+  // dangling, so codegen never silently drops nodes) in the historical
+  // (y, x) order; children nest via [_writeBundleNode]. Root-only docs keep
+  // the historical flat output byte-identically (no separators between
+  // roots, as before).
+  final nodeIds = {for (final n in doc.nodes) n.id};
+  final screenNodes = [
     for (final n in doc.nodes)
       if (n.screenId == screen.id) n,
+  ];
+  final nodes = [
+    for (final n in screenNodes)
+      if (n.parentId == null || !nodeIds.contains(n.parentId)) n,
   ]..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
     });
+  // Kind wiring sees the whole screen (roots AND nested children), so nested
+  // kinds get their barrel imports; only the body walk is root-driven.
   final usedKinds = {
-    for (final n in nodes)
+    for (final n in screenNodes)
       for (final i in n.items)
         if (kinds.contains(i.kind)) i.kind,
   }.toList()
     ..sort();
   final rows = <String>[];
   for (final node in nodes) {
-    _writeBundleNode(rows, node, routes, ids, '      ');
+    // Fresh ancestor path per root (roots are disjoint subtrees; corrupt
+    // cycles are unreachable from roots but guarded anyway).
+    _writeBundleNode(rows, doc, node, routes, ids, '      ', <String>{});
   }
   if (rows.isEmpty) rows.add('      // (empty screen).');
   final barrels = usedKinds.isEmpty ? '// (no known components on this screen).' : [for (final k in usedKinds) '// - $k -> ${_barrel(k)}'].join('\n');
@@ -865,8 +879,9 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   // material (a widgets superset) when any item needs material-only APIs,
   // plus services for keyboard-shortcut keys. Docs without new bodies keep
   // the exact old header (widgets only, no extras) byte-identical.
+  // Track C3: whole-screen kinds (nested included), like [usedKinds].
   final screenKinds = {
-    for (final n in nodes)
+    for (final n in screenNodes)
       for (final i in n.items) i.kind,
   };
   final needsMaterial =
@@ -1045,7 +1060,19 @@ List<String> _bundleItemExpr(
   Map<String, String> routes,
   Set<String> ids,
 ) {
-  final body = _bundleBody(item);
+  return _bundleWrapTap(_bundleBody(item), item, routes, ids);
+}
+
+/// Wraps [body] lines in a `GestureDetector` pushing the route by name when
+/// the item's action targets a known screen (the transition rides along as a
+/// comment — `pushNamed` carries no transition); unknown `to` ids and
+/// action-less items render the bare body, never a crash.
+List<String> _bundleWrapTap(
+  List<String> body,
+  CanvasItem item,
+  Map<String, String> routes,
+  Set<String> ids,
+) {
   final action = item.action;
   if (action == null) return body;
   final route = ids.contains(action.to) ? routes[action.to] : null;
@@ -1057,6 +1084,40 @@ List<String> _bundleItemExpr(
     for (final line in body.skip(1)) '  $line',
     '),',
   ];
+}
+
+/// Real per-item body with recursively emitted [nested] child blocks spliced
+/// into the container's §2 slot (Track C3). Non-container kinds fall back to
+/// the plain [_bundleBody] (their children use the [_writeBundleFallback]
+/// branch, never the item body).
+List<String> _bundleContainerBody(
+  CanvasItem item,
+  List<List<String>> nested,
+) {
+  switch (item.kind) {
+    case 'card':
+      return _bundleCard(item.props, nested);
+    case 'outlined_container':
+      return _bundleOutlinedContainer(item.props, nested);
+    case 'scaffold':
+      return _bundleScaffold(item.props, nested);
+    case 'dialog':
+      return _bundleDialog(item.props, nested);
+    case 'alert_dialog':
+      return _bundleAlertDialog(item.props, nested);
+    case 'drawer':
+      return _bundleDrawer(item.props, nested);
+    case 'form':
+      return _bundleForm(item.props, nested);
+    case 'hidden':
+      return _bundleHidden(item.props, nested);
+    case 'clickable':
+      return _bundleClickable(item.props, nested);
+    case 'scrollbar':
+      return _bundleScrollbar(item.props, nested);
+    default:
+      return _bundleBody(item);
+  }
 }
 
 /// Real per-item body (unindented lines, trailing comma on the last line).
@@ -1288,7 +1349,10 @@ List<String> _bundleButton(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleCard(Map<String, dynamic> props) {
+List<String> _bundleCard(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   final footer = _bBool(props, 'showFooter', false)
       ? [
           '      const SizedBox(height: 12),',
@@ -1309,6 +1373,8 @@ List<String> _bundleCard(Map<String, dynamic> props) {
     "      Text(${_bundleStr(_bStr(props, 'title', 'Title'))}),",
     '      const SizedBox(height: 4),',
     "      Text(${_bundleStr(_bStr(props, 'description', 'Description'))}),",
+    // Track C3 slot: inner Column after description, before footer action.
+    ..._spliceBundleKids(nested, '      '),
     ...footer,
     '    ],',
     '  ),',
@@ -1535,7 +1601,10 @@ List<String> _bundleBreadcrumb(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleDialog(Map<String, dynamic> props) {
+List<String> _bundleDialog(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   final actions = _bBool(props, 'showActions', true)
       ? [
           '      const SizedBox(height: 20),',
@@ -1561,6 +1630,8 @@ List<String> _bundleDialog(Map<String, dynamic> props) {
     "      Text(${_bundleStr(_bStr(props, 'title', 'Dialog title'))}),",
     '      const SizedBox(height: 12),',
     "      Text(${_bundleStr(_bStr(props, 'message', 'Use dialogs for important confirmations.'))}),",
+    // Track C3 slot: ModalContainer column after message, before action row.
+    ..._spliceBundleKids(nested, '      '),
     ...actions,
     '    ],',
     '  ),',
@@ -1607,7 +1678,10 @@ List<String> _bundleToast(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleDrawer(Map<String, dynamic> props) {
+List<String> _bundleDrawer(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   final position = switch (props['position']) {
     'left' => 'OverlayPosition.left',
     'right' => 'OverlayPosition.right',
@@ -1632,6 +1706,8 @@ List<String> _bundleDrawer(Map<String, dynamic> props) {
     "        Text(${_bundleStr(_bStr(props, 'title', 'Drawer'))}),",
     '        const SizedBox(height: 16),',
     "        Text(${_bundleStr(_bStr(props, 'content', 'Drawer content'))}),",
+    // Track C3 slot: panel column after the content text.
+    ..._spliceBundleKids(nested, '        '),
     '      ],',
     '    ),',
     '  ),',
@@ -1735,7 +1811,23 @@ List<String> _bundleCardImage(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleScaffold(Map<String, dynamic> props) {
+List<String> _bundleScaffold(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  // Track C3 slot: body Padding column under the body text.
+  final padded = nested.isEmpty
+      ? "      child: Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))}),"
+      : [
+          '      child: Column(',
+          '        mainAxisSize: MainAxisSize.min,',
+          '        crossAxisAlignment: CrossAxisAlignment.start,',
+          '        children: [',
+          "          Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))}),",
+          ..._spliceBundleKids(nested, '          '),
+          '        ],',
+          '      ),',
+        ].join('\n');
   return [
     'SizedBox(',
     '  height: 320,',
@@ -1743,7 +1835,7 @@ List<String> _bundleScaffold(Map<String, dynamic> props) {
     "    headers: [AppBar(title: Text(${_bundleStr(_bStr(props, 'title', 'My App'))}))],",
     '    child: Padding(',
     '      padding: const EdgeInsets.all(16),',
-    "      child: Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))}),",
+    padded,
     '    ),',
     '  ),',
     '),',
@@ -1811,20 +1903,57 @@ List<String> _bundleTimeline(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleOutlinedContainer(Map<String, dynamic> props) {
+List<String> _bundleOutlinedContainer(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  // Track C3 slot: OutlinedContainer.child (Column([label, ...children])),
+  // kept inside the historical Padding chrome (childless form unchanged).
+  final inner = nested.isEmpty
+      ? "    child: Text(${_bundleStr(_bStr(props, 'label', 'Outlined'))}),"
+      : [
+          '    child: Column(',
+          '      mainAxisSize: MainAxisSize.min,',
+          '      crossAxisAlignment: CrossAxisAlignment.start,',
+          '      children: [',
+          "        Text(${_bundleStr(_bStr(props, 'label', 'Outlined'))}),",
+          ..._spliceBundleKids(nested, '        '),
+          '      ],',
+          '    ),',
+        ].join('\n');
   return [
     'OutlinedContainer(',
     '  child: Padding(',
     '    padding: const EdgeInsets.all(12),',
-    "    child: Text(${_bundleStr(_bStr(props, 'label', 'Outlined'))}),",
+    inner,
     '  ),',
     '),',
   ];
 }
 
-List<String> _bundleHidden(Map<String, dynamic> props) {
+List<String> _bundleHidden(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final label = "Text(${_bundleStr(_bStr(props, 'label', 'Hidden content'))})";
+  // Track C3 slot: Hidden.child (Column([label, ...children])).
+  if (nested.isEmpty) {
+    return [
+      "Hidden(hidden: ${_bBool(props, 'hidden', false)}, child: $label),",
+    ];
+  }
   return [
-    "Hidden(hidden: ${_bBool(props, 'hidden', false)}, child: Text(${_bundleStr(_bStr(props, 'label', 'Hidden content'))})),",
+    'Hidden(',
+    '  hidden: ${_bBool(props, 'hidden', false)},',
+    '  child: Column(',
+    '    mainAxisSize: MainAxisSize.min,',
+    '    crossAxisAlignment: CrossAxisAlignment.start,',
+    '    children: [',
+    '      $label,',
+    ..._spliceBundleKids(nested, '      '),
+    '    ],',
+    '  ),',
+    '),',
   ];
 }
 
@@ -1875,16 +2004,59 @@ List<String> _bundleStarRating(Map<String, dynamic> props) {
   return ['StarRating(value: $value, max: $max, onChanged: (v) {}),'];
 }
 
-List<String> _bundleClickable(Map<String, dynamic> props) {
+List<String> _bundleClickable(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final label = "Text(${_bundleStr(_bStr(props, 'label', 'Tap me'))})";
+  // Track C3 slot: Clickable.child (Column([label, ...children])).
+  if (nested.isEmpty) {
+    return [
+      "Clickable(onPressed: () {}, child: $label),",
+    ];
+  }
   return [
-    "Clickable(onPressed: () {}, child: Text(${_bundleStr(_bStr(props, 'label', 'Tap me'))})),",
+    'Clickable(',
+    '  onPressed: () {},',
+    '  child: Column(',
+    '    mainAxisSize: MainAxisSize.min,',
+    '    crossAxisAlignment: CrossAxisAlignment.start,',
+    '    children: [',
+    '      $label,',
+    ..._spliceBundleKids(nested, '      '),
+    '    ],',
+    '  ),',
+    '),',
   ];
 }
 
-List<String> _bundleScrollbar(Map<String, dynamic> props) {
+List<String> _bundleScrollbar(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final label =
+      "Text(${_bundleStr(_bStr(props, 'label', 'Scrollable content'))})";
+  // Track C3 slot: box column under the label.
+  if (nested.isEmpty) {
+    return [
+      'Scrollbar(',
+      "  child: SizedBox(height: 64, child: $label),",
+      '),',
+    ];
+  }
   return [
     'Scrollbar(',
-    "  child: SizedBox(height: 64, child: Text(${_bundleStr(_bStr(props, 'label', 'Scrollable content'))})),",
+    '  child: SizedBox(',
+    '    height: 64,',
+    '    child: Column(',
+    '      mainAxisSize: MainAxisSize.min,',
+    '      crossAxisAlignment: CrossAxisAlignment.start,',
+    '      children: [',
+    '        $label,',
+    ..._spliceBundleKids(nested, '        '),
+    '      ],',
+    '    ),',
+    '  ),',
     '),',
   ];
 }
@@ -1897,7 +2069,10 @@ List<String> _bundlePagination(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleAlertDialog(Map<String, dynamic> props) {
+List<String> _bundleAlertDialog(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   // NOTE: `AlertDialog` also exists in material — when wiring the shipped
   // alert-dialog barrel alongside it, disambiguate (same trap as `Tooltip`).
   final actions = _bBool(props, 'showActions', true)
@@ -1907,10 +2082,23 @@ List<String> _bundleAlertDialog(Map<String, dynamic> props) {
           '  ],',
         ]
       : ['  actions: [],'];
+  // Track C3 slot: content area after message, before actions.
+  final content = nested.isEmpty
+      ? "  content: Text(${_bundleStr(_bStr(props, 'message', 'This action cannot be undone.'))}),"
+      : [
+          '  content: Column(',
+          '    mainAxisSize: MainAxisSize.min,',
+          '    crossAxisAlignment: CrossAxisAlignment.start,',
+          '    children: [',
+          "      Text(${_bundleStr(_bStr(props, 'message', 'This action cannot be undone.'))}),",
+          ..._spliceBundleKids(nested, '      '),
+          '    ],',
+          '  ),',
+        ].join('\n');
   return [
     'AlertDialog(',
     "  title: Text(${_bundleStr(_bStr(props, 'title', 'Are you sure?'))}),",
-    "  content: Text(${_bundleStr(_bStr(props, 'message', 'This action cannot be undone.'))}),",
+    content,
     ...actions,
     '),',
   ];
@@ -2444,7 +2632,10 @@ List<String> _bundleTable(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleForm(Map<String, dynamic> props) {
+List<String> _bundleForm(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   // NOTE: `Form`/`FormField` also exist in material — disambiguate when
   // wiring (same trap as `Table`).
   return [
@@ -2461,6 +2652,8 @@ List<String> _bundleForm(Map<String, dynamic> props) {
     '          ),',
     '        ],',
     '      ),',
+    // Track C3 slot: inner Column after the field layout, before submit.
+    ..._spliceBundleKids(nested, '      '),
     '      const SizedBox(height: 16),',
     '      PrimaryButton(',
     '        onPressed: () {},',
@@ -2699,28 +2892,198 @@ List<String> _bundleFeatureCarousel(Map<String, dynamic> props) {
   ];
 }
 
+/// Track C3 (COMPOSITION.md §2): kinds whose child slot screen bodies splice
+/// recursively generated children into — the same set as `codegen_single.dart`
+/// (mirrored here because this package's exporters share no code). The `row`
+/// pseudo-kind is structural (`isRow == true`, handled by [_writeBundleRow])
+/// and is NOT listed here. Every other kind is a leaf: children use the
+/// below-fallback ([_writeBundleFallback]).
+const _bundleContainerKinds = {
+  'card',
+  'outlined_container',
+  'scaffold',
+  'dialog',
+  'alert_dialog',
+  'drawer',
+  'form',
+  'hidden',
+  'clickable',
+  'scrollbar',
+};
+
+/// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with
+/// the codegen action appended): emitted as a comment where the revisit would
+/// recurse, then the subtree is skipped — never a hang, never a crash.
+String _bundleCycleNote(String nodeId) =>
+    'cycle: node $nodeId is its own ancestor (skipped)';
+
+/// Splices recursively emitted child [nested] blocks (unindented line lists
+/// from [_bundleSubtreeLines]) into a container slot whose children sit at
+/// [slotIndent] in the composer's unindented output. Blocks join with
+/// `kFlowScreenGap` separators, with a leading separator from the chrome
+/// above (vertical-stack rule, COMPOSITION.md §5 — the same idiom as
+/// `codegen_single.dart`, so both exporters agree).
+List<String> _spliceBundleKids(
+  List<List<String>> nested,
+  String slotIndent,
+) {
+  final out = <String>[];
+  for (final block in nested) {
+    out.add('${slotIndent}const SizedBox(height: 12),');
+    for (final line in block) {
+      if (line.isEmpty) continue;
+      out.add('$slotIndent$line');
+    }
+  }
+  return out;
+}
+
+/// Flow number literal mirroring `_flowNum` in `codegen_single.dart`: whole
+/// values print without `.0` to match the generated style.
+String _bundleFlowNum(double value) =>
+    value == value.roundToDouble() ? '${value.toInt()}' : '$value';
+
+/// Row `mainAxis` strings to `MainAxisAlignment` names, mirroring
+/// `codegen_single.dart` (`null`/unknown → start).
+String _bundleMainAxisName(String? value) {
+  switch (value) {
+    case 'center':
+      return 'MainAxisAlignment.center';
+    case 'end':
+      return 'MainAxisAlignment.end';
+    case 'spaceBetween':
+      return 'MainAxisAlignment.spaceBetween';
+    case 'spaceAround':
+      return 'MainAxisAlignment.spaceAround';
+    case 'spaceEvenly':
+      return 'MainAxisAlignment.spaceEvenly';
+    case 'start':
+    case null:
+      return 'MainAxisAlignment.start';
+    default:
+      return 'MainAxisAlignment.start';
+  }
+}
+
+/// Row `crossAxis` strings to `CrossAxisAlignment` names, mirroring
+/// `codegen_single.dart` (`null`/unknown → center).
+String _bundleCrossAxisName(String? value) {
+  switch (value) {
+    case 'start':
+      return 'CrossAxisAlignment.start';
+    case 'end':
+      return 'CrossAxisAlignment.end';
+    case 'stretch':
+      return 'CrossAxisAlignment.stretch';
+    case 'center':
+    case null:
+      return 'CrossAxisAlignment.center';
+    default:
+      return 'CrossAxisAlignment.center';
+  }
+}
+
+/// Drops one trailing comma (plus surrounding whitespace) from emitted line
+/// text so it can follow `return` in tier branches.
+String _stripBundleTrailingComma(String text) {
+  var out = text.trimRight();
+  if (out.endsWith(',')) out = out.substring(0, out.length - 1);
+  return out;
+}
+
+/// Copy of [node] with [overrides] merged over every item's props and [items]
+/// replaced (branch rendering with statically merged props, mirroring
+/// `_withProps` in `codegen_single.dart`). The id is preserved, so the
+/// cycle-guard path set keeps working across tier branches.
+CanvasNode _withBundleProps(
+  CanvasNode node,
+  Map<String, dynamic> overrides,
+  List<CanvasItem> items,
+) =>
+    CanvasNode(
+      id: node.id,
+      screenId: node.screenId,
+      x: node.x,
+      y: node.y,
+      items: items,
+      parentId: node.parentId,
+      isRow: node.isRow,
+      gap: node.gap,
+      mainAxis: node.mainAxis,
+      crossAxis: node.crossAxis,
+      expand: node.expand,
+      flex: node.flex,
+      hiddenOn: node.hiddenOn,
+      breakpointValues: node.breakpointValues,
+      slots: node.slots,
+    );
+
 /// Writes [node]'s item rows at [indent]: real bodies for catalog kinds
 /// (plain items), or — for responsive nodes — a `LayoutBuilder` tier conditional in the
 /// `codegen_single.dart` idiom (tier resolution line, hidden-tier early
 /// return, one `if (tier == …)` branch per override tier with statically
 /// merged props, then the default branch). A node hidden on every tier
 /// emits a bare `SizedBox.shrink()`.
+///
+/// Track C3: recursive tree walk (see [_writeBundleCore]) — containers splice
+/// children into their §2 slot, rows nest, leaves fall back below; every
+/// level keeps its tier conditional and tap navigation. [visited] is the
+/// cycle-guard ancestor path (see `codegen_single.dart`).
 void _writeBundleNode(
   List<String> rows,
+  ScreenDoc doc,
   CanvasNode node,
   Map<String, String> routes,
   Set<String> ids,
   String indent,
+  Set<String> visited,
 ) {
-  final hidden = _bundleHiddenTiers(node);
-  final tiers = _bundleOverrideTiers(node);
-  if (hidden.length == kResponsiveTiers.length) {
-    rows
-      ..add('$indent// hidden on: ${hidden.join(', ')} (all tiers)')
-      ..add('${indent}const SizedBox.shrink(),');
+  if (!visited.add(node.id)) {
+    rows.add('$indent// ${_bundleCycleNote(node.id)}');
     return;
   }
-  if (!_isBundleResponsive(node)) {
+  try {
+    final hidden = _bundleHiddenTiers(node);
+    if (hidden.length == kResponsiveTiers.length) {
+      rows
+        ..add('$indent// hidden on: ${hidden.join(', ')} (all tiers)')
+        ..add('${indent}const SizedBox.shrink(),');
+      return;
+    }
+    if (!_isBundleResponsive(node)) {
+      _writeBundleCore(rows, doc, node, routes, ids, indent, visited);
+      return;
+    }
+    _writeBundleResponsiveNode(
+      rows,
+      doc,
+      node,
+      routes,
+      ids,
+      indent,
+      visited,
+    );
+  } finally {
+    visited.remove(node.id);
+  }
+}
+
+/// Non-responsive core for [_writeBundleNode] ([node.id] is already in
+/// [visited]): childless nodes keep the historical item loop byte-identically;
+/// nodes WITH children take the composition branches — rows nest
+/// ([_writeBundleRow]), single-item containers splice ([_writeBundleContainer]),
+/// everything else stacks below ([_writeBundleFallback]).
+void _writeBundleCore(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final kids = childrenOf(doc, node.id);
+  if (kids.isEmpty) {
     for (final item in node.items) {
       rows.add('$indent${_bundleItemComment(item, routes, ids)}');
       for (final line in _bundleItemExpr(item, routes, ids)) {
@@ -2729,6 +3092,43 @@ void _writeBundleNode(
     }
     return;
   }
+  if (node.isRow) {
+    _writeBundleRow(rows, doc, node, routes, ids, indent, visited);
+    return;
+  }
+  if (node.items.length == 1 &&
+      _bundleContainerKinds.contains(node.items.single.kind)) {
+    _writeBundleContainer(
+      rows,
+      doc,
+      node.items.single,
+      kids,
+      routes,
+      ids,
+      indent,
+      visited,
+    );
+    return;
+  }
+  _writeBundleFallback(rows, doc, node, kids, routes, ids, indent, visited);
+}
+
+/// Responsive `LayoutBuilder` for [_writeBundleNode] ([node.id] is already in
+/// [visited]): tier resolution line, hidden-tier early return (pruning the
+/// whole subtree on those tiers), one branch per override tier plus the
+/// default branch — each branch carrying the node's full subtree
+/// (see [_writeBundleBranch]).
+void _writeBundleResponsiveNode(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final hidden = _bundleHiddenTiers(node);
+  final tiers = _bundleOverrideTiers(node);
   final summary = [
     if (hidden.isNotEmpty) 'hidden on ${hidden.join(', ')}',
     if (tiers.isNotEmpty) 'overrides on ${tiers.join(', ')}',
@@ -2748,31 +3148,176 @@ void _writeBundleNode(
   for (final tier in tiers) {
     _writeBundleBranch(
       rows,
+      doc,
       node,
       node.breakpointValues[tier]!,
       routes,
       ids,
       '$indent    ',
       "tier == '$tier'",
+      visited,
     );
   }
-  _writeBundleBranch(rows, node, const {}, routes, ids, '$indent    ', null);
+  _writeBundleBranch(
+    rows,
+    doc,
+    node,
+    const {},
+    routes,
+    ids,
+    '$indent    ',
+    null,
+    visited,
+  );
   rows
     ..add('$indent  },')
     ..add('$indent),');
 }
 
+/// Unindented statement lines for [node]'s full subtree (statement style,
+/// trailing commas), for splicing into container slots and tier-branch
+/// expressions. Recursion funnels through [_writeBundleNode], which is
+/// cycle-guarded via [visited]; kids emitting nothing are dropped.
+List<List<String>> _bundleNestedBlocks(
+  ScreenDoc doc,
+  List<CanvasNode> kids,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  final nested = <List<String>>[];
+  for (final kid in kids) {
+    final lines = _bundleSubtreeLines(doc, kid, routes, ids, visited);
+    if (lines.isNotEmpty) nested.add(lines);
+  }
+  return nested;
+}
+
+/// Unindented statement lines for [node]'s full subtree (see
+/// [_bundleNestedBlocks] for the multi-kid form).
+List<String> _bundleSubtreeLines(
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  final lines = <String>[];
+  _writeBundleNode(lines, doc, node, routes, ids, '', visited);
+  while (lines.isNotEmpty && lines.last.isEmpty) {
+    lines.removeLast();
+  }
+  return lines;
+}
+
+/// Writes a container node: the doc comment plus the real body with
+/// recursively emitted children spliced into the §2 slot. The whole body —
+/// chrome plus spliced children — keeps the item's `GestureDetector`
+/// navigation for known tap targets (tap wraps apply per item at every
+/// level).
+void _writeBundleContainer(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasItem item,
+  List<CanvasNode> kids,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  for (final line in _bundleWrapTap(
+    _bundleContainerBody(item, nested),
+    item,
+    routes,
+    ids,
+  )) {
+    rows.add('$indent$line');
+  }
+}
+
+/// Writes the leaf fallback for a node WITH children: `Column([own, ...])` —
+/// the node's own item bodies first, then one subtree per child node below
+/// them, all joined with `kFlowScreenGap` separators (COMPOSITION.md §§1/5,
+/// same idiom as `codegen_single.dart`).
+void _writeBundleFallback(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasNode> kids,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  final body = _bundleFallbackLines(node.items, nested, routes, ids);
+  if (body.isEmpty) {
+    rows.add('${indent}const SizedBox.shrink(),');
+    return;
+  }
+  for (final line in body) {
+    rows.add('$indent$line');
+  }
+}
+
+/// Statement-style (trailing comma) `Column([own, ...])` lines for the leaf
+/// fallback, unindented. Empty when there is nothing to emit (no items and
+/// no nested blocks).
+List<String> _bundleFallbackLines(
+  List<CanvasItem> items,
+  List<List<String>> nested,
+  Map<String, String> routes,
+  Set<String> ids,
+) {
+  final units = <List<String>>[];
+  for (final item in items) {
+    units.add([
+      _bundleItemComment(item, routes, ids),
+      ..._bundleItemExpr(item, routes, ids),
+    ]);
+  }
+  units.addAll(nested);
+  if (units.isEmpty) return const [];
+  final out = <String>[
+    'Column(',
+    '  mainAxisSize: MainAxisSize.min,',
+    '  crossAxisAlignment: CrossAxisAlignment.start,',
+    '  children: [',
+  ];
+  var first = true;
+  for (final unit in units) {
+    if (!first) out.add('    const SizedBox(height: 12),');
+    first = false;
+    for (final line in unit) {
+      if (line.isEmpty) continue;
+      out.add('    $line');
+    }
+  }
+  out
+    ..add('  ],')
+    ..add('),');
+  return out;
+}
+
 /// Writes one tier branch (or the default branch when [guard] is null):
 /// the item doc comments above a `return <expr>;` for the node's
 /// placeholder content with [overrides] statically merged over item props.
+///
+/// Track C3: branches carry the node's full subtree — containers splice
+/// children, rows nest, leaves fall back — so per-level tier conditionals and
+/// tap actions apply at every level ([node.id] is already in [visited]).
 void _writeBundleBranch(
   List<String> rows,
+  ScreenDoc doc,
   CanvasNode node,
   Map<String, dynamic> overrides,
   Map<String, String> routes,
   Set<String> ids,
   String indent,
   String? guard,
+  Set<String> visited,
 ) {
   final items = [
     for (final item in node.items)
@@ -2783,7 +3328,7 @@ void _writeBundleBranch(
   for (final item in items) {
     rows.add('$indent${_bundleItemComment(item, routes, ids)}');
   }
-  final expr = _bundleNodeExpr(items, routes, ids);
+  final expr = _bundleBranchExpr(doc, node, items, routes, ids, visited);
   final prefix = guard == null ? 'return ' : 'if ($guard) return ';
   final lines = [
     for (final line in expr.split('\n')) if (line.isNotEmpty) line,
@@ -2796,6 +3341,228 @@ void _writeBundleBranch(
       rows.add('$indent${lines[i]}$tail');
     }
   }
+}
+
+/// Branch content expression for [items] (unindented, no trailing comma):
+/// childless nodes keep the historical [_bundleNodeExpr] form byte-identically;
+/// nodes WITH children render the row/container/fallback subtree instead
+/// (overrides already merged into [items]; descendants resolve tiers
+/// independently through [_bundleSubtreeLines]).
+String _bundleBranchExpr(
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasItem> items,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  final kids = childrenOf(doc, node.id);
+  if (kids.isEmpty) return _bundleNodeExpr(items, routes, ids);
+  if (node.isRow) {
+    final lines = <String>[];
+    _writeBundleRow(
+      lines,
+      doc,
+      _withBundleProps(node, const {}, items),
+      routes,
+      ids,
+      '',
+      visited,
+    );
+    return _stripBundleTrailingComma(lines.join('\n'));
+  }
+  if (items.length == 1 &&
+      _bundleContainerKinds.contains(items.single.kind)) {
+    final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+    final lines = _bundleWrapTap(
+      _bundleContainerBody(items.single, nested),
+      items.single,
+      routes,
+      ids,
+    );
+    return _stripBundleTrailingComma(lines.join('\n'));
+  }
+  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  final lines = _bundleFallbackLines(items, nested, routes, ids);
+  if (lines.isEmpty) return 'SizedBox.shrink()';
+  return _stripBundleTrailingComma(lines.join('\n'));
+}
+
+/// Writes a row node: a `Row` of the row's own item bodies plus one subtree
+/// per child node, separated by `SizedBox(width: gap)` — the same structure
+/// as `codegen_single.dart` (`mainAxisAlignment`/`crossAxisAlignment` mapping,
+/// `IntrinsicHeight` for `crossAxis == stretch`, deterministic doc order).
+/// [node.id] is already in [visited].
+void _writeBundleRow(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final stretch = node.crossAxis == 'stretch';
+  final rowIndent = stretch ? '$indent  ' : indent;
+  final childIndent = '$rowIndent    ';
+  if (stretch) rows.add('${indent}IntrinsicHeight(');
+  rows
+    ..add('${rowIndent}Row(')
+    ..add('$rowIndent  mainAxisAlignment: ${_bundleMainAxisName(node.mainAxis)},')
+    ..add(
+        '$rowIndent  crossAxisAlignment: ${_bundleCrossAxisName(node.crossAxis)},')
+    ..add('$rowIndent  children: [');
+  var first = true;
+  void separator() {
+    if (!first) {
+      rows.add(
+          '${childIndent}const SizedBox(width: ${_bundleFlowNum(node.gap)}),');
+    }
+    first = false;
+  }
+
+  var empty = true;
+  if (node.items.isNotEmpty) {
+    empty = false;
+    separator();
+    for (final item in node.items) {
+      rows.add('$childIndent${_bundleItemComment(item, routes, ids)}');
+      for (final line in _bundleItemExpr(item, routes, ids)) {
+        rows.add('$childIndent$line');
+      }
+    }
+  }
+  for (final child in childrenOf(doc, node.id)) {
+    empty = false;
+    separator();
+    _writeBundleRowChild(rows, doc, child, routes, ids, childIndent, visited);
+  }
+  if (empty) {
+    rows.add('$childIndent// (empty row)');
+  }
+  rows
+    ..add('$rowIndent  ],')
+    ..add('$rowIndent),');
+  if (stretch) rows.add('$indent),');
+}
+
+/// Writes one row child: responsive children route to
+/// [_writeBundleResponsiveRowChild] (flex wrapper outside the tier
+/// conditional, mirroring `codegen_single.dart`); everything else uses the
+/// non-responsive core below.
+void _writeBundleRowChild(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode child,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  if (_isBundleResponsive(child)) {
+    _writeBundleResponsiveRowChild(
+      rows,
+      doc,
+      child,
+      routes,
+      ids,
+      indent,
+      visited,
+    );
+    return;
+  }
+  _writeBundleRowChildCore(rows, doc, child, routes, ids, indent, visited);
+}
+
+/// Writes one row child — non-responsive core. Nested rows and children WITH
+/// subtrees recurse through [_writeBundleNode] (cycle-guarded); childless
+/// leaves inline their item bodies, with each own item wrapped in the flex
+/// role exactly like `codegen_single.dart`.
+void _writeBundleRowChildCore(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode child,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final expand = child.expand;
+  if (expand != 'expanded' && expand != 'flex') {
+    _writeBundleNode(rows, doc, child, routes, ids, indent, visited);
+    return;
+  }
+  final flex = child.flex ?? 1;
+  final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+  if (child.isRow || childrenOf(doc, child.id).isNotEmpty) {
+    // Flex stays outside the whole subtree (mirrors `codegen_single.dart`).
+    final nested = _bundleSubtreeLines(doc, child, routes, ids, visited);
+    final text = nested.isEmpty
+        ? 'SizedBox.shrink()'
+        : nested.join('\n').trimRight();
+    final exprLines = text.split('\n');
+    rows
+      ..add('${indent}$wrapper(')
+      ..add('$indent  flex: $flex,')
+      ..add('${indent}  child: ${exprLines.first}');
+    for (final line in exprLines.skip(1)) {
+      rows.add('$indent  $line');
+    }
+    rows.add('$indent),');
+    return;
+  }
+  for (final item in child.items) {
+    rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+    // The flex wrapper stays outside the tap wrap so the layout role is
+    // tap-independent (mirrors `codegen_single.dart`).
+    final exprLines = _bundleItemExpr(item, routes, ids);
+    rows
+      ..add('${indent}$wrapper(')
+      ..add('$indent  flex: $flex,')
+      ..add('${indent}  child: ${exprLines.first}');
+    for (final line in exprLines.skip(1)) {
+      rows.add('$indent  $line');
+    }
+    rows.add('$indent),');
+  }
+  if (child.items.isEmpty) {
+    rows.add('$indent$wrapper(flex: $flex, child: SizedBox.shrink()),');
+  }
+}
+
+/// Responsive row child: the flex wrapper stays OUTSIDE the tier conditional
+/// (the layout role is tier-independent), so only the content re-resolves per
+/// tier. Mirrors `_writeResponsiveRowChild` in `codegen_single.dart`.
+void _writeBundleResponsiveRowChild(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode child,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final expand = child.expand;
+  if (expand != 'expanded' && expand != 'flex') {
+    _writeBundleResponsiveNode(rows, doc, child, routes, ids, indent, visited);
+    return;
+  }
+  final flex = child.flex ?? 1;
+  final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
+  rows
+    ..add('${indent}$wrapper(')
+    ..add('$indent  flex: $flex,')
+    ..add('$indent  child:');
+  _writeBundleResponsiveNode(
+    rows,
+    doc,
+    child,
+    routes,
+    ids,
+    '$indent    ',
+    visited,
+  );
+  rows.add('$indent),');
 }
 
 /// Placeholder content expression for [items] (unindented, no trailing

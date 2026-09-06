@@ -1275,7 +1275,528 @@ void main() {
         (manifest['pubspec'] as Map<String, dynamic>)['dependencies'] as Map;
     expect(deps.keys.toSet(), {'animation_kit', 'data_widget', 'email_validator', 'gap'});
   });
+
+  group('composition recursion (Track C3)', () {
+    test('nested card>button splices the child into the card slot', () {
+      final screen = _c3bScreen(_c3bDoc(_bCardWithButtonNodes()));
+      expect(screen, contains('Card('));
+      expect(screen, contains("Text('Go')"));
+      final cardIdx = screen.indexOf('Card(');
+      final descIdx = screen.indexOf("'Card body'");
+      final goIdx = screen.indexOf("'Go'");
+      expect(cardIdx, lessThan(descIdx));
+      expect(descIdx, lessThan(goIdx));
+      expect(screen, contains('const SizedBox(height: 12),'));
+    });
+
+    test('nested card>button matches the exact golden', () {
+      expect(_c3bScreen(_c3bDoc(_bCardWithButtonNodes())), kBundleNestedCardGolden);
+    });
+
+    test('three-deep nesting composes slot inside slot', () {
+      final screen = _c3bScreen(_c3bDoc(_bThreeDeepNodes()));
+      expect(screen, contains('Card('));
+      expect(screen, contains('ModalContainer('));
+      expect(screen, contains("Text('Deep')"));
+      final cardIdx = screen.indexOf('Card(');
+      final dialogIdx = screen.indexOf('ModalContainer(');
+      final deepIdx = screen.indexOf("'Deep'");
+      expect(cardIdx, lessThan(dialogIdx));
+      expect(dialogIdx, lessThan(deepIdx));
+    });
+
+    test('three-deep nesting matches the exact golden', () {
+      expect(_c3bScreen(_c3bDoc(_bThreeDeepNodes())), kBundleThreeDeepGolden);
+    });
+
+    test('card-in-row nests the card inside the Row', () {
+      final screen = _c3bScreen(_c3bDoc(_bCardInRowNodes()));
+      final rowIdx = screen.indexOf('Row(');
+      final cardIdx = screen.indexOf('Card(');
+      expect(rowIdx, isNot(-1));
+      expect(cardIdx, isNot(-1));
+      expect(rowIdx, lessThan(cardIdx));
+      expect(screen, contains("Text('Inner')"));
+    });
+
+    test('row-in-card nests a horizontal strip inside the card', () {
+      final screen = _c3bScreen(_c3bDoc(_bRowInCardNodes()));
+      final cardIdx = screen.indexOf('Card(');
+      final rowIdx = screen.indexOf('Row(');
+      expect(cardIdx, isNot(-1));
+      expect(rowIdx, isNot(-1));
+      expect(cardIdx, lessThan(rowIdx));
+      expect(screen, contains("Text('A')"));
+      expect(screen, contains("Text('B')"));
+      expect(screen, contains('const SizedBox(width: 8),'));
+    });
+
+    test('leaf fallback stacks children below the own widget', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'button', 'label': 'Own'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Kid'},
+          ],
+        },
+      ]));
+      expect(screen, contains('Column('));
+      expect(
+        screen.indexOf("'Own'"),
+        lessThan(screen.indexOf("'Kid'")),
+      );
+    });
+
+    test('hidden parent prunes the whole subtree', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'hiddenOn': ['mobile', 'tablet', 'desktop'],
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'card',
+              'title': 'Gone',
+              'description': 'Gone body',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Buried'},
+          ],
+        },
+      ]));
+      expect(screen, contains('const SizedBox.shrink()'));
+      expect(screen, isNot(contains('Card(')));
+      expect(screen, isNot(contains("'Buried'")));
+    });
+
+    test('per-level tier conditionals nest', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'hiddenOn': ['mobile'],
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'card',
+              'title': 'T',
+              'description': 'D',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'hiddenOn': ['tablet'],
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Kid'},
+          ],
+        },
+      ]));
+      expect('LayoutBuilder'.allMatches(screen).length, 2);
+      expect(screen, contains("tier == 'mobile'"));
+      expect(screen, contains("tier == 'tablet'"));
+      expect(screen, contains("'Kid'"));
+    });
+
+    test('nested tap navigation pushes the route inside the card', () {
+      final doc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'card',
+                'title': 'T',
+                'description': 'D',
+              },
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {
+                'id': 'i2',
+                'kind': 'button',
+                'label': 'Go',
+                'action': {'to': 's2', 'transition': 'slide'},
+              },
+            ],
+          },
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Nest', 'brief': ''},
+      });
+      final screen = buildCleanBundle(doc, kTestSources)
+          .files['lib/ui/screens/home_screen.dart']!;
+      expect(screen, contains('Card('));
+      expect(screen, contains("pushNamed('/done')"));
+      expect(
+        screen.indexOf('Card('),
+        lessThan(screen.indexOf('GestureDetector(')),
+      );
+    });
+
+    test('responsive branch carries the nested subtree', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'breakpointValues': {
+            'desktop': {'title': 'Wide'},
+          },
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'card',
+              'title': 'T',
+              'description': 'D',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Kid'},
+          ],
+        },
+      ]));
+      expect(screen, contains('LayoutBuilder'));
+      expect(screen, contains("tier == 'desktop'"));
+      // Both the override branch and the default branch carry the child
+      // body (each branch also repeats the child's doc comment above it).
+      expect("Text('Kid')".allMatches(screen).length, 2);
+      expect(screen, contains("'Wide'"));
+    });
+
+    test('nested kinds get barrel imports and services wiring', () {
+      // A nested-only button still wires its barrel (wiring sees the whole
+      // screen, not just roots).
+      final card = _c3bScreen(_c3bDoc(_bCardWithButtonNodes()));
+      expect(
+        card,
+        contains("import '../shadcn/components/control/button/button.dart';"),
+      );
+      expect(
+        card,
+        contains("import '../shadcn/components/layout/card/card.dart';"),
+      );
+      // A nested-only keyboard shortcut still pulls the services import.
+      final keys = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'card',
+              'title': 'T',
+              'description': 'D',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'keyboard_shortcut', 'keys': 'Ctrl+K'},
+          ],
+        },
+      ]));
+      expect(keys, contains("import 'package:flutter/services.dart';"));
+      expect(keys, contains('LogicalKeyboardKey.controlLeft'));
+    });
+
+    test('duplicate-id cycle terminates with a comment', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'card',
+              'title': 'T',
+              'description': 'D',
+            },
+          ],
+        },
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Loop'},
+          ],
+        },
+      ]));
+      expect(screen, contains('cycle: node n1 is its own ancestor (skipped)'));
+    });
+
+    test('pure parent cycle terminates without hanging', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'parentId': 'n2',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'button', 'label': 'A'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'B'},
+          ],
+        },
+      ]));
+      expect(screen, contains('// (empty screen).'));
+    });
+  });
 }
+
+/// Builds a one-screen doc from [nodes] for the C3 recursion tests.
+ScreenDoc _c3bDoc(List<Map<String, dynamic>> nodes) {
+  return ScreenDoc.fromJson({
+    'screens': [
+      {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+    ],
+    'nodes': nodes,
+    'theme': {
+      'paletteKey': 'slate',
+      'dark': false,
+      'shape': 'rounded',
+      'motion': 'standard',
+    },
+    'meta': {'title': 'Nest', 'brief': ''},
+  });
+}
+
+/// Renders the home screen of [doc] with the shared stub sources.
+String _c3bScreen(ScreenDoc doc) =>
+    buildCleanBundle(doc, kTestSources).files['lib/ui/screens/home_screen.dart']!;
+
+/// A card root with one button child (the canonical C3 fixture).
+List<Map<String, dynamic>> _bCardWithButtonNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'T',
+            'description': 'Card body',
+          },
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+        ],
+      },
+    ];
+
+/// Three-deep chain: card > dialog > button.
+List<Map<String, dynamic>> _bThreeDeepNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'T',
+            'description': 'Card body',
+          },
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {
+            'id': 'i2',
+            'kind': 'dialog',
+            'title': 'Dlg',
+            'message': 'Dlg body',
+          },
+        ],
+      },
+      {
+        'id': 'n3',
+        'screenId': 's1',
+        'parentId': 'n2',
+        'x': 0.0,
+        'y': 96.0,
+        'items': [
+          {'id': 'i3', 'kind': 'button', 'label': 'Deep'},
+        ],
+      },
+    ];
+
+/// A row root with a card child holding a button (card-in-row).
+List<Map<String, dynamic>> _bCardInRowNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'isRow': true,
+        'items': <Map<String, dynamic>>[],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'T',
+            'description': 'Card body',
+          },
+        ],
+      },
+      {
+        'id': 'n3',
+        'screenId': 's1',
+        'parentId': 'n2',
+        'x': 0.0,
+        'y': 96.0,
+        'items': [
+          {'id': 'i2', 'kind': 'button', 'label': 'Inner'},
+        ],
+      },
+    ];
+
+/// A card root with a row child holding two buttons (row-in-card).
+List<Map<String, dynamic>> _bRowInCardNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'T',
+            'description': 'Card body',
+          },
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'isRow': true,
+        'items': <Map<String, dynamic>>[],
+      },
+      {
+        'id': 'n3',
+        'screenId': 's1',
+        'parentId': 'n2',
+        'x': 0.0,
+        'y': 96.0,
+        'items': [
+          {'id': 'i3', 'kind': 'button', 'label': 'A'},
+        ],
+      },
+      {
+        'id': 'n4',
+        'screenId': 's1',
+        'parentId': 'n2',
+        'x': 48.0,
+        'y': 96.0,
+        'items': [
+          {'id': 'i4', 'kind': 'button', 'label': 'B'},
+        ],
+      },
+    ];
 
 /// Stub registry with a shared/part closure: the button barrel exports an
 /// impl file, parts a sibling file, imports the shared theme barrel, and
@@ -1422,6 +1943,151 @@ class _HomeScreenState extends State<HomeScreen> {
       children: [
       // chip 'Hi'.
       Text('Hi'),
+      ],
+    );
+  }
+}
+''';
+
+/// Byte-identical golden for the canonical C3 fixture: a card root with one
+/// button child. The child splices into the card slot (after the
+/// description, gap-separated, with its own doc comment); nested kinds keep
+/// their barrel comments and imports.
+const kBundleNestedCardGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// ignore_for_file: unused_import
+// Screen: Home (id: s1). Component bodies ship
+// separately under lib/ui/shadcn/ — wire them here:
+// - button -> lib/ui/shadcn/components/control/button/button.dart
+// - card -> lib/ui/shadcn/components/layout/card/card.dart
+import 'package:flutter/widgets.dart';
+import '../shadcn/components/control/button/button.dart';
+import '../shadcn/components/layout/card/card.dart';
+
+/// Home screen.
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+      // card 'T' (description Card body).
+      Card(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('T'),
+            const SizedBox(height: 4),
+            Text('Card body'),
+            const SizedBox(height: 12),
+            // button 'Go'.
+            PrimaryButton(
+              onPressed: () {},
+              enabled: true,
+              size: ButtonSize.normal,
+              child: Text('Go'),
+            ),
+          ],
+        ),
+      ),
+      ],
+    );
+  }
+}
+''';
+
+/// Byte-identical golden for three-deep nesting (card > dialog > button):
+/// each level splices into its own slot — the dialog (with its default
+/// action row) lands inside the card slot, the button inside the dialog
+/// slot after the message.
+const kBundleThreeDeepGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// ignore_for_file: unused_import
+// Screen: Home (id: s1). Component bodies ship
+// separately under lib/ui/shadcn/ — wire them here:
+// - button -> lib/ui/shadcn/components/control/button/button.dart
+// - card -> lib/ui/shadcn/components/layout/card/card.dart
+// - dialog -> lib/ui/shadcn/components/overlay/dialog/dialog.dart
+import 'package:flutter/widgets.dart';
+import '../shadcn/components/control/button/button.dart';
+import '../shadcn/components/layout/card/card.dart';
+import '../shadcn/components/overlay/dialog/dialog.dart';
+
+/// Home screen.
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+      // card 'T' (description Card body).
+      Card(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('T'),
+            const SizedBox(height: 4),
+            Text('Card body'),
+            const SizedBox(height: 12),
+            // dialog 'Dlg' (message Dlg body).
+            ModalContainer(
+              filled: true,
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Dlg'),
+                  const SizedBox(height: 12),
+                  Text('Dlg body'),
+                  const SizedBox(height: 12),
+                  // button 'Deep'.
+                  PrimaryButton(
+                    onPressed: () {},
+                    enabled: true,
+                    size: ButtonSize.normal,
+                    child: Text('Deep'),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      const Spacer(),
+                      OutlineButton(
+                        onPressed: () {},
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
       ],
     );
   }

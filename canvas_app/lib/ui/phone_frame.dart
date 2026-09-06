@@ -445,6 +445,28 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
 
   GlobalKey _flowKey(String id) => _flowKeys.putIfAbsent(id, () => GlobalKey());
 
+  /// Pointer id holding the node-selection claim. Pointer-down dispatches
+  /// deepest-first, so the first node [Listener] to claim a pointer wins and
+  /// ancestors skip: tapping a nested child selects the child, not every
+  /// ancestor up to the root (without this, nested taps would end on the
+  /// outermost container because ancestor Listeners fire after the deepest
+  /// one — Listeners are arena-exempt, unlike the row `GestureDetector`s).
+  /// Cleared on pointer-up/cancel. Gated per-tap, so sequential taps and
+  /// taps on empty chrome are unaffected.
+  int? _selectionClaim;
+
+  /// Claims the tap-selection for [node] unless a deeper node already
+  /// claimed [pointer] (see [_selectionClaim]).
+  void _claimSelect(CanvasNode node, int pointer) {
+    if (_selectionClaim == pointer) return;
+    _selectionClaim = pointer;
+    if (!widget.panMode) widget.onSelectNode?.call(node.id);
+  }
+
+  void _releaseClaim(int pointer) {
+    if (_selectionClaim == pointer) _selectionClaim = null;
+  }
+
   /// Inner stage width: the resolved per-screen device width.
   double get _innerWidth => specForScreenDevice(widget.screen.device).width;
 
@@ -469,6 +491,54 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     return [
       for (final node in widget.nodes)
         if (!effectivelyHidden(node)) node,
+    ];
+  }
+
+  /// Root nodes for the flow: `parentId == null`, plus dangling-`parentId`
+  /// nodes (parent id names no node on this screen) rendered as roots — the
+  /// same honesty rule codegen uses, so corrupt docs never silently drop
+  /// nodes. Self-parented and cyclic nodes stay excluded (they name a
+  /// present node, so they are never roots and never reachable — cycle-safe
+  /// by construction; `validateNesting` reports them).
+  List<CanvasNode> get _rootNodes {
+    final byId = {for (final n in widget.nodes) n.id: n};
+    return [
+      for (final node in _visibleNodes)
+        if (node.parentId == null || !byId.containsKey(node.parentId)) node,
+    ];
+  }
+
+  /// Visible direct children of [parentId] in document order (the same order
+  /// as core `childrenOf`), excluding self-parents and ids already on the
+  /// current build path ([ancestors]) so corrupt cyclic docs terminate.
+  List<CanvasNode> _childNodes(String parentId, Set<String> ancestors) => [
+    for (final node in _visibleNodes)
+      if (node.parentId == parentId &&
+          node.id != parentId &&
+          !ancestors.contains(node.id))
+        node,
+  ];
+
+  /// Whether [node] renders its children INSIDE its component chrome: a
+  /// non-row node whose first item's kind is in [kContainerKinds]
+  /// (`canvas/COMPOSITION.md` §2; the first-item rule is documented on
+  /// [kContainerKinds] — nodes carry item lists, the spec names one kind).
+  bool _isContainerNode(CanvasNode node) =>
+      !node.isRow &&
+      node.items.isNotEmpty &&
+      kContainerKinds.contains(node.items.first.kind);
+
+  /// Node items with the screen tier's [CanvasNode.breakpointValues] merged
+  /// over each item's props (`{...item.props, ...overrides}` — the same rule
+  /// as the preview player, applied per level). Empty overrides return the
+  /// items untouched, so docs without overrides render exactly as before.
+  List<CanvasItem> _nodeItems(CanvasNode node) {
+    final overrides =
+        node.breakpointValues[tierForWidth(_innerWidth).name];
+    if (overrides == null || overrides.isEmpty) return node.items;
+    return [
+      for (final item in node.items)
+        item.copyWith(props: {...item.props, ...overrides}),
     ];
   }
 
@@ -786,12 +856,11 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
 
   /// Screen content: padded top-left column of root nodes (doc order).
   /// Root leaves ignore `expand`/`flex` (W3): they render unwrapped.
-  /// Tier-hidden nodes are skipped (see [_visibleNodes]).
+  /// Tier-hidden nodes are skipped (see [_visibleNodes]). Every root builds
+  /// through [_buildNodeWidget] so nesting applies at any depth; childless
+  /// nodes take the exact pre-composition path.
   Widget _buildFlow(EditorColors colors) {
-    final roots = [
-      for (final node in _visibleNodes)
-        if (node.parentId == null) node,
-    ];
+    final roots = _rootNodes;
     return Padding(
       padding: const EdgeInsets.all(kFlowScreenPadding),
       child: Column(
@@ -800,32 +869,56 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         children: [
           for (var i = 0; i < roots.length; i++) ...[
             if (i > 0) const SizedBox(height: kFlowScreenGap),
-            if (roots[i].isRow)
-              _buildRow(roots[i], colors)
-            else
-              _buildLeaf(roots[i], colors),
+            _buildNodeWidget(roots[i], colors, {roots[i].id}),
           ],
         ],
       ),
     );
   }
 
+  /// Recursive node dispatcher (Track C1 composition — COMPOSITION.md §1).
+  ///
+  /// [ancestors] holds the ids on the current build path including [node]'s
+  /// own (roots seed `{root.id}`); children build with the extended set, so
+  /// corrupt cycles can never loop forever. Rows keep their horizontal
+  /// semantics at any depth; containers receive built children inside their
+  /// chrome; leaves with children get the fallback `Column([own,
+  /// ...children])`; childless nodes return [_buildLeaf] untouched.
+  Widget _buildNodeWidget(
+    CanvasNode node,
+    EditorColors colors,
+    Set<String> ancestors,
+  ) {
+    if (node.isRow) return _buildRow(node, colors, ancestors);
+    final kids = _childNodes(node.id, ancestors);
+    if (kids.isEmpty) return _buildLeaf(node, colors);
+    if (_isContainerNode(node)) {
+      return _buildContainer(node, colors, ancestors, kids);
+    }
+    return _buildLeafFallback(node, colors, ancestors, kids);
+  }
+
   /// One row container: full-width tap target (selects the row for gap
   /// editing) around a `Row` of its children (doc order, node `gap`
   /// separators) with W3 alignment (`mainAxis` null → start, `crossAxis`
-  /// null → center). Children ride [wrapRowChild] so each gets a finite
-  /// width share — kit widgets with internal `Expanded` rows (e.g.
-  /// `TextField`) would detonate on the `Row`'s unbounded width otherwise.
+  /// null → center). Children build through [_buildNodeWidget] so rows nest
+  /// at any depth (row-in-row, row-in-container); each rides [wrapRowChild]
+  /// so it gets a finite width share — kit widgets with internal `Expanded`
+  /// rows (e.g. `TextField`) would detonate on the `Row`'s unbounded width
+  /// otherwise. `expand`/`flex` keep working for row children at any depth;
+  /// container children ignore them (vertical stack, like root).
   ///
   /// `crossAxis == stretch` wraps the Row in [IntrinsicHeight]: a Row with
   /// stretch inside the screen Column (which measures children with
   /// unbounded height) asserts without a tight cross-axis height, and
   /// IntrinsicHeight supplies it from the tallest child.
-  Widget _buildRow(CanvasNode node, EditorColors colors) {
-    final kids = [
-      for (final child in _visibleNodes)
-        if (child.parentId == node.id) child,
-    ];
+  Widget _buildRow(
+    CanvasNode node,
+    EditorColors colors, [
+    Set<String> ancestors = const {},
+  ]) {
+    final next = {...ancestors, node.id};
+    final kids = _childNodes(node.id, next);
     // Clamp defensive: a negative stored gap must never size a separator.
     final gap = math.max(0.0, node.gap);
     final cross = rowCrossAxis(node.crossAxis);
@@ -835,7 +928,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       children: [
         for (var i = 0; i < kids.length; i++) ...[
           if (i > 0) SizedBox(width: gap),
-          wrapRowChild(kids[i], _buildLeaf(kids[i], colors)),
+          wrapRowChild(
+            kids[i],
+            _buildNodeWidget(kids[i], colors, next),
+          ),
         ],
       ],
     );
@@ -878,14 +974,38 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Gated on [ScreenSurface.panMode] so viewport pans never select.
   /// The opaque behavior (unlike the old defer-to-child default) also makes
   /// the 4px padding hit-testable, matching the row's full-bleed target.
+  /// Nested taps claim the deepest node (see [_selectionClaim]) so a child
+  /// tap never ends on an ancestor.
   Widget _buildLeaf(CanvasNode node, EditorColors colors) {
+    return _nodeChrome(
+      node,
+      colors,
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final item in _nodeItems(node))
+            buildCatalogItem(item.kind, item.props),
+        ],
+      ),
+    );
+  }
+
+  /// Shared node-chrome wrapper for container and fallback nodes: the exact
+  /// [_buildLeaf] selection affordances (claim-guarded [Listener],
+  /// [GestureDetector], key, padding, selection ring, content clamp) around
+  /// [content]. Keeps nested nodes' tap/selection/clamp semantics identical
+  /// to roots — the "same builder path" rule.
+  Widget _nodeChrome(CanvasNode node, EditorColors colors, Widget content) {
     void select() {
       if (!widget.panMode) widget.onSelectNode?.call(node.id);
     }
 
     return Listener(
       behavior: HitTestBehavior.opaque,
-      onPointerDown: (_) => select(),
+      onPointerDown: (event) => _claimSelect(node, event.pointer),
+      onPointerUp: (event) => _releaseClaim(event.pointer),
+      onPointerCancel: (event) => _releaseClaim(event.pointer),
       child: GestureDetector(
         onTap: select,
         child: Container(
@@ -911,16 +1031,69 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 EditorMetrics.phoneInnerHeight - node.y,
               ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                for (final item in node.items)
-                  buildCatalogItem(item.kind, item.props),
-              ],
-            ),
+            child: content,
           ),
         ),
+      ),
+    );
+  }
+
+  /// One container node ([_isContainerNode]): the first item's builder
+  /// receives the built children spliced into its spec slot; any further own
+  /// items stack below the chrome (see [kContainerKinds]). Children build
+  /// through [_buildNodeWidget] (props/tier/hidden semantics apply
+  /// recursively) and stack vertically with [kFlowScreenGap] separators.
+  Widget _buildContainer(
+    CanvasNode node,
+    EditorColors colors,
+    Set<String> ancestors,
+    List<CanvasNode> kids,
+  ) {
+    final next = {...ancestors, node.id};
+    final items = _nodeItems(node);
+    final builtKids = [
+      for (final kid in kids) _buildNodeWidget(kid, colors, next),
+    ];
+    return _nodeChrome(
+      node,
+      colors,
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          buildCatalogItem(items.first.kind, items.first.props, builtKids),
+          for (final item in items.skip(1))
+            buildCatalogItem(item.kind, item.props),
+        ],
+      ),
+    );
+  }
+
+  /// One leaf-with-children node (kind NOT in [kContainerKinds]): the §1
+  /// fallback `Column([ownWidget, ...children])` — children stack BELOW the
+  /// parent's own widget with [kFlowScreenGap] separators, never inside
+  /// chrome.
+  Widget _buildLeafFallback(
+    CanvasNode node,
+    EditorColors colors,
+    Set<String> ancestors,
+    List<CanvasNode> kids,
+  ) {
+    final next = {...ancestors, node.id};
+    return _nodeChrome(
+      node,
+      colors,
+      Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final item in _nodeItems(node))
+            buildCatalogItem(item.kind, item.props),
+          for (var i = 0; i < kids.length; i++) ...[
+            const SizedBox(height: kFlowScreenGap),
+            _buildNodeWidget(kids[i], colors, next),
+          ],
+        ],
       ),
     );
   }
