@@ -3,11 +3,11 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/main.dart';
-import 'package:canvas_app/ui/canvas_toolbar.dart';
+import 'package:canvas_app/ui/canvas_toolbar.dart' show kForgeSelectionToolbarKey;
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
-import 'package:canvas_app/ui/icon_rail.dart';
+import 'package:canvas_app/ui/forge_topbar.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:canvas_core/canvas_core.dart';
@@ -387,8 +387,12 @@ void main() {
     });
   });
 
-  group('toolbar delete semantics (shell)', () {
-    testWidgets('nothing selected: tooltip guides, trash is a no-op',
+  // Y6 cutover (FORGE.md §1-3f, §1-4e): the old always-visible toolbar + its
+  // trash are removed; node deletes go through the inspector Delete row and
+  // screen deletes through the topbar active-tab ×. Intent preserved: shell
+  // delete semantics (node-set delete, screen delete, dangling refusal).
+  group('forge delete semantics (shell)', () {
+    testWidgets('nothing selected: selection toolbar hidden, doc untouched',
         (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _twoScreenDoc());
@@ -396,20 +400,13 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      // Toolbar tips are kit tooltips now: find the trash glyph in the
-      // toolbar instead (palette tiles never reuse it).
-      final trash = find.descendant(
-        of: find.byType(CanvasToolbar),
-        matching: find.byIcon(Icons.delete_sweep),
-      );
-      expect(trash, findsOneWidget);
-      await tester.tap(trash);
-      await tester.pumpAndSettle();
+      // No selection → the black Forge toolbar hides (it returns shrink).
+      expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
       expect(store.doc.nodes, hasLength(1));
       expect(store.doc.screens, hasLength(2));
     });
 
-    testWidgets('selected node deletes via trash', (tester) async {
+    testWidgets('selected node deletes via inspector Delete', (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _twoScreenDoc());
       // Custom label: the canvas shows 'PickMe' while the layers row shows
@@ -430,16 +427,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      // Select the node through the layers panel (the row label is the
-      // kind-based 'Button · <id>'; the prompt brief also mentions buttons,
-      // so match the row label exactly). The rail tip is a kit tooltip now,
-      // so tap the rail's layers glyph (scoped: a tile reuses the glyph).
-      await tester.tap(
-        find.descendant(
-          of: find.byType(EditorIconRail),
-          matching: find.byIcon(Icons.layers),
-        ),
-      );
+      // Select the node through the Layers pill (Y6 replaces the rail):
+      // the row label is the kind-based 'Button · <id>'.
+      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
       await tester.pumpAndSettle();
       final layerRow = find.byWidgetPredicate(
         (w) => w is Text && (w.data ?? '').startsWith('Button · '),
@@ -447,31 +437,29 @@ void main() {
       expect(layerRow, findsOneWidget);
       await tester.tap(layerRow);
       await tester.pumpAndSettle();
-      final trashSelected = find.descendant(
-        of: find.byType(CanvasToolbar),
-        matching: find.byIcon(Icons.delete_sweep),
-      );
-      expect(trashSelected, findsOneWidget);
+      // Selection shows the Forge toolbar and auto-opens the inspector.
+      expect(find.byKey(kForgeSelectionToolbarKey), findsOneWidget);
 
-      await tester.tap(trashSelected);
+      await tester.tap(find.byKey(const ValueKey('inspector-delete')));
       await tester.pumpAndSettle();
       expect(store.doc.nodes, isEmpty);
     });
 
-    testWidgets('selected screen deletes via trash', (tester) async {
+    testWidgets('selected screen deletes via topbar ×', (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _twoScreenDoc());
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
       // Y4: labels are gone — select s9 via its empty screen area (same
-      // `onSelectScreen` path; see `_tapPhoneCenter`).
+      // `onSelectScreen` path; see `_tapPhoneCenter`). The topbar then marks
+      // s9 active with a deletable ×.
       await _tapPhoneCenter(tester, 1);
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
-          of: find.byType(CanvasToolbar),
-          matching: find.byIcon(Icons.delete_sweep),
+          of: find.byType(ForgeTopbar),
+          matching: find.byIcon(Icons.close),
         ),
       );
       await tester.pumpAndSettle();
@@ -503,8 +491,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
-          of: find.byType(CanvasToolbar),
-          matching: find.byIcon(Icons.delete_sweep),
+          of: find.byType(ForgeTopbar),
+          matching: find.byIcon(Icons.close),
         ),
       );
       await tester.pump();

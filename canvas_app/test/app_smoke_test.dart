@@ -2,6 +2,7 @@ import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
+import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
@@ -20,37 +21,36 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('editor shell assembles palette, canvas, and right aside',
+  testWidgets('editor shell assembles forge chrome (Y6 cutover)',
       (tester) async {
     useReferenceViewport(tester);
     await tester.pumpWidget(
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
+    // Forge pieces coexist: topbar + header + library + canvas + aside.
+    expect(find.byType(ForgeTopbar), findsOneWidget);
+    expect(find.byType(ForgeCanvasHeader), findsOneWidget);
     expect(find.byType(PartsPalette), findsOneWidget);
     expect(find.byType(DesignCanvas), findsOneWidget);
-    // No selection → the aside auto-shows the Prompt tab, not the Inspector.
     expect(find.byType(RightAside), findsOneWidget);
+    // No selection → the aside auto-shows the Prompt tab, not the Inspector,
+    // and the black selection toolbar stays hidden.
     expect(find.byType(InspectorPanel), findsNothing);
+    expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
     expect(find.byType(PreviewPlayer), findsNothing);
-    // Toolbar entries are icon buttons with kit tooltips, not text buttons.
-    // (Kit tips don't register with `find.byTooltip`; scope the glyphs to
-    // the toolbar because palette tiles reuse some icon glyphs.)
-    Finder toolbarIcon(IconData icon) => find.descendant(
-          of: find.byType(CanvasToolbar),
-          matching: find.byIcon(icon),
-        );
-    expect(toolbarIcon(Icons.play_arrow), findsOneWidget);
-    expect(toolbarIcon(Icons.folder_open), findsOneWidget);
-    // Toolbar entries stay icon-only: the text Preview action lives in the
-    // Forge topbar (Y2 mount), not in the floating toolbar.
-    expect(
-      find.descendant(
-        of: find.byType(CanvasToolbar),
-        matching: find.text('Preview'),
-      ),
-      findsNothing,
-    );
+    // Y6 removals: the old rail and the old always-visible toolbar are gone
+    // (the rail widget no longer exists; here we pin the old toolbar type
+    // absent from the shell).
+    expect(find.byType(CanvasToolbar), findsNothing);
+    // Library|Layers pills + bottom Theme disclosure own the left column.
+    expect(find.byKey(const ValueKey('forge-left-pill-library')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('forge-left-pill-layers')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
+        findsOneWidget);
+    // The Export action lives in the Forge topbar (not in a floating bar).
     expect(find.byType(ForgeTopbar), findsOneWidget);
     expect(find.text('Export Flutter'), findsOneWidget);
   });
@@ -79,17 +79,18 @@ void main() {
     expect(find.text('Select an item to edit its props'), findsOneWidget);
   });
 
-  testWidgets('preview button swaps editor for preview player',
-      (tester) async {
+  testWidgets('preview pill swaps editor for preview player', (tester) async {
     useReferenceViewport(tester);
     await tester.pumpWidget(
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
+    // Y6: Preview lives in the Forge topbar pill (black pill, white text +
+    // play icon) — the old floating-toolbar play glyph is gone.
     await tester.tap(
       find.descendant(
-        of: find.byType(CanvasToolbar),
-        matching: find.byIcon(Icons.play_arrow),
+        of: find.byType(ForgeTopbar),
+        matching: find.text('Preview'),
       ),
     );
     await tester.pump();

@@ -11,7 +11,6 @@ import 'dart:convert';
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/editor_buttons.dart';
-import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/open_dialog.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
@@ -68,52 +67,11 @@ void _expectNoRawChrome(WidgetTester tester, Finder scope) {
 }
 
 void main() {
-  group('icon rail dogfood', () {
-    testWidgets('rail buttons use kit tooltips and still select',
-        (tester) async {
-      String? selected;
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Scaffold(
-            body: EditorIconRail(
-              activeId: 'parts',
-              onSelect: (id) => selected = id,
-            ),
-          ),
-        ),
-      );
-      await tester.pump();
-
-      final scope = find.byType(EditorIconRail);
-      _expectNoRawChrome(tester, scope);
-      // 8 rail buttons plus the static GitHub glyph.
-      expect(
-        find.descendant(
-          of: scope,
-          matching: find.byType(shadcn.Tooltip),
-        ),
-        findsNWidgets(9),
-      );
-      expect(
-        _kitTipLabels(tester, scope),
-        containsAll([
-          'Parts',
-          'Layers',
-          'Color',
-          'Shape',
-          'Type',
-          'Motion',
-          'AI',
-          'Language',
-          'GitHub',
-        ]),
-      );
-
-      await tester.tap(find.byIcon(Icons.layers));
-      await tester.pump();
-      expect(selected, 'layers');
-    });
-
+  // Y6 cutover (FORGE.md §1-2d): the icon rail is deleted; Layers lives
+  // behind the shell's Library|Layers pills and theme panels live in the
+  // bottom Theme disclosure. The rail dogfood test is removed with it —
+  // intent preserved by keeping the segmented/icon-button kit coverage below.
+  group('editor buttons dogfood', () {
     testWidgets('segmented + icon button tooltips come from the kit',
         (tester) async {
       var selected = 0;
