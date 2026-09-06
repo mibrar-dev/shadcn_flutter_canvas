@@ -1,13 +1,13 @@
-/// Forge editor shell (Y6 cutover, FORGE.md §5) with the restored classic
-/// left aside (Track CC sidebar revert).
+/// FlutterFlow-chrome editor shell (FF7 cutover, BUILD_SPEC §9.3 FF7).
 ///
-/// Three columns at a 1440x900 viewport: a 320px left aside (52px icon rail +
-/// parts panel, switched by the rail selection incl. Layers and the
-/// Color/Shape/Type/Motion theme panels), the flexible canvas
-/// (ForgeCanvasHeader + DesignCanvas + ForgeSelectionToolbar), and a 320px
-/// right aside. The columns share one background with no dividers — see
-/// [EditorMetrics] for the measured values. Chrome follows the doc theme as
-/// before (no forced light — FORGE.md §5 DECISIONS); dark values are kept.
+/// Four regions at a 1440x900 viewport: the 48px persistent nav rail
+/// ([FfNavRail], [EditorMetrics.ffRailWidth]) switching the 280px panel
+/// host ([FfPanelHost], [EditorMetrics.ffPanelWidth]), the flexible canvas
+/// (ForgeCanvasHeader + DesignCanvas + ForgeSelectionToolbar), and the 300px
+/// properties column ([EditorMetrics.ffInspectorWidth]). Device + zoom embed
+/// into the dense topbar ([ForgeTopbar], [EditorMetrics.ffTopbarHeight]).
+/// Chrome follows the doc theme as before (no forced light — FORGE.md §5
+/// DECISIONS); dark values are kept.
 library;
 
 import 'package:device_preview/device_preview.dart';
@@ -19,11 +19,13 @@ import 'package:canvas_app/canvas/canvas_store.dart' hide ChangeNotifier;
 import 'package:canvas_app/canvas/persistence.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/export_panel.dart';
+import 'package:canvas_app/ui/ff_nav_rail.dart';
+import 'package:canvas_app/ui/ff_panel_host.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
-import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/keyboard_shortcuts.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/open_dialog.dart';
@@ -220,11 +222,17 @@ class _EditorShellState extends State<EditorShell> {
   double _zoom = 0.79;
   bool _showGuides = true;
 
-  /// Classic left-aside selection (Track CC sidebar revert): the icon rail
-  /// switches the parts palette, the layers panel, and the Color/Shape/
-  /// Type/Motion theme panels. The Forge Library|Layers pills + Theme
-  /// disclosure are removed.
-  String _railId = kRailParts;
+  /// FF7 rail selection (BUILD_SPEC §9.1-2a–2b): the persistent 48px
+  /// [FfNavRail] switches what [FfPanelHost] shows (Tree / Palette / Theme /
+  /// Assets / Settings). This is the planned cutover restoration of the rail
+  /// Y6 deleted at `f56b6839` (FF2 deliberately re-introduced it as
+  /// [FfNavRail]; this commit mounts it) — not a regression.
+  FfRailDestination _ffDestination = FfRailDestination.tree;
+
+  /// Shell-owned landscape flag for the topbar-embedded device strip (same
+  /// contract as [DevicePickerEmbed.onLandscapeChanged]). The canvas stage
+  /// itself stays portrait until its owner consumes the flag.
+  bool _landscape = false;
 
   /// Shell-owned multi-selection, mutually exclusive with [_selectedScreenId]:
   /// selecting any node clears the screen selection and vice versa. Canvas
@@ -324,28 +332,50 @@ class _EditorShellState extends State<EditorShell> {
                           onExport: () =>
                               showExportDialog(context, widget.store),
                           onOpen: () => showOpenDialog(context, widget.store),
+                          // FF7 cutover (BUILD_SPEC §9.1-1d–1e): device +
+                          // zoom embed into the dense topbar. The embeds are
+                          // null-safe (hidden until wired); the shell wires
+                          // every prop to the same store paths the canvas
+                          // header already uses, so both strips stay in sync.
+                          deviceSelectedIndex: _deviceIndex(
+                            _currentScreenId(),
+                          ),
+                          onDeviceSelect: (i) => _selectTopbarDevice(
+                            _currentScreenId(),
+                            i,
+                          ),
+                          landscape: _landscape,
+                          onLandscapeChanged: (v) =>
+                              setState(() => _landscape = v),
+                          zoom: _zoom,
+                          onZoomIn: () => _setZoom(_zoom + 0.1),
+                          onZoomOut: () => _setZoom(_zoom - 0.1),
+                          onZoomFit: () => _setZoom(0.79),
+                          showGuides: _showGuides,
+                          onShowGuidesChanged: (v) =>
+                              setState(() => _showGuides = v),
                         ),
                         Expanded(
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                        SizedBox(
-                          width: EditorMetrics.sidePanelWidth,
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              EditorIconRail(
-                                activeId: _railId,
-                                onSelect: (id) =>
-                                    setState(() => _railId = id),
-                              ),
-                              Expanded(child: _leftPanel()),
-                            ],
-                          ),
+                        // FF7 cutover mount (BUILD_SPEC §9.1, 48/280/flex/
+                        // 300): the 48px persistent nav rail switches the
+                        // 280px panel host; the canvas takes the flex middle;
+                        // the properties column is 300px. Widths come from
+                        // [EditorMetrics] (no literals).
+                        FfNavRail(
+                          selected: _ffDestination,
+                          onSelect: (d) =>
+                              setState(() => _ffDestination = d),
+                        ),
+                        FfPanelHost(
+                          selected: _ffDestination,
+                          panels: _ffPanels(),
                         ),
                         Expanded(child: _canvasArea()),
                         SizedBox(
-                          width: EditorMetrics.promptPanelWidth,
+                          width: EditorMetrics.ffInspectorWidth,
                           child: RightAside(
                             store: widget.store,
                             nodeId: _primaryNodeId(),
@@ -501,62 +531,93 @@ class _EditorShellState extends State<EditorShell> {
     widget.store.reorderNode(nodeId, from + delta);
   }
 
-  /// The left aside's body, switched by the icon rail's selection.
-  Widget _leftPanel() {
-    switch (_railId) {
-      case kRailParts:
-        return const PartsPalette();
-      case kRailLayers:
-        // Track S2: multi-aware layers — the panel receives the full set
-        // (primary ring + secondary tint + count header with delete/group
-        // actions) and three tap intents: plain collapses, Ctrl/Cmd toggles,
-        // Shift ranges. The panel reads the live modifiers itself, like the
-        // canvas tap path. The canvas ring stays primary-only (documented
-        // limitation, owned by another track).
-        return LayersPanel(
-          store: widget.store,
-          selectedNodeIds: _selectedNodeIds,
-          selectedNodeId: _primaryNodeId(),
-          onSelectNode: _collapseToNode,
-          onToggleNode: _toggleLayerNode,
-          onRangeSelectNode: _rangeLayerNode,
-          onGroupSelection: _groupSelection,
-          onUngroupSelection: _ungroupSelection,
-          onDeleteSelection: _deleteSelection,
-        );
-      // Theme panels hug their content: the loose scroll constraints stop
-      // the panel Card from stretching to the full column height.
-      case kRailColor:
-        return SingleChildScrollView(
-          child: ColorPanel(
-            theme: widget.store.doc.theme,
-            onChanged: widget.store.setTheme,
-          ),
-        );
-      case kRailShape:
-        return SingleChildScrollView(
-          child: ShapePanel(
-            theme: widget.store.doc.theme,
-            onChanged: widget.store.setTheme,
-          ),
-        );
-      case kRailType:
-        return SingleChildScrollView(
-          child: TypePanel(
-            theme: widget.store.doc.theme,
-            onChanged: widget.store.setTheme,
-          ),
-        );
-      case kRailMotion:
-        return SingleChildScrollView(
-          child: MotionPanel(
-            theme: widget.store.doc.theme,
-            onChanged: widget.store.setTheme,
-          ),
-        );
-      default:
-        return _placeholder(_railId);
+  /// Topbar-embedded device strip selection (BUILD_SPEC §9.1-1d): the
+  /// index into [kPreviewDevices] of the current screen's preset. Unknown
+  /// screens resolve through [_currentScreenId]'s first-screen fallback, so
+  /// the strip never receives an out-of-range index (the topbar hides it
+  /// defensively anyway).
+  int _deviceIndex(String screenId) {
+    String? id;
+    for (final s in widget.store.doc.screens) {
+      if (s.id == screenId) {
+        id = s.device;
+        break;
+      }
     }
+    final spec = specForScreenDevice(id);
+    final index = kPreviewDevices.indexWhere((d) => d.id == spec.id);
+    return index < 0 ? 0 : index;
+  }
+
+  /// Topbar-embedded device tap: applies the preset to the current screen
+  /// through the undoable `store.setScreenDevice`, keeping the
+  /// phone-defaults-to-null contract the canvas header strip uses (phone
+  /// clears back to null; every other preset stores its id).
+  void _selectTopbarDevice(String screenId, int index) {
+    if (index < 0 || index >= kPreviewDevices.length) return;
+    final id = kPreviewDevices[index].id;
+    widget.store.setScreenDevice(
+      screenId,
+      id == kPreviewDevicePhone.id ? null : id,
+    );
+  }
+
+  /// The rail-switched panel set for [FfPanelHost], keyed by the shell-owned
+  /// [_ffDestination]. Tree is the first-class always-available panel
+  /// (BUILD_SPEC §9.1-2); Palette keeps its DnD payloads + search;
+  /// Theme stacks the four Color/Shape/Type/Motion panels; Assets is the v1
+  /// empty-state stub (§9.1-3d); Settings is a placeholder.
+  ///
+  /// The host keeps inactive panels alive in an [IndexedStack], so each
+  /// panel's scroll/search state survives switching.
+  Map<FfRailDestination, Widget> _ffPanels() {
+    return {
+      // Track S2: multi-aware layers — the panel receives the full set
+      // (primary ring + secondary tint + count header with delete/group
+      // actions) and three tap intents: plain collapses, Ctrl/Cmd toggles,
+      // Shift ranges. The panel reads the live modifiers itself, like the
+      // canvas tap path. The canvas ring stays primary-only (documented
+      // limitation, owned by another track).
+      FfRailDestination.tree: LayersPanel(
+        store: widget.store,
+        selectedNodeIds: _selectedNodeIds,
+        selectedNodeId: _primaryNodeId(),
+        onSelectNode: _collapseToNode,
+        onToggleNode: _toggleLayerNode,
+        onRangeSelectNode: _rangeLayerNode,
+        onGroupSelection: _groupSelection,
+        onUngroupSelection: _ungroupSelection,
+        onDeleteSelection: _deleteSelection,
+      ),
+      FfRailDestination.palette: const PartsPalette(),
+      // Theme panels hug their content: the loose scroll constraints stop
+      // the panel Cards from stretching to the full column height.
+      FfRailDestination.theme: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ColorPanel(
+              theme: widget.store.doc.theme,
+              onChanged: widget.store.setTheme,
+            ),
+            ShapePanel(
+              theme: widget.store.doc.theme,
+              onChanged: widget.store.setTheme,
+            ),
+            TypePanel(
+              theme: widget.store.doc.theme,
+              onChanged: widget.store.setTheme,
+            ),
+            MotionPanel(
+              theme: widget.store.doc.theme,
+              onChanged: widget.store.setTheme,
+            ),
+          ],
+        ),
+      ),
+      FfRailDestination.assets: const _FfAssetsStub(),
+      FfRailDestination.settings: _placeholder('settings'),
+    };
   }
 
   Widget _placeholder(String id) {
@@ -568,7 +629,6 @@ class _EditorShellState extends State<EditorShell> {
       ),
     );
   }
-
   Widget _canvasArea() {
     final doc = widget.store.doc;
     // Inner components theme: screens/components render under `doc.theme`
@@ -856,5 +916,52 @@ class _EditorShellState extends State<EditorShell> {
       }
       setState(() => _selectedScreenId = null);
     }
+  }
+}
+
+/// FF7 Assets-destination stub glyph size: matches the inspector empty-state
+/// icon, a single named constant per the no-magic-numbers rule.
+const double _kFfStubIconSize = 20.0;
+
+/// FF7 Assets panel (BUILD_SPEC §9.1-3d): the v1 empty-state stub for the
+/// rail's Assets destination. Mounted by [_ffPanels]; a later wave replaces
+/// it with the real asset library. Token chrome only, no store import.
+class _FfAssetsStub extends StatelessWidget {
+  const _FfAssetsStub();
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(EditorMetrics.panelInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.folder_outlined,
+              size: _kFfStubIconSize,
+              color: colors.disabled,
+            ),
+            const SizedBox(height: EditorMetrics.tileGap),
+            Text(
+              'No assets yet',
+              style: EditorType.sectionHeader.copyWith(
+                color: colors.onSurface,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: EditorMetrics.tileGap),
+            Text(
+              'Uploads arrive in a later wave.',
+              style: EditorType.tileLabel.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
