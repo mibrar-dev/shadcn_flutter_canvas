@@ -1,0 +1,111 @@
+# Track H FINAL — BUILD_SPEC §11 repo gates for the canvas/ scope.
+#
+# Lives in canvas/.github (canvas/ has its own .git) so it has zero blast
+# radius on the parent repo workflows (../.github: validate.yml,
+# canvas-deploy.yml — untouched). Wired per docs/BUILD_H0_HARDENING_PREP.md §3,
+# which recorded all §11 gates as MISSING from CI.
+#
+# Gates covered:
+#   job analyze      → §11 gate 1 (flutter analyze, zero issues)
+#   job test         → §11 gate 2 (flutter test, zero failures)
+#   job drift        → §11 gates 6+7 repo-local guards (drift test, fixture
+#                      goldens, H0 harness smoke)
+#   job format-check → §11 gate 3 direction (NON-BLOCKING first:
+#                      continue-on-error; checks the DEFINED harness paths
+#                      only — generated-output format graduates to blocking
+#                      in G4, see docs/BUILD_H_FINAL.md §5)
+# Gates 4–5 (analyze / build web ON GENERATED OUTPUT) are CI-future: the
+# emitted pubspec needs flutter_shadcn_kit ^1.0.0 resolvable (path override
+# or published package) — filed as G4 scope in docs/BUILD_H_FINAL.md §6.
+# Gate 8 is manual by definition.
+name: canvas-gates
+
+on:
+  push:
+    paths:
+      - 'canvas_core/**'
+      - 'canvas_app/**'
+      - 'docs/**'
+      - '.github/**'
+  pull_request:
+    paths:
+      - 'canvas_core/**'
+      - 'canvas_app/**'
+      - 'docs/**'
+      - '.github/**'
+  workflow_dispatch:
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+      - name: analyze canvas_core (§11 gate 1)
+        run: flutter analyze --no-pub
+        working-directory: canvas_core
+      - name: analyze canvas_app (§11 gate 1)
+        run: flutter analyze --no-pub
+        working-directory: canvas_app
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    needs: analyze
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+      - name: test canvas_core (§11 gate 2)
+        run: flutter test
+        working-directory: canvas_core
+      - name: test canvas_app (§11 gate 2)
+        run: flutter test
+        working-directory: canvas_app
+
+  drift:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+      - name: registry/codegen drift guard (§11 gate 7 repo-local)
+        run: flutter test test/gen_registry_drift_test.dart
+        working-directory: canvas_app
+      - name: fixture goldens (§11 gate 6 repo-local)
+        run: >-
+          flutter test test/primitives_f3_goldens_test.dart
+          test/g2_migration_test.dart
+        working-directory: canvas_core
+      - name: H0 render-vs-codegen harness smoke (pure stage)
+        run: >-
+          dart run tool/render_codegen_diff.dart --stage pure
+          --fixtures ../canvas_core/test/fixtures --out /tmp/h0diff
+        working-directory: canvas_app
+
+  format-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: '3.47.2'
+      - name: dart format check on DEFINED harness paths only (non-blocking)
+        run: >-
+          dart format --output=none --set-exit-if-changed
+          tool/placeholder_scan.dart tool/render_codegen_diff.dart
+          test/h_final_gates_test.dart test/h0_diff_harness_test.dart
+        working-directory: canvas_app
