@@ -8,6 +8,7 @@ import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
+import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:canvas_core/canvas_core.dart';
@@ -427,9 +428,16 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      // Select the node through the Layers pill (Y6 replaces the rail):
-      // the row label is the kind-based 'Button · <id>'.
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
+      // Select the node through the rail's layers glyph (Track CC reverts
+      // the Y6 pills to the classic rail; the rail tip is a kit tooltip,
+      // so tap the glyph scoped to the rail — the pre-Forge idiom): the
+      // row label is the kind-based 'Button · <id>'.
+      await tester.tap(
+        find.descendant(
+          of: find.byType(EditorIconRail),
+          matching: find.byIcon(Icons.layers),
+        ),
+      );
       await tester.pumpAndSettle();
       final layerRow = find.byWidgetPredicate(
         (w) => w is Text && (w.data ?? '').startsWith('Button · '),

@@ -125,6 +125,10 @@ String? ungroupTargetRow(ScreenDoc doc, Set<String> ids) {
 /// Rebuilds [node] with a new [parentId], preserving every other field with
 /// the store's deep-copy precedent (`hiddenOn`/`breakpointValues`/`slots`
 /// copied, never aliased; `w`/`h` carried over; `items` rides along untouched).
+///
+/// Track DD carry: `slotNodes` (copied, never aliased) and `locked` ride
+/// along too — ungrouping a slotted/locked node must not drop its slot
+/// composition or its lock.
 CanvasNode _withParentId(CanvasNode node, String? parentId) => CanvasNode(
       id: node.id,
       screenId: node.screenId,
@@ -144,6 +148,8 @@ CanvasNode _withParentId(CanvasNode node, String? parentId) => CanvasNode(
           entry.key: Map<String, dynamic>.from(entry.value),
       },
       slots: Map<String, String>.from(node.slots),
+      slotNodes: Map<String, String>.from(node.slotNodes),
+      locked: node.locked,
       w: node.w,
       h: node.h,
     );

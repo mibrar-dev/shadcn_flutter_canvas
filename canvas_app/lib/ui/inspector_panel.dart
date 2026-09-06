@@ -158,6 +158,32 @@ String? _parentDisabledReason(
   return null;
 }
 
+/// Disabled reason for a slot [target] relative to [node]'s [slot], or null
+/// when the assignment is legal (Track DD — mirrors [_parentDisabledReason]:
+/// illegal targets stay visible-but-disabled with the reason so the refusal
+/// is discoverable; cross-screen nodes are excluded from the picker outright
+/// — a slot child never changes screens, see [CanvasStore.setSlotChild]).
+String? _slotDisabledReason(
+  CanvasNode node,
+  String slot,
+  CanvasNode target,
+  Set<String> descendantIds,
+) {
+  if (target.id == node.slotNodes[slot]) return 'current slot child';
+  if (target.id == node.id) return 'cannot slot itself';
+  if (descendantIds.contains(target.id)) return 'would create a cycle';
+  return null;
+}
+
+/// Primary composition kind of [node] for the slot table: rows declare no
+/// slots, item-less nodes have no kind, otherwise the first item's kind
+/// (the same `<Kind>` the headers and layers rows display).
+String _slotHostKind(CanvasNode node) {
+  if (node.isRow) return 'row';
+  if (node.items.isEmpty) return '';
+  return node.items.first.kind;
+}
+
 /// One editable prop (pre-W2 shape; legacy compatibility shim).
 ///
 /// Kept for source compatibility (`inspector_row_test.dart` reads
@@ -1486,6 +1512,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                   _visibilityCard(node),
                   const SizedBox(height: EditorMetrics.panelInset),
                   _nestingCard(node),
+                  ..._nodeSlotLockCards(node),
                 ],
               ],
             ),
@@ -1551,6 +1578,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 _visibilityCard(node),
                 const SizedBox(height: EditorMetrics.panelInset),
                 _nestingCard(node),
+                ..._nodeSlotLockCards(node),
               ],
             ],
           ),
@@ -1923,6 +1951,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         _nestingCard(node),
         const SizedBox(height: EditorMetrics.panelInset),
         _visibilityCard(node),
+        ..._nodeSlotLockCards(node),
       ],
     );
   }
@@ -2052,6 +2081,215 @@ class _InspectorPanelState extends State<InspectorPanel> {
         ],
       ),
     );
+  }
+
+  /// Track DD slots card: one child picker per named slot from [kNodeSlots]
+  /// for the host kind (see [_slotHostKind]), plus a Clear per slot. Null
+  /// for kinds with no slots (rows, leaves, unknown kinds) — those nodes
+  /// render no card at all. All writes go through the undoable
+  /// `store.setSlotChild`, so undo/redo keep working.
+  ///
+  /// The picker lists every same-screen node (cross-screen nodes are
+  /// excluded outright — a slot child never changes screens); illegal
+  /// targets render disabled with their reason (see [_slotDisabledReason]).
+  /// While the host is locked the pickers and Clear buttons disable with a
+  /// hint (the store throws [StateError] on locked-host writes, so the UI
+  /// never issues one).
+  Widget? _slotsCard(CanvasNode node) {
+    final slots = kNodeSlots[_slotHostKind(node)];
+    if (slots == null || slots.isEmpty) return null;
+    final doc = widget.store.doc;
+    final byId = {for (final n in doc.nodes) n.id: n};
+    final descendantIds = {
+      for (final d in descendants(doc, node.id)) d.id,
+    };
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Slots', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          if (node.locked) ...[
+            const Text(
+              'Unlock to edit slots.',
+              style: EditorType.tileLabel,
+            ),
+            const SizedBox(height: _kInspectorGap),
+          ],
+          for (final slot in slots) _slotRow(node, slot, byId, descendantIds),
+        ],
+      ),
+    );
+  }
+
+  /// One slot row: the slot name plus a child picker and a Clear button.
+  Widget _slotRow(
+    CanvasNode node,
+    String slot,
+    Map<String, CanvasNode> byId,
+    Set<String> descendantIds,
+  ) {
+    final doc = widget.store.doc;
+    final currentId = node.slotNodes[slot];
+    final current = currentId == null ? null : byId[currentId];
+    final candidates = [
+      for (final n in doc.nodes)
+        if (n.screenId == node.screenId) n,
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: _kInspectorGap),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(slot, style: EditorType.tileLabel),
+          const SizedBox(height: _kInspectorGap),
+          Row(
+            children: [
+              Expanded(
+                child: shadcn.Select<String>(
+                  key: ValueKey('slot-$slot'),
+                  value: current != null ? current.id : null,
+                  enabled: !node.locked,
+                  placeholder: const Text('Empty slot'),
+                  itemBuilder: (context, option) {
+                    final target = byId[option];
+                    return Text(
+                      target == null ? option : _nodeShortLabel(target),
+                    );
+                  },
+                  onChanged: (id) {
+                    if (id == null || node.locked) return;
+                    final target = byId[id];
+                    if (target == null) return;
+                    // Belt-and-braces: disabled items cannot fire, but a
+                    // stale tap must never reach the throwing store path.
+                    if (_slotDisabledReason(node, slot, target, descendantIds) !=
+                        null) {
+                      return;
+                    }
+                    widget.store.setSlotChild(node.id, slot, id);
+                  },
+                  popup: shadcn.SelectPopup(
+                    items: shadcn.SelectItemList(
+                      children: [
+                        for (final target in candidates)
+                          shadcn.SelectItemButton(
+                            key: ValueKey('slot-$slot-${target.id}'),
+                            value: target.id,
+                            enabled: _slotDisabledReason(
+                                  node,
+                                  slot,
+                                  target,
+                                  descendantIds,
+                                ) ==
+                                null,
+                            child: Text(
+                              _slotOptionLabel(
+                                node,
+                                slot,
+                                target,
+                                descendantIds,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ).call,
+                ),
+              ),
+              const SizedBox(width: _kInspectorGap),
+              shadcn.OutlineButton(
+                key: ValueKey('slot-clear-$slot'),
+                size: shadcn.ButtonSize.small,
+                onPressed: (node.locked || currentId == null)
+                    ? null
+                    : () => widget.store.setSlotChild(node.id, slot, null),
+                child: const Text('Clear'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Picker option label: `<Kind> · <id>`, plus the disabled reason when the
+  /// target is illegal (mirrors the nesting picker's discoverable refusals).
+  String _slotOptionLabel(
+    CanvasNode node,
+    String slot,
+    CanvasNode target,
+    Set<String> descendantIds,
+  ) {
+    final reason = _slotDisabledReason(node, slot, target, descendantIds);
+    final base = _nodeShortLabel(target);
+    return reason == null ? base : '$base — $reason';
+  }
+
+  /// Track DD lock card: the current lock state plus a Lock/Unlock toggle
+  /// writing through the undoable `store.setNodeLocked`. Shown for every
+  /// selected node (leaves, rows, and unknown kinds alike). A locked node
+  /// additionally shows a banner hint naming the frozen operations.
+  Widget _lockCard(CanvasNode node) {
+    final locked = node.locked;
+    return shadcn.Card(
+      padding: const EdgeInsets.all(EditorMetrics.panelInset),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Lock', style: EditorType.sectionHeader),
+          const SizedBox(height: _kInspectorGap),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  locked ? 'Locked' : 'Unlocked',
+                  style: EditorType.tileLabel,
+                ),
+              ),
+              if (locked)
+                shadcn.PrimaryButton(
+                  key: const ValueKey('node-lock'),
+                  size: shadcn.ButtonSize.small,
+                  onPressed: () =>
+                      widget.store.setNodeLocked(node.id, false),
+                  child: const Text('Unlock'),
+                )
+              else
+                shadcn.OutlineButton(
+                  key: const ValueKey('node-lock'),
+                  size: shadcn.ButtonSize.small,
+                  onPressed: () => widget.store.setNodeLocked(node.id, true),
+                  child: const Text('Lock'),
+                ),
+            ],
+          ),
+          if (locked) ...[
+            const SizedBox(height: _kInspectorGap),
+            const Text(
+              'Locked — selection, resize, reparent and delete are disabled '
+              'until unlock.',
+              style: EditorType.tileLabel,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// Slots (when the kind declares any) plus lock cards for a selected node,
+  /// with the inter-card rhythm (mirrors the visibility/nesting mounts).
+  List<Widget> _nodeSlotLockCards(CanvasNode node) {
+    final slots = _slotsCard(node);
+    return [
+      if (slots != null) ...[
+        const SizedBox(height: EditorMetrics.panelInset),
+        slots,
+      ],
+      const SizedBox(height: EditorMetrics.panelInset),
+      _lockCard(node),
+    ];
   }
 
   /// Per-child flex editor: `expand` dropdown (null shows the default

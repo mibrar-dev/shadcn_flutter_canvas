@@ -140,6 +140,164 @@ const Set<String> kContainerKinds = {
   'refresh_trigger',
 };
 
+/// Named builder slots (Track BB): kind → slot names a node may fill with a
+/// single built child widget.
+///
+/// CONTRACT (parallel render agent): renderers build each `node.slotNodes`
+/// entry's child node and inject the built widget into a COPY of the node's
+/// props under the slot-name key; builders read it back as
+/// `props['<slot>'] as Widget?` (null = prop default / empty as today — see
+/// [_slotOf]). Slot names never enter `props_schema.dart`: slots are not
+/// props (no spec, no inspector field, no binding resolution), so the schema
+/// files stay untouched. A third agent builds inspector / layers / codegen on
+/// top of this registry.
+///
+/// KIT-WIDE AUDIT (pinned kit `f4f48d8`; paths are kit-relative under
+/// `lib/registry/components/`). Registered only where a GENERIC single-Widget
+/// param genuinely exists:
+/// - `scaffold` → `appBar`, `body`, `footer`. The kit `Scaffold`
+///   (`layout/scaffold/_impl/core/scaffold_2.dart:6`) takes NO `appBar` /
+///   `body` / `bottomNav` params — honest mapping onto what it DOES take:
+///   `headers` (:8, `List<Widget>`), `child` (:14, required `Widget`), and
+///   `footers` (:11, `List<Widget>`). `appBar` fills `headers` (REPLACES the
+///   default titled `AppBar` chrome when provided, null = default as today);
+///   `body` fills the body region of `child` (SHADOWS the `body` string prop
+///   when a Widget is injected, COMPLEMENTS the children splice below it);
+///   `footer` fills `footers` (null = `const []`, exactly today's default).
+/// - `card_image` → `image`. `CardImage.image`
+///   (`layout/card_image/_impl/core/card_image_2.dart:8`, required `Widget`)
+///   REPLACES the default tonal art when provided (title/subtitle stay).
+///   (`title`/`subtitle`/`leading`/`trailing` (:11–:19, `Widget?`) stay
+///   string-driven — no slot; the builder owns that chrome.)
+/// - `basic` → `leading`, `trailing`. `Basic.leading`/`trailing`
+///   (`layout/basic/_impl/core/basic_2.dart:8`/:20, `Widget?`) REPLACE the
+///   default icon chrome when provided (null = the `showLeading` /
+///   `showTrailing` bool chrome as today). (`title`/`subtitle`/`content`
+///   (:11–:17) stay string-driven — no slot.)
+/// - Every other container kind → `content`, COMPLEMENTING (never replacing)
+///   the C1 children splice: the slot widget heads the nested list (slot
+///   first, then spliced children), so a null slot renders today's tree
+///   EXACTLY. Each maps onto the kit's single content param:
+///   - `card`: `Card.child` (`layout/card/_impl/core/card_widgets.dart:8`)
+///   - `dialog`: `ModalContainer.child`
+///     (`overlay/dialog/_impl/core/modal_container.dart:19`)
+///   - `alert_dialog`: `AlertDialog.content`
+///     (`overlay/alert_dialog/_impl/core/alert_dialog_widget.dart:22`)
+///   - `drawer`: `DrawerWrapper.child`
+///     (`overlay/drawer/_impl/core/drawer_wrapper.dart:11`)
+///   - `form`: `Form.child` (`form/form/form.dart:294`)
+///   - `outlined_container`: `OutlinedContainer.child`
+///     (`layout/outlined_container/_impl/core/outlined_container_2.dart:27`)
+///   - `hidden`: `Hidden.child` (`layout/hidden/hidden.dart:35`)
+///   - `clickable`: `Clickable.child`
+///     (`control/clickable/_impl/core/clickable_widget.dart:43`)
+///   - `scrollbar`: `Scrollbar.child`
+///     (`control/scrollbar/_impl/core/scrollbar_widget.dart:25`)
+///   - `chat`: `ChatBubble.child`
+///     (`display/chat/_impl/core/chat_bubble.dart:20`)
+///   - `toast`: `ToastEntry.child`
+///     (`overlay/toast/_impl/core/toast_entry.dart:8`)
+///   - `validated`: `Validated.child` (`form/validated/validated.dart:55`,
+///     optional passthrough)
+///   - `refresh_trigger`: `RefreshTrigger.child`
+///     (`overlay/refresh_trigger/_impl/core/refresh_trigger_widget.dart:37`)
+///
+/// REFUSED (structured/typed slots do NOT qualify — a bare `Widget` cannot
+/// satisfy these; the builders keep their string-prop + children-splice
+/// contract instead):
+/// - `tabs`, `tab_list`, `tab_container`: `TabItem … with TabChild`
+///   (`navigation/tabs/_impl/core/tab_item.dart:6`); `tab_pane` adds
+///   `TabPaneData<T>` (`navigation/tab_pane/_impl/core/tab_pane_data.dart:6`)
+///   plus an `itemBuilder` fn.
+/// - `table`: `TableRow` / `TableHeader extends TableRow` / `TableCell`
+///   (`layout/table/_impl/core/table_row.dart:6`, `table_header.dart:6`,
+///   `table_cell.dart:6`).
+/// - `steps`: `StepItem` (`layout/steps/_impl/core/step_item.dart:6`);
+///   `timeline`: `TimelineData`
+///   (`layout/timeline/_impl/core/timeline_data.dart:6`); `tree`:
+///   `TreeItem<T>` (`display/tree/_impl/core/tree_item.dart:35`); `stepper`:
+///   `Step` (`navigation/stepper/_impl/core/step.dart:6`).
+/// - `accordion`: `AccordionItem`
+///   (`layout/accordion/_impl/core/accordion_item.dart:6`); `select`:
+///   `SelectItemButton<T>`
+///   (`form/select/_impl/core/select_item_button.dart:8`); `radio_group`:
+///   `RadioItem<T>` (`form/radio_group/_impl/core/radio_item.dart:8`);
+///   `input_otp`: `InputOTPChild`
+///   (`form/input_otp/_impl/core/input_otp_child.dart:28`).
+/// - `menu` / `menubar` / `dropdown_menu` / `context_menu` / `popup`:
+///   `MenuButton implements MenuItem` / `MenuLabel implements MenuItem`
+///   (`overlay/menu/_impl/core/menu_button.dart:6`, `menu_label.dart:6`);
+///   `command`: `CommandCategory` / `CommandItem`
+///   (`control/command/_impl/core/command_category.dart:10`,
+///   `command_item_widget.dart:8`); `navigation_bar`: `NavigationItem`
+///   (`navigation/navigation_bar/_impl/core/navigation_item.dart:6`);
+///   `feature_carousel`: `FeatureCarouselItem` (plain data model —
+///   `display/feature_carousel/_impl/utils/feature_carousel_models.dart:10`,
+///   not a widget at all).
+/// - `collapsible`: `children` IS `List<Widget>`
+///   (`layout/collapsible/collapsible.dart:29`) but role-ordered (a trigger
+///   followed by content widgets, wrapped by the builder in
+///   `CollapsibleTrigger` / `CollapsibleContent`) — positional roles, not
+///   named single slots.
+/// - `tooltip` / `hover_card` / `swiper`: the meaningful content rides a
+///   BUILDER FN, not a Widget param (`Tooltip.tooltip` is a `WidgetBuilder`
+///   — `overlay/tooltip/_impl/core/tooltip_widget.dart`; same shape for
+///   `HoverCard.hoverBuilder` / `Swiper.builder`); slotting only the trigger
+///   `child` would misrepresent the component. `form_field` refused on the
+///   same grounds (`builder` / `editorBuilder` fns). `carousel` refused likewise
+///   (`itemBuilder` fn — `display/carousel/carousel.dart:29`); `popover` has no
+///   bare widget at all (only the `showPopover` context API).
+/// - Leaf / value kinds with no generic Widget param at all (`button`,
+///   `input`, `badge`, `switch`, `avatar`, `checkbox`, `divider`, `progress`,
+///   `skeleton`, `breadcrumb`, `toast`'s siblings `calendar`, `date_picker`,
+///   `time_picker`, color kinds, `slider`, `star_rating`, `tracker`,
+///   `selectable`, `keyboard_shortcut`, `pagination`, `text_area`, …).
+/// - Registry-only kinds (`alert`, `chip`, …): no catalog builder exists to
+///   read a slot (generated file, off-limits), so they stay out of scope.
+const Map<String, List<String>> kNodeSlots = {
+  'scaffold': ['appBar', 'body', 'footer'],
+  'card': ['content'],
+  'dialog': ['content'],
+  'alert_dialog': ['content'],
+  'drawer': ['content'],
+  'form': ['content'],
+  'outlined_container': ['content'],
+  'hidden': ['content'],
+  'clickable': ['content'],
+  'scrollbar': ['content'],
+  'chat': ['content'],
+  'toast': ['content'],
+  'validated': ['content'],
+  'refresh_trigger': ['content'],
+  'card_image': ['image'],
+  'basic': ['leading', 'trailing'],
+};
+
+/// Reads one Track BB named slot (see [kNodeSlots]): the
+/// `props['<slot>'] as Widget?` contract in null-safe form.
+///
+/// Returns the injected widget, or null when the key is absent, null, or a
+/// non-Widget value. The non-Widget tolerance is load-bearing: `scaffold`'s
+/// `body` slot shares its key with the canvas-level body STRING prop (a
+/// Widget value shadows the string; a String keeps today's text), and stray
+/// hand-written values must collapse to the default instead of throwing.
+Widget? _slotOf(Map<String, dynamic> props, String slot) {
+  final value = props[slot];
+  return value is Widget ? value : null;
+}
+
+/// Prepends a Track BB `content` slot (see [kNodeSlots]) to a container's
+/// children-splice list: slot first, then spliced children (COMPLEMENT, never
+/// replace). Returns [children] itself when the slot is null, so the
+/// childless tree is byte-identical to today's output.
+List<Widget> _withContentSlot(
+  Map<String, dynamic> props,
+  List<Widget> children,
+) {
+  final slot = _slotOf(props, 'content');
+  return slot == null ? children : <Widget>[slot, ...children];
+}
+
 /// Vertical nested-child stack with [kFlowScreenGap] separators
 /// (`canvas/COMPOSITION.md` §1: container children stack vertically inside
 /// the parent chrome). Callers emit the leading gap before this stack;
@@ -281,6 +439,9 @@ Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]
   final title = (props['title'] ?? 'Title') as String;
   final description = (props['description'] ?? 'Description') as String;
   final showFooter = (props['showFooter'] ?? false) as bool;
+  // Track BB slots: `content` (see [kNodeSlots]) complements the C1 splice —
+  // [_withContentSlot] heads the nested list, so a null slot keeps the tree.
+  final kids = _withContentSlot(props, children);
   // Track Z2 beauty: kit card-preview idiom (`preview.dart`: title
   // `.semiBold()`, description `.muted().small()`, 6px title-desc gap, 20px+
   // before actions). Canvas keeps the 16px padding per the brief; title
@@ -313,9 +474,9 @@ Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]
             );
           },
         ),
-        if (children.isNotEmpty) ...[
+        if (kids.isNotEmpty) ...[
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
         if (showFooter) ...[
           const SizedBox(height: 16),
@@ -810,6 +971,8 @@ Widget _buildDialog(Map<String, dynamic> props, [List<Widget> children = const [
       (props['message'] ?? 'Use dialogs for important confirmations.')
           as String;
   final showActions = (props['showActions'] ?? true) as bool;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.ModalContainer(
     filled: true,
     padding: const EdgeInsets.all(24),
@@ -820,9 +983,9 @@ Widget _buildDialog(Map<String, dynamic> props, [List<Widget> children = const [
         Text(title),
         const SizedBox(height: 12),
         Text(message),
-        if (children.isNotEmpty) ...[
+        if (kids.isNotEmpty) ...[
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
         if (showActions) ...[
           const SizedBox(height: 20),
@@ -872,6 +1035,8 @@ Widget _buildToast(Map<String, dynamic> props, [List<Widget> children = const []
   final title = (props['title'] ?? 'Saved') as String;
   final message = (props['message'] ?? 'Saved successfully') as String;
   final autoDismiss = (props['autoDismiss'] ?? false) as bool;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.ToastEntry(
     duration: const Duration(seconds: 3),
     animationDuration: const Duration(milliseconds: 200),
@@ -889,9 +1054,9 @@ Widget _buildToast(Map<String, dynamic> props, [List<Widget> children = const []
           children: [
             Text(title),
             Text(message),
-            if (children.isNotEmpty) ...[
+            if (kids.isNotEmpty) ...[
               const SizedBox(height: kFlowScreenGap),
-              ..._nestedStack(children),
+              ..._nestedStack(kids),
             ],
           ],
         ),
@@ -917,7 +1082,14 @@ Widget _buildDrawer(Map<String, dynamic> props, [List<Widget> children = const [
   // background param, so only the foreground binds (the on-role for its
   // fixed `background` surface).
   final title = (props['title'] ?? 'Drawer') as String;
-  final content = (props['content'] ?? 'Drawer content') as String;
+  // The `content` key is shared with the canvas-level content string: a
+  // Widget value is the BB slot (shadowing the string), anything else keeps
+  // today's text (same shared-key idiom as the scaffold `body` slot).
+  final content = props['content'] is String
+      ? props['content'] as String
+      : 'Drawer content';
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   final position = switch (props['position']) {
     'left' => shadcn.OverlayPosition.left,
     'right' => shadcn.OverlayPosition.right,
@@ -947,10 +1119,10 @@ Widget _buildDrawer(Map<String, dynamic> props, [List<Widget> children = const [
                 const SizedBox(height: 16),
                 Text(content),
                 // C1 container slot (COMPOSITION.md §2): panel column after
-                // the content text.
-                if (children.isNotEmpty) ...[
+                // the content text (BB `content` slot heads it via `kids`).
+                if (kids.isNotEmpty) ...[
                   const SizedBox(height: kFlowScreenGap),
-                  ..._nestedStack(children),
+                  ..._nestedStack(kids),
                 ],
               ],
             ),
@@ -997,6 +1169,10 @@ Widget _buildBasic(Map<String, dynamic> props) {
   final content = (props['content'] ?? 'Content') as String;
   final showLeading = (props['showLeading'] ?? true) as bool;
   final showTrailing = (props['showTrailing'] ?? true) as bool;
+  // Track BB slots: `leading` / `trailing` (see [kNodeSlots]) replace the
+  // default icon chrome when provided; null keeps the bool-gated chrome below.
+  final leadingSlot = _slotOf(props, 'leading');
+  final trailingSlot = _slotOf(props, 'trailing');
   // Track Z2 beauty: the leading rides a 40px box so icon rows line up with
   // avatar rows (avatar default 40); row/column gaps sit in the 8-12px brief
   // band (12 leading/trailing, 10 content). The title-subtitle 2px gap stays
@@ -1006,17 +1182,19 @@ Widget _buildBasic(Map<String, dynamic> props) {
   return shadcn.Basic(
     contentSpacing: 12,
     titleSpacing: 10,
-    leading: showLeading
-        ? const SizedBox(
-            width: 40,
-            height: 40,
-            child: Center(child: Icon(Icons.person, size: 24)),
-          )
-        : null,
+    leading: leadingSlot ??
+        (showLeading
+            ? const SizedBox(
+                width: 40,
+                height: 40,
+                child: Center(child: Icon(Icons.person, size: 24)),
+              )
+            : null),
     title: _textOrNull(title),
     subtitle: _textOrNull(subtitle),
     content: _textOrNull(content),
-    trailing: showTrailing ? const Icon(Icons.chevron_right) : null,
+    trailing:
+        trailingSlot ?? (showTrailing ? const Icon(Icons.chevron_right) : null),
   );
 }
 
@@ -1033,23 +1211,58 @@ Widget _buildBasic(Map<String, dynamic> props) {
 /// 320px narrow suite (defaults + 60-char stress titles, light + dark).
 const double _kCardImageTextBudget = 76;
 
+/// Track BB art cap (user: hero art is a giant empty box — the "stretched"
+/// feel): the card-image art height never exceeds this many logical pixels.
+/// Below the cap the art keeps its exact 16:9 ratio at full card width (as
+/// before); above it the art pins to cap × cap·16/9 and centers instead of
+/// stretching wider. The matching max width is `_kCardImageArtMaxHeight * 16
+/// / 9` (≈355.6). Token-driven, no network images (see [_CardImageArt]).
+const double _kCardImageArtMaxHeight = 200.0;
+
+/// Art height for a node of [width]: 16:9, clamped to [_kCardImageArtMaxHeight].
+double _cardImageArtHeight(double width) =>
+    (width * 9 / 16).clamp(0.0, _kCardImageArtMaxHeight);
+
 class _CardImageArt extends StatelessWidget {
   const _CardImageArt();
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    // Track Z2 beauty: true 16:9 tonal art that fills the card width.
-    // `AspectRatio` sizes from the bounded width; it lives under the kit's
-    // loose `Flexible`, so it keeps the exact ratio at default text scales
-    // and shrinks proportionally (never overflows) when long titles grow the
-    // text block. Tonal container + glyph only — never network/asset images.
-    return AspectRatio(
-      aspectRatio: 16 / 9,
-      child: Container(
-        color: scheme.surfaceContainerHighest,
-        child: Center(
-          child: Icon(Icons.image, size: 32, color: scheme.onSurfaceVariant),
+    // Track BB art: true 16:9 tonal art, capped (see [_kCardImageArtMaxHeight])
+    // and centered — wide phones pin to 200px tall instead of stretching a
+    // giant empty box. Tonal diagonal gradient (surfaceContainerHigh →
+    // surfaceContainerHighest) plus a bigger 48px centered glyph: designed,
+    // token-driven, never network/asset images. The `ConstrainedBox` keeps the
+    // exact ratio below the cap (full-bleed, as before) and shrinks the width
+    // to ratio-true at the cap; the `Center` keeps capped art centered in the
+    // stretched image slot.
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(
+          maxWidth: _kCardImageArtMaxHeight * 16 / 9,
+        ),
+        child: AspectRatio(
+          aspectRatio: 16 / 9,
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  scheme.surfaceContainerHigh,
+                  scheme.surfaceContainerHighest,
+                ],
+              ),
+            ),
+            child: Center(
+              child: Icon(
+                Icons.image,
+                size: 48,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -1061,15 +1274,19 @@ Widget _buildCardImage(Map<String, dynamic> props) {
   // subtitle (the required `image` slot is the theme-token art above). The
   // real `CardImage` builds bare; its vertical `Flex` holds a `Flexible`
   // image, which needs bounded height — root canvas columns are unbounded,
-  // so the catalog derives the height from the width (16:9 art plus the text
-  // budget above) exactly like the divider builder reads the real node width
-  // (row slices included; unbounded fallback is the viewport width,
-  // defaulting narrow-safe).
+  // so the catalog derives the height from the width (16:9 art capped per
+  // [_kCardImageArtMaxHeight], plus the text budget below) exactly like the
+  // divider builder reads the real node width (row slices included; unbounded
+  // fallback is the viewport width, defaulting narrow-safe).
   // STRETCH INTERPLAY: the parent owns the width; this shell converts that
-  // width into a proportional height so the art actually fills wide phones
-  // instead of sitting in a fixed 240px box.
+  // width into a proportional (capped) height so the art actually fills
+  // narrow phones instead of sitting in a fixed 240px box — and stops growing
+  // on wide ones (the BB cap).
+  // Track BB slots: `image` (see [kNodeSlots]) REPLACES the default art when
+  // provided (title/subtitle stay); null keeps the capped art above.
   final title = (props['title'] ?? 'Card title') as String;
   final subtitle = (props['subtitle'] ?? 'Card subtitle') as String;
+  final imageSlot = _slotOf(props, 'image');
   return LayoutBuilder(
     builder: (context, constraints) {
       final max = constraints.maxWidth;
@@ -1077,9 +1294,15 @@ Widget _buildCardImage(Map<String, dynamic> props) {
           ? max
           : (MediaQuery.maybeSizeOf(context)?.width ?? 320.0);
       return SizedBox(
-        height: width * 9 / 16 + _kCardImageTextBudget,
+        // The width owns the card's full-bleed span: the kit wraps the image
+        // `Flex` in an `IntrinsicWidth`, so capped art alone would
+        // shrink-wrap the whole card to 355px on wide phones. Pinning the
+        // shell to the node width keeps the card full-width while the art
+        // centers inside it (same `width` the height math already uses).
+        width: width,
+        height: _cardImageArtHeight(width) + _kCardImageTextBudget,
         child: shadcn.CardImage(
-          image: const _CardImageArt(),
+          image: imageSlot ?? const _CardImageArt(),
           title: _textOrNull(title),
           subtitle: _textOrNull(subtitle),
         ),
@@ -1108,34 +1331,48 @@ Widget _buildScaffold(Map<String, dynamic> props, [List<Widget> children = const
   // reads the nearest `shadcn.Theme` so both bindings follow the components
   // scheme in every chrome/components combination, light and dark.
   final title = (props['title'] ?? 'My App') as String;
-  final body = (props['body'] ?? 'Welcome') as String;
+  // Track BB slots (see [kNodeSlots]): `appBar` fills `headers` (REPLACES the
+  // default titled AppBar when provided — renders above the body either way);
+  // `body` fills the body region of `child` (a Widget value SHADOWS the
+  // `body` string prop, which keeps today's text when the slot is null — the
+  // [_slotOf] tolerance makes the shared key safe); `footer` fills `footers`
+  // (the kit `Scaffold` — `layout/scaffold/_impl/core/scaffold_2.dart:6 —
+  // takes `headers`/`child`/`footers`, and NO `appBar`/`body`/`bottomNav`
+  // params, so these canvas-level names map onto those three regions). The C1
+  // children splice complements the body region below the body content; every
+  // null slot keeps today's output EXACTLY.
+  final appBarSlot = _slotOf(props, 'appBar');
+  final bodySlot = _slotOf(props, 'body');
+  final footerSlot = _slotOf(props, 'footer');
+  final body = props['body'] is String ? props['body'] as String : 'Welcome';
   return SizedBox(
     height: 320,
     child: Builder(
       builder: (context) {
         final scheme = shadcn.Theme.of(context).colorScheme;
+        final defaultBar = shadcn.AppBar(
+          title: Text(
+            title,
+            style: TextStyle(color: scheme.cardForeground),
+          ),
+          backgroundColor: scheme.card,
+        );
+        final bodyText = Text(body, style: TextStyle(color: scheme.foreground));
         return shadcn.Scaffold(
           backgroundColor: scheme.background,
-          headers: [
-            shadcn.AppBar(
-              title: Text(
-                title,
-                style: TextStyle(color: scheme.cardForeground),
-              ),
-              backgroundColor: scheme.card,
-            ),
-          ],
+          headers: [appBarSlot ?? defaultBar],
+          footers: footerSlot == null ? const [] : <Widget>[footerSlot],
           child: Padding(
             padding: const EdgeInsets.all(16),
             // C1 container slot (COMPOSITION.md §2): body `Padding` column
-            // under the body text.
+            // under the body text (or the body slot shadowing it).
             child: children.isEmpty
-                ? Text(body, style: TextStyle(color: scheme.foreground))
+                ? (bodySlot ?? bodyText)
                 : Column(
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(body, style: TextStyle(color: scheme.foreground)),
+                      bodySlot ?? bodyText,
                       const SizedBox(height: kFlowScreenGap),
                       ..._nestedStack(children),
                     ],
@@ -1218,7 +1455,9 @@ Widget _buildOutlinedContainer(
   // C1 container slot (COMPOSITION.md §2): `OutlinedContainer.child`
   // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Outlined') as String;
-  if (children.isEmpty) {
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
+  if (kids.isEmpty) {
     return shadcn.OutlinedContainer(
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1235,7 +1474,7 @@ Widget _buildOutlinedContainer(
         children: [
           Text(label),
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
       ),
     ),
@@ -1251,7 +1490,9 @@ Widget _buildHidden(Map<String, dynamic> props, [List<Widget> children = const [
   // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Hidden content') as String;
   final hidden = (props['hidden'] ?? false) as bool;
-  if (children.isEmpty) return shadcn.Hidden(hidden: hidden, child: Text(label));
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
+  if (kids.isEmpty) return shadcn.Hidden(hidden: hidden, child: Text(label));
   return shadcn.Hidden(
     hidden: hidden,
     child: Column(
@@ -1260,7 +1501,7 @@ Widget _buildHidden(Map<String, dynamic> props, [List<Widget> children = const [
       children: [
         Text(label),
         const SizedBox(height: kFlowScreenGap),
-        ..._nestedStack(children),
+        ..._nestedStack(kids),
       ],
     ),
   );
@@ -1371,7 +1612,9 @@ Widget _buildChat(Map<String, dynamic> props, [List<Widget> children = const []]
   // no item roles). Label-first `Column` only when children exist (the
   // hidden/clickable precedent), so the childless tree is byte-identical.
   final message = (props['message'] ?? 'Hello!') as String;
-  if (children.isEmpty) return shadcn.ChatBubble(child: Text(message));
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
+  if (kids.isEmpty) return shadcn.ChatBubble(child: Text(message));
   return shadcn.ChatBubble(
     child: Column(
       mainAxisSize: MainAxisSize.min,
@@ -1379,7 +1622,7 @@ Widget _buildChat(Map<String, dynamic> props, [List<Widget> children = const []]
       children: [
         Text(message),
         const SizedBox(height: kFlowScreenGap),
-        ..._nestedStack(children),
+        ..._nestedStack(kids),
       ],
     ),
   );
@@ -1440,7 +1683,9 @@ Widget _buildClickable(Map<String, dynamic> props, [List<Widget> children = cons
   // C1 container slot (COMPOSITION.md §2): `Clickable.child`
   // (`Column([label, ...children])`).
   final label = (props['label'] ?? 'Tap me') as String;
-  if (children.isEmpty) {
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
+  if (kids.isEmpty) {
     return shadcn.Clickable(onPressed: () {}, child: Text(label));
   }
   return shadcn.Clickable(
@@ -1451,7 +1696,7 @@ Widget _buildClickable(Map<String, dynamic> props, [List<Widget> children = cons
       children: [
         Text(label),
         const SizedBox(height: kFlowScreenGap),
-        ..._nestedStack(children),
+        ..._nestedStack(kids),
       ],
     ),
   );
@@ -1466,7 +1711,9 @@ Widget _buildScrollbar(Map<String, dynamic> props, [List<Widget> children = cons
   // fixed 64px shell stays for the childless case; with children the column
   // sizes to content (a fixed shell would overflow) behind a 64px floor.
   final label = (props['label'] ?? 'Scrollable content') as String;
-  if (children.isEmpty) {
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
+  if (kids.isEmpty) {
     return shadcn.Scrollbar(
       child: SizedBox(height: 64, child: Text(label)),
     );
@@ -1480,7 +1727,7 @@ Widget _buildScrollbar(Map<String, dynamic> props, [List<Widget> children = cons
         children: [
           Text(label),
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
       ),
     ),
@@ -1549,9 +1796,11 @@ Widget _buildAlertDialog(Map<String, dynamic> props, [List<Widget> children = co
   final message =
       (props['message'] ?? 'This action cannot be undone.') as String;
   final showActions = (props['showActions'] ?? true) as bool;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.AlertDialog(
     title: Text(title),
-    content: children.isEmpty
+    content: kids.isEmpty
         ? Text(message)
         : Column(
             mainAxisSize: MainAxisSize.min,
@@ -1559,7 +1808,7 @@ Widget _buildAlertDialog(Map<String, dynamic> props, [List<Widget> children = co
             children: [
               Text(message),
               const SizedBox(height: kFlowScreenGap),
-              ..._nestedStack(children),
+              ..._nestedStack(kids),
             ],
           ),
     actions: [
@@ -1842,6 +2091,8 @@ Widget _buildRefreshTrigger(Map<String, dynamic> props, [List<Widget> children =
   final item1 = (props['item1'] ?? 'Row 1') as String;
   final item2 = (props['item2'] ?? 'Row 2') as String;
   final item3 = (props['item3'] ?? 'Row 3') as String;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.RefreshTrigger(
     onRefresh: () async {},
     child: SizedBox(
@@ -1851,9 +2102,9 @@ Widget _buildRefreshTrigger(Map<String, dynamic> props, [List<Widget> children =
           Padding(padding: const EdgeInsets.all(12), child: Text(item1)),
           Padding(padding: const EdgeInsets.all(12), child: Text(item2)),
           Padding(padding: const EdgeInsets.all(12), child: Text(item3)),
-          if (children.isNotEmpty) ...[
+          if (kids.isNotEmpty) ...[
             const SizedBox(height: kFlowScreenGap),
-            ..._nestedStack(children),
+            ..._nestedStack(kids),
           ],
         ],
       ),
@@ -2508,6 +2759,8 @@ Widget _buildForm(Map<String, dynamic> props, [List<Widget> children = const []]
   final label = (props['label'] ?? 'Name') as String;
   final placeholder = (props['placeholder'] ?? 'Jane Doe') as String;
   final submitLabel = (props['submitLabel'] ?? 'Submit') as String;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.Form(
     child: Column(
       mainAxisSize: MainAxisSize.min,
@@ -2521,9 +2774,9 @@ Widget _buildForm(Map<String, dynamic> props, [List<Widget> children = const []]
             ),
           ],
         ),
-        if (children.isNotEmpty) ...[
+        if (kids.isNotEmpty) ...[
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
         const SizedBox(height: 16),
         shadcn.PrimaryButton(
@@ -2618,6 +2871,8 @@ Widget _buildValidated(Map<String, dynamic> props, [List<Widget> children = cons
   // (conditional spread, so the childless tree is identical).
   final placeholder = (props['placeholder'] ?? 'Name') as String;
   final errorText = (props['errorText'] ?? 'Required') as String;
+  // Track BB slots: `content` complements the splice ([_withContentSlot]).
+  final kids = _withContentSlot(props, children);
   return shadcn.Validated<String>(
     validator: _CanvasRequiredValidator(errorText),
     builder: (context, error, child) => Column(
@@ -2625,9 +2880,9 @@ Widget _buildValidated(Map<String, dynamic> props, [List<Widget> children = cons
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         child!,
-        if (children.isNotEmpty) ...[
+        if (kids.isNotEmpty) ...[
           const SizedBox(height: kFlowScreenGap),
-          ..._nestedStack(children),
+          ..._nestedStack(kids),
         ],
         const SizedBox(height: 6),
         Text(error is shadcn.InvalidResult ? error.message : errorText),

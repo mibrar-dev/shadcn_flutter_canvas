@@ -1,7 +1,8 @@
-/// Y6 cutover shell assembly (FORGE.md §5): topbar + header + library +
-/// selection toolbar + inspector coexist, tap-to-add appends, inspector
-/// Duplicate/Delete hit the store, the rail is gone, and Layers/Theme live in
-/// the left column.
+/// Y6 cutover shell assembly (FORGE.md §5) with the Track CC sidebar revert:
+/// topbar + header + selection toolbar + inspector coexist with the restored
+/// classic icon rail + parts palette; inspector Duplicate/Delete hit the
+/// store, and Layers + the Color/Shape/Type/Motion theme panels live behind
+/// the rail.
 library;
 
 import 'package:canvas_app/canvas/canvas_store.dart';
@@ -10,7 +11,7 @@ import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
-import 'package:canvas_app/ui/inspector_panel.dart';
+import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/right_aside.dart';
@@ -33,15 +34,27 @@ Future<void> _pumpShell(WidgetTester tester, CanvasStore store) async {
   await tester.pumpAndSettle();
 }
 
-String _addButtonNode(WidgetTester tester) => 'button';
-
+/// Taps a classic rail item by glyph, scoped to the rail (the rail tips are
+/// kit tooltips, invisible to `find.byTooltip`; palette tiles may reuse the
+/// glyph — the pre-Forge shell test idiom).
+Future<void> _tapRail(WidgetTester tester, IconData icon) async {
+  await tester.tap(
+    find.descendant(
+      of: find.byType(EditorIconRail),
+      matching: find.byIcon(icon),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
 void main() {
   group('Y6 shell assembly', () {
-    testWidgets('all forge pieces coexist; old chrome gone', (tester) async {
+    testWidgets('all forge pieces + classic rail coexist; pills gone',
+        (tester) async {
       await _pumpShell(tester, CanvasStore());
 
       expect(find.byType(ForgeTopbar), findsOneWidget);
       expect(find.byType(ForgeCanvasHeader), findsOneWidget);
+      expect(find.byType(EditorIconRail), findsOneWidget);
       expect(find.byType(PartsPalette), findsOneWidget);
       expect(find.byType(DesignCanvas), findsOneWidget);
       expect(find.byType(RightAside), findsOneWidget);
@@ -57,13 +70,14 @@ void main() {
       // hides without a selection.
       expect(find.byType(CanvasToolbar), findsNothing);
       expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
-      // Left column owns Library|Layers pills + the Theme disclosure.
+      // Track CC revert: the classic rail owns the left column — the Forge
+      // Library|Layers pills + the Theme disclosure are gone.
       expect(find.byKey(const ValueKey('forge-left-pill-library')),
-          findsOneWidget);
+          findsNothing);
       expect(find.byKey(const ValueKey('forge-left-pill-layers')),
-          findsOneWidget);
+          findsNothing);
       expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
-          findsOneWidget);
+          findsNothing);
     });
 
     testWidgets('header shows breadcrumb + zoom + device', (tester) async {
@@ -83,26 +97,6 @@ void main() {
       );
     });
 
-    testWidgets('Library +Add appends and selects the node', (tester) async {
-      final store = CanvasStore();
-      await _pumpShell(tester, store);
-      expect(store.doc.nodes, isEmpty);
-
-      final add = find.byKey(
-        ValueKey('forge-add-${_addButtonNode(tester)}'),
-      );
-      await tester.ensureVisible(add);
-      await tester.tap(add);
-      await tester.pumpAndSettle();
-
-      expect(store.doc.nodes, hasLength(1));
-      expect(store.doc.nodes.single.items.single.kind, 'button');
-      expect(store.doc.nodes.single.screenId, 's1');
-      // The fresh node reselects: toolbar appears and the inspector opens.
-      expect(find.byKey(kForgeSelectionToolbarKey), findsOneWidget);
-      expect(find.byType(InspectorPanel), findsOneWidget);
-    });
-
     testWidgets('inspector Duplicate clones and reselects', (tester) async {
       final store = CanvasStore();
       final nodeId = store.addNode(
@@ -115,9 +109,8 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      // Select via the Layers pill (rail is gone).
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
-      await tester.pumpAndSettle();
+      // Select via the rail's Layers item (pills are gone with the revert).
+      await _tapRail(tester, Icons.layers);
       await tester.tap(find.text('Button · $nodeId'));
       await tester.pumpAndSettle();
 
@@ -145,8 +138,7 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
-      await tester.pumpAndSettle();
+      await _tapRail(tester, Icons.layers);
       await tester.tap(find.text('Button · $nodeId'));
       await tester.pumpAndSettle();
       expect(find.byKey(kForgeSelectionToolbarKey), findsOneWidget);
@@ -182,8 +174,7 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
-      await tester.pumpAndSettle();
+      await _tapRail(tester, Icons.layers);
       // Select the second (frontmost) node, then move it up one slot.
       await tester.tap(find.text('Button · $second'));
       await tester.pumpAndSettle();
@@ -214,34 +205,32 @@ void main() {
       );
     });
 
-    testWidgets('Layers pill swaps content', (tester) async {
+    testWidgets('Rail swaps content', (tester) async {
       await _pumpShell(tester, CanvasStore());
 
       expect(find.byType(PartsPalette), findsOneWidget);
       expect(find.byType(LayersPanel), findsNothing);
 
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-layers')));
-      await tester.pumpAndSettle();
+      await _tapRail(tester, Icons.layers);
       expect(find.byType(LayersPanel), findsOneWidget);
       expect(find.byType(PartsPalette), findsNothing);
 
-      await tester.tap(find.byKey(const ValueKey('forge-left-pill-library')));
-      await tester.pumpAndSettle();
+      await _tapRail(tester, Icons.add_box);
       expect(find.byType(PartsPalette), findsOneWidget);
       expect(find.byType(LayersPanel), findsNothing);
     });
 
-    testWidgets('Theme disclosure mounts the four panels', (tester) async {
+    testWidgets('Rail mounts the four theme panels', (tester) async {
       await _pumpShell(tester, CanvasStore());
 
       expect(find.byType(ColorPanel), findsNothing);
-      await tester.tap(
-        find.byKey(const ValueKey('forge-left-theme-disclosure')),
-      );
-      await tester.pumpAndSettle();
+      await _tapRail(tester, Icons.palette);
       expect(find.byType(ColorPanel), findsOneWidget);
+      await _tapRail(tester, Icons.rounded_corner);
       expect(find.byType(ShapePanel), findsOneWidget);
+      await _tapRail(tester, Icons.text_fields);
       expect(find.byType(TypePanel), findsOneWidget);
+      await _tapRail(tester, Icons.animation);
       expect(find.byType(MotionPanel), findsOneWidget);
     });
   });

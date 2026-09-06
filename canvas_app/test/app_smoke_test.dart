@@ -4,6 +4,7 @@ import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
+import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/preview_player.dart';
@@ -21,16 +22,18 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
   }
 
-  testWidgets('editor shell assembles forge chrome (Y6 cutover)',
+  testWidgets('editor shell assembles forge chrome + classic rail (Track CC)',
       (tester) async {
     useReferenceViewport(tester);
     await tester.pumpWidget(
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
-    // Forge pieces coexist: topbar + header + library + canvas + aside.
+    // Forge pieces coexist: topbar + header + canvas + aside; the left
+    // column is the restored classic rail + parts palette.
     expect(find.byType(ForgeTopbar), findsOneWidget);
     expect(find.byType(ForgeCanvasHeader), findsOneWidget);
+    expect(find.byType(EditorIconRail), findsOneWidget);
     expect(find.byType(PartsPalette), findsOneWidget);
     expect(find.byType(DesignCanvas), findsOneWidget);
     expect(find.byType(RightAside), findsOneWidget);
@@ -39,17 +42,16 @@ void main() {
     expect(find.byType(InspectorPanel), findsNothing);
     expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
     expect(find.byType(PreviewPlayer), findsNothing);
-    // Y6 removals: the old rail and the old always-visible toolbar are gone
-    // (the rail widget no longer exists; here we pin the old toolbar type
-    // absent from the shell).
+    // The old always-visible toolbar stays gone (the Forge selection toolbar
+    // hides without a selection); the Forge Library|Layers pills + bottom
+    // Theme disclosure are removed with the sidebar revert.
     expect(find.byType(CanvasToolbar), findsNothing);
-    // Library|Layers pills + bottom Theme disclosure own the left column.
     expect(find.byKey(const ValueKey('forge-left-pill-library')),
-        findsOneWidget);
+        findsNothing);
     expect(find.byKey(const ValueKey('forge-left-pill-layers')),
-        findsOneWidget);
+        findsNothing);
     expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
-        findsOneWidget);
+        findsNothing);
     // The Export action lives in the Forge topbar (not in a floating bar).
     expect(find.byType(ForgeTopbar), findsOneWidget);
     expect(find.text('Export Flutter'), findsOneWidget);

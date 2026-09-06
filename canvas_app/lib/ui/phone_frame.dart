@@ -492,6 +492,17 @@ Widget wrapRowChild(CanvasNode child, Widget content) {
 /// intrinsic top-left while the selection ring grows (the reported bug).
 /// Pure widget helper shared by leaves, containers, and row bodies so canvas
 /// sizing has one rule; codegen mirrors it with the same `SizedBox` idiom.
+///
+/// TRACK AA NATURAL-FILL AUDIT: the [Expanded] here is the ONLY vertical
+/// flex in the node render paths, and it sits strictly under a pinned
+/// [SizedBox] height — so it can never stretch infinitely inside the
+/// unbounded screen scroll column (an `Expanded` under unbounded height
+/// throws; this one always sees the finite pin). Width-only pins and auto
+/// nodes carry no flex at all: heights stay intrinsic, content rides the top
+/// via `MainAxisSize.min` columns (never vertically centered). The other
+/// `Expanded` in this file ([wrapRowChild]'s tight cell) is horizontal
+/// width-share inside a bounded `Row`, not a height stretch — safe by
+/// construction.
 Widget applyNodeSize(CanvasNode node, Widget content) =>
     applyNodeSizeValues(node.w, node.h, content);
 
@@ -745,26 +756,75 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Cleared on end/cancel and for nodes that vanish.
   final Map<String, ({double w, double h})> _dragSizes = {};
 
-  /// Pointer id holding the node-selection claim. Pointer-down dispatches
-  /// deepest-first, so the first node [Listener] to claim a pointer wins and
-  /// ancestors skip: tapping a nested child selects the child, not every
-  /// ancestor up to the root (without this, nested taps would end on the
-  /// outermost container because ancestor Listeners fire after the deepest
-  /// one — Listeners are arena-exempt, unlike the row `GestureDetector`s).
-  /// Cleared on pointer-up/cancel. Gated per-tap, so sequential taps and
-  /// taps on empty chrome are unaffected.
-  int? _selectionClaim;
+  /// Pending tap-selection claims per pointer id (Track AA deep select).
+  ///
+  /// Pointer-down dispatches deepest-first through nested [Listener]s, but the
+  /// claim keeps the DEEPEST claimant by parentId-chain depth instead of the
+  /// first arrival, so the result is order-robust: the deepest node under the
+  /// pointer wins regardless of dispatch order. Entries clear on
+  /// pointer-up/cancel ([_releaseClaim]); one entry per gesture at most.
+  final Map<int, ({String id, int depth})> _selectionClaims = {};
 
-  /// Claims the tap-selection for [node] unless a deeper node already
-  /// claimed [pointer] (see [_selectionClaim]).
+  /// Structural depth of [node] (parentId hops, cycle-safe): deeper nodes win
+  /// overlapping claims. Ties keep the first claimant, which under
+  /// deepest-first dispatch is the structurally deeper widget (slot-hosted
+  /// content included — it renders inside the host chrome).
+  int _nodeDepth(CanvasNode node) {
+    final byId = {for (final n in widget.nodes) n.id: n};
+    var depth = 0;
+    var cursor = node.parentId;
+    final seen = <String>{node.id};
+    while (cursor != null && seen.add(cursor)) {
+      depth++;
+      cursor = byId[cursor]?.parentId;
+    }
+    return depth;
+  }
+
+  /// Nearest unlocked ancestor of [node] (parentId chain, cycle-safe), or null
+  /// at the root. Drill-out and lock fall-through both land here: locked
+  /// ancestors are skipped, never selected.
+  CanvasNode? _nearestSelectableAncestor(CanvasNode node) {
+    final byId = {for (final n in widget.nodes) n.id: n};
+    CanvasNode? cursor =
+        node.parentId == null ? null : byId[node.parentId];
+    final seen = <String>{node.id};
+    while (cursor != null && seen.add(cursor.id)) {
+      if (!cursor.locked) return cursor;
+      final next = cursor.parentId;
+      cursor = next == null ? null : byId[next];
+    }
+    return null;
+  }
+
+  /// Claims the tap-selection for [node] (Track AA deepest-wins):
+  /// * locked nodes never claim — the tap falls through to the nearest
+  ///   unlocked ancestor (whose own Listener still fires) or to nothing at a
+  ///   locked root;
+  /// * tapping the already-selected node drills OUT one level (nearest
+  ///   unlocked ancestor; re-tapping a selected root is a no-op) — the
+  ///   FlutterFlow pattern (deepest first click, parent on second);
+  /// * among overlapping claimants the deepest parentId chain wins (ties keep
+  ///   the first arrival). Selection commits immediately on pointer-down, so
+  ///   the deepest widget highlights the moment you click.
+  /// Gated on [ScreenSurface.panMode] so viewport pans never select.
   void _claimSelect(CanvasNode node, int pointer) {
-    if (_selectionClaim == pointer) return;
-    _selectionClaim = pointer;
-    if (!widget.panMode) widget.onSelectNode?.call(node.id);
+    if (widget.panMode || node.locked) return;
+    var target = node;
+    if (node.id == widget.selectedNodeId) {
+      final parent = _nearestSelectableAncestor(node);
+      if (parent == null) return;
+      target = parent;
+    }
+    final depth = _nodeDepth(target);
+    final existing = _selectionClaims[pointer];
+    if (existing != null && existing.depth >= depth) return;
+    _selectionClaims[pointer] = (id: target.id, depth: depth);
+    widget.onSelectNode?.call(target.id);
   }
 
   void _releaseClaim(int pointer) {
-    if (_selectionClaim == pointer) _selectionClaim = null;
+    _selectionClaims.remove(pointer);
   }
 
   /// Effective (rendered) width of [node]: the live tentative size while its
@@ -906,30 +966,90 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     ];
   }
 
+  /// Ids assigned into named slots anywhere on this screen (every value in any
+  /// node's [CanvasNode.slotNodes]).
+  ///
+  /// FLOW-VS-SLOT RULE (Track AA): slot assignment wins — these nodes render
+  /// ONLY inside their slot and are skipped by the flow ([_rootNodes] and
+  /// [_childNodes], rows included: a slot-assigned row child leaves its strip
+  /// and the strip re-shares among the rest). The `parentId` edges are
+  /// untouched (validators still see them; validation is another track's
+  /// domain) — rendering just withholds the node from flow. Unknown ids name
+  /// no node, so they skip nothing. Corrupt slot cycles (A↔B with no live
+  /// host) render nothing — the same honesty rule as unreachable `parentId`
+  /// cycles, which never render either.
+  Set<String> get _slotAssignedIds => {
+    for (final n in widget.nodes)
+      for (final id in n.slotNodes.values) id,
+  };
+
+  /// Builds [node]'s named-slot widgets (Track AA generic injection): for each
+  /// [CanvasNode.slotNodes] entry whose child id resolves to a visible
+  /// same-screen node, recursively builds the child through [_buildNodeWidget]
+  /// (same tier/hidden/action semantics — hidden children are omitted — and
+  /// cycle-safe via [ancestors]), keyed by slot name. Unknown/missing ids,
+  /// cross-screen ids, and ids already on the build path are omitted, never a
+  /// crash. Callers spread the result over item props
+  /// (`{...props, ...slotWidgets}`) so builders read
+  /// `props['<slot>'] as Widget?`. No slot names are known here — the
+  /// injection is fully generic.
+  Map<String, Widget> _slotWidgets(
+    CanvasNode node,
+    EditorColors colors,
+    Set<String> ancestors, {
+    _DropGhostSpec? ghost,
+  }) {
+    if (node.slotNodes.isEmpty) return const {};
+    final byId = {for (final n in _visibleNodes) n.id: n};
+    final out = <String, Widget>{};
+    for (final entry in node.slotNodes.entries) {
+      final child = byId[entry.value];
+      if (child == null) continue;
+      if (child.screenId != node.screenId) continue;
+      if (ancestors.contains(child.id)) continue;
+      out[entry.key] = _buildNodeWidget(
+        child,
+        colors,
+        {...ancestors, node.id},
+        ghost: ghost,
+      );
+    }
+    return out;
+  }
+
   /// Root nodes for the flow: `parentId == null`, plus dangling-`parentId`
   /// nodes (parent id names no node on this screen) rendered as roots — the
   /// same honesty rule codegen uses, so corrupt docs never silently drop
   /// nodes. Self-parented and cyclic nodes stay excluded (they name a
   /// present node, so they are never roots and never reachable — cycle-safe
-  /// by construction; `validateNesting` reports them).
+  /// by construction; `validateNesting` reports them). Slot-assigned nodes
+  /// stay excluded too (slot wins — see [_slotAssignedIds]).
   List<CanvasNode> get _rootNodes {
     final byId = {for (final n in widget.nodes) n.id: n};
+    final slotIds = _slotAssignedIds;
     return [
       for (final node in _visibleNodes)
-        if (node.parentId == null || !byId.containsKey(node.parentId)) node,
+        if ((node.parentId == null || !byId.containsKey(node.parentId)) &&
+            !slotIds.contains(node.id))
+          node,
     ];
   }
 
   /// Visible direct children of [parentId] in document order (the same order
-  /// as core `childrenOf`), excluding self-parents and ids already on the
-  /// current build path ([ancestors]) so corrupt cyclic docs terminate.
-  List<CanvasNode> _childNodes(String parentId, Set<String> ancestors) => [
-    for (final node in _visibleNodes)
-      if (node.parentId == parentId &&
-          node.id != parentId &&
-          !ancestors.contains(node.id))
-        node,
-  ];
+  /// as core `childrenOf`), excluding self-parents, ids already on the
+  /// current build path ([ancestors]) so corrupt cyclic docs terminate, and
+  /// slot-assigned nodes (slot wins — see [_slotAssignedIds]).
+  List<CanvasNode> _childNodes(String parentId, Set<String> ancestors) {
+    final slotIds = _slotAssignedIds;
+    return [
+      for (final node in _visibleNodes)
+        if (node.parentId == parentId &&
+            node.id != parentId &&
+            !ancestors.contains(node.id) &&
+            !slotIds.contains(node.id))
+          node,
+    ];
+  }
 
   /// Whether [node] renders its children INSIDE its component chrome: a
   /// non-row node whose first item's kind is in [kContainerKinds]
@@ -1498,7 +1618,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           _isContainerNode(node)) {
         return _buildContainer(node, colors, ancestors, kids, ghost: ghost);
       }
-      return _buildLeaf(node, colors);
+      return _buildLeaf(node, colors, ancestors);
     }
     if (_isContainerNode(node)) {
       return _buildContainer(node, colors, ancestors, kids, ghost: ghost);
@@ -1532,7 +1652,11 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Track X1: while a resize drag is live a token-styled WxH readout chip
   /// floats at the chrome's top-right (pointer-transparent, so it never
   /// steals the gesture).
+  /// Track AA lock-skip: locked nodes never carry handles (they are never
+  /// selectable, so a stale selected+locked state still paints handle-free;
+  /// the paint itself stays identical — no badge, no dim).
   Widget _withHandles(CanvasNode node, Widget chrome) {
+    if (node.locked) return chrome;
     if (node.id != widget.selectedNodeId) return chrome;
     final tentative = _dragSizes[node.id];
     return Stack(
@@ -1733,13 +1857,22 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     // Track Z1: fixed-w rows keep exact pixels left-aligned inside the
     // stretch flow (bare width would be forced full-bleed by the tight
     // parent); auto rows fill via double.infinity. The Align converts tight
-    // to loose for the pinned box only.
+    // to loose for the pinned box only. Track AA: top-left (not centered),
+    // so fixed-w rows ride the top naturally inside tight-height slots.
     final rowChrome = _withHandles(
       node,
-      GestureDetector(
+      Listener(
         behavior: HitTestBehavior.opaque,
-        onTap: () => widget.onSelectNode?.call(node.id),
-        child: Container(
+        onPointerDown: (event) => _claimSelect(node, event.pointer),
+        onPointerUp: (event) => _releaseClaim(event.pointer),
+        onPointerCancel: (event) => _releaseClaim(event.pointer),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          // Selection rides the arena-exempt Listener above (single path, so
+          // drill-out fires exactly once per tap and locked rows stay
+          // silent); the detector stays for tap semantics only.
+          onTap: () {},
+          child: Container(
           key: _flowKey(node.id),
           // Track U2: a fixed `w` pins the container (cells share the pinned
           // width); auto keeps full-bleed. A fixed `h` pins the body height;
@@ -1756,11 +1889,12 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 )
               : null,
           child: applyNodeSizeValues(null, _effH(node), body),
+            ),
+          ),
         ),
-      ),
     );
     if (_effW(node) == null) return rowChrome;
-    return Align(alignment: Alignment.centerLeft, child: rowChrome);
+    return Align(alignment: Alignment.topLeft, child: rowChrome);
   }
 
   /// One leaf node: today's `ConstrainedBox` content (the clamp stays —
@@ -1773,14 +1907,24 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// recognizers that beat the outer detector in the gesture arena, so
   /// `onTap` never fires for those nodes (regression: tap_diagnosis_test).
   /// A [Listener] is arena-exempt and always observes the hit. The
-  /// [GestureDetector] stays for tap semantics (screen readers) and for
-  /// non-interactive content; selecting the same id twice is harmless.
-  /// Gated on [ScreenSurface.panMode] so viewport pans never select.
+  /// [GestureDetector] stays for tap semantics (screen readers) but is
+  /// side-effect-free — selection has exactly one path (the claim), so
+  /// drill-out fires once per tap instead of toggling twice. Gated on
+  /// [ScreenSurface.panMode] so viewport pans never select.
   /// The opaque behavior (unlike the old defer-to-child default) also makes
   /// the 4px padding hit-testable, matching the row's full-bleed target.
-  /// Nested taps claim the deepest node (see [_selectionClaim]) so a child
-  /// tap never ends on an ancestor.
-  Widget _buildLeaf(CanvasNode node, EditorColors colors) {
+  /// Nested taps claim the deepest node (see [_claimSelect]) so a child
+  /// tap selects the child on the first click; locked nodes never claim
+  /// (the tap falls through to the nearest unlocked ancestor).
+  ///
+  /// Track AA slots: every item builds with this node's [_slotWidgets]
+  /// spread over its props.
+  Widget _buildLeaf(
+    CanvasNode node,
+    EditorColors colors,
+    Set<String> ancestors,
+  ) {
+    final slots = _slotWidgets(node, colors, ancestors);
     return _nodeChrome(
       node,
       colors,
@@ -1791,7 +1935,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
-            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
+            alignIntrinsicKind(
+              item.kind,
+              buildCatalogItem(item.kind, {...item.props, ...slots}),
+            ),
         ],
       ),
     );
@@ -1799,9 +1946,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
 
   /// Shared node-chrome wrapper for container and fallback nodes: the exact
   /// [_buildLeaf] selection affordances (claim-guarded [Listener],
-  /// [GestureDetector], key, padding, selection ring, content clamp) around
-  /// [content]. Keeps nested nodes' tap/selection/clamp semantics identical
-  /// to roots — the "same builder path" rule.
+  /// side-effect-free [GestureDetector], key, padding, selection ring,
+  /// content clamp) around [content]. Keeps nested nodes' tap/selection/clamp
+  /// semantics identical to roots — the "same builder path" rule.
   ///
   /// Track Z1 full-bleed: `width: double.infinity` so the chrome fills its
   /// parent in LOOSE contexts too (nested inside catalog builder slots whose
@@ -1811,10 +1958,6 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// so behavior is identical; fixed-w keeps pixels because the inner
   /// [applyNodeSizeValues] [SizedBox] wins and left-aligns.
   Widget _nodeChrome(CanvasNode node, EditorColors colors, Widget content) {
-    void select() {
-      if (!widget.panMode) widget.onSelectNode?.call(node.id);
-    }
-
     return _withHandles(
       node,
       Listener(
@@ -1823,7 +1966,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         onPointerUp: (event) => _releaseClaim(event.pointer),
         onPointerCancel: (event) => _releaseClaim(event.pointer),
         child: GestureDetector(
-          onTap: select,
+          // Single-path selection (see [_buildLeaf]): side-effect-free so
+          // drill-out fires exactly once per tap.
+          onTap: () {},
           child: Container(
             key: _flowKey(node.id),
             width: double.infinity,
@@ -1851,18 +1996,21 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               // Track U2: explicit sizes pin the content (inside the legacy
               // max clamp, which keeps guarding far-edge drops); auto passes
               // through untouched.
-              // Track Z1: fixed-w keeps exact pixels left-aligned via this
+              // Track Z1: fixed-w keeps exact pixels top-left via this
               // [Align] — a bare [SizedBox] would be forced full width by the
               // tight stretch parent. `heightFactor: 1.0` sizes the Align to
               // its child vertically so it never expands to the 709px
               // maxHeight under the unbounded scroll (which pushed handles
               // off-screen); width still fills so the pin left-aligns, and
               // oversized pins shrink to the cell with no flex-overflow
-              // report. Auto stays direct so it fills.
+              // report. Track AA: [Alignment.topLeft] (was center-left), so
+              // the pinned box rides the top naturally inside tight-height
+              // slots instead of vertically centering. Auto stays direct so
+              // it fills.
               child: _effW(node) == null
                   ? applyNodeSizeValues(null, _effH(node), content)
                   : Align(
-                      alignment: Alignment.centerLeft,
+                      alignment: Alignment.topLeft,
                       heightFactor: 1.0,
                       child: applyNodeSizeValues(
                         _effW(node),
@@ -1887,6 +2035,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// fill the container width (with [_nodeChrome]'s `double.infinity` the
   /// fill holds even inside builder-owned `start` slots).
   ///
+  /// Track AA slots: every item (the container chrome AND the below-stacked
+  /// rest) builds with this node's [_slotWidgets] spread over its props.
+  ///
   /// D3 drop preview: when [ghost] targets this container, the ghost splices
   /// into the slot's child list at the hover index, so it renders inside the
   /// real chrome with the catalog's own separators.
@@ -1899,6 +2050,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   }) {
     final next = {...ancestors, node.id};
     final items = _nodeItems(node);
+    final slots = _slotWidgets(node, colors, ancestors, ghost: ghost);
     final builtKids = <Widget>[
       for (final kid in kids)
         _buildNodeWidget(kid, colors, next, ghost: ghost),
@@ -1917,9 +2069,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         // Track Z1 full-bleed: stretch (see [_contentCrossAxis]).
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
-          buildCatalogItem(items.first.kind, items.first.props, builtKids),
+          buildCatalogItem(
+            items.first.kind,
+            {...items.first.props, ...slots},
+            builtKids,
+          ),
           for (final item in items.skip(1))
-            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
+            alignIntrinsicKind(
+              item.kind,
+              buildCatalogItem(item.kind, {...item.props, ...slots}),
+            ),
         ],
       ),
     );
@@ -1929,6 +2088,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// fallback `Column([ownWidget, ...children])` — children stack BELOW the
   /// parent's own widget with [kFlowScreenGap] separators, never inside
   /// chrome. Track Z1 full-bleed: stretch so below-stacked children fill.
+  /// Track AA slots: own items build with [_slotWidgets] spread over props.
   /// D3 drop preview: [ghost] forwards to the children (a targeted
   /// container may nest under a leaf via the below-fallback).
   Widget _buildLeafFallback(
@@ -1939,6 +2099,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     _DropGhostSpec? ghost,
   }) {
     final next = {...ancestors, node.id};
+    final slots = _slotWidgets(node, colors, ancestors, ghost: ghost);
     return _nodeChrome(
       node,
       colors,
@@ -1948,7 +2109,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
-            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
+            alignIntrinsicKind(
+              item.kind,
+              buildCatalogItem(item.kind, {...item.props, ...slots}),
+            ),
           for (var i = 0; i < kids.length; i++) ...[
             const SizedBox(height: kFlowScreenGap),
             _buildNodeWidget(kids[i], colors, next, ghost: ghost),

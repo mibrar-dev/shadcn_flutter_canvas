@@ -22,6 +22,36 @@ const Set<String> kScreenDeviceIds = {
   'desktop-wide',
 };
 
+/// Named widget-composition slots per node kind (Track DD validation copy).
+///
+/// PRIVATE SNAPSHOT of the authoritative `kNodeSlots` in
+/// `lib/canvas/component_catalog.dart` (same entries, same order): this file
+/// must stay Flutter-free, so it cannot import the catalog — and the catalog
+/// is owned by a parallel batch, so this table cannot move there either.
+/// SYNC RULE: when the catalog's table gains/loses a kind or slot, mirror
+/// the edit here (a drift only affects [CanvasStore.setSlotChild]'s
+/// unknown-slot refusal; the inspector reads the catalog's table directly,
+/// and codegen splices whatever `slotNodes` entries resolve, so neither
+/// needs this copy).
+const _kNodeSlots = <String, List<String>>{
+  'scaffold': ['appBar', 'body', 'footer'],
+  'card': ['content'],
+  'dialog': ['content'],
+  'alert_dialog': ['content'],
+  'drawer': ['content'],
+  'form': ['content'],
+  'outlined_container': ['content'],
+  'hidden': ['content'],
+  'clickable': ['content'],
+  'scrollbar': ['content'],
+  'chat': ['content'],
+  'toast': ['content'],
+  'validated': ['content'],
+  'refresh_trigger': ['content'],
+  'card_image': ['image'],
+  'basic': ['leading', 'trailing'],
+};
+
 /// Minimal listener registry mirroring Flutter's `ChangeNotifier` API.
 class ChangeNotifier {
   final List<void Function()> _listeners = [];
@@ -220,6 +250,9 @@ class CanvasStore extends ChangeNotifier {
                   entry.key: Map<String, dynamic>.from(entry.value),
               },
               slots: Map<String, String>.from(n.slots),
+              // Track DD carry: slot composition + lock ride every rebuild.
+              slotNodes: Map<String, String>.from(n.slotNodes),
+              locked: n.locked,
             )
           : n,
     ));
@@ -255,6 +288,9 @@ class CanvasStore extends ChangeNotifier {
             entry.key: Map<String, dynamic>.from(entry.value),
         },
         slots: Map<String, String>.from(n.slots),
+        // Track DD carry: slot composition + lock ride every rebuild.
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: n.locked,
         items: [
           for (final i in n.items)
             if (i.id == itemId)
@@ -389,6 +425,9 @@ class CanvasStore extends ChangeNotifier {
             entry.key: Map<String, dynamic>.from(entry.value),
         },
         slots: Map<String, String>.from(n.slots),
+        // Track DD carry: slot composition + lock ride every rebuild.
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: n.locked,
         items: items,
       );
 
@@ -550,6 +589,9 @@ class CanvasStore extends ChangeNotifier {
             entry.key: Map<String, dynamic>.from(entry.value),
         },
         slots: Map<String, String>.from(n.slots),
+        // Track DD carry: slot composition + lock ride every rebuild.
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: n.locked,
         items: [
           for (final i in n.items)
             if (i.id == itemId)
@@ -568,6 +610,14 @@ class CanvasStore extends ChangeNotifier {
   /// inside it — leaving them orphaned would make them invisible). Unknown
   /// ids are a no-op (no history pollution), matching reorderNode/patchNode
   /// which throw before committing.
+  ///
+  /// Track DD (lock): deleting a locked node — or a subtree containing a
+  /// locked descendant — is a silent no-op without committing (the
+  /// unknown-id precedent: keyboard/multi-delete paths must never crash on
+  /// a locked target; the layers panel additionally skips locked ids before
+  /// calling). Slot refs pointing at deleted nodes are scrubbed from
+  /// survivors in the same commit (dangling slot entries would otherwise
+  /// linger; codegen omits them, but the doc stays clean instead).
   void deleteNode(String nodeId) {
     if (_doc.nodes.every((n) => n.id != nodeId)) return;
     final doomed = <String>{nodeId};
@@ -582,13 +632,52 @@ class CanvasStore extends ChangeNotifier {
         }
       }
     }
+    for (final n in _doc.nodes) {
+      if (doomed.contains(n.id) && n.locked) return;
+    }
     _commit(ScreenDoc(
       screens: List.of(_doc.screens),
-      nodes: [for (final n in _doc.nodes) if (!doomed.contains(n.id)) n],
+      nodes: [
+        for (final n in _doc.nodes)
+          if (!doomed.contains(n.id)) _withoutSlotRefs(n, doomed),
+      ],
       theme: _doc.theme,
       meta: _doc.meta,
       states: List.of(_doc.states),
     ));
+  }
+
+  /// Rebuilds [node] minus any `slotNodes` entries pointing into [doomed]
+  /// (see [deleteNode]); returns [node] untouched when nothing dangles, so
+  /// clean deletes keep survivor instances identical.
+  CanvasNode _withoutSlotRefs(CanvasNode node, Set<String> doomed) {
+    if (!node.slotNodes.values.any(doomed.contains)) return node;
+    final kept = Map<String, String>.from(node.slotNodes)
+      ..removeWhere((_, childId) => doomed.contains(childId));
+    return CanvasNode(
+      id: node.id,
+      screenId: node.screenId,
+      x: node.x,
+      y: node.y,
+      items: node.items,
+      parentId: node.parentId,
+      isRow: node.isRow,
+      gap: node.gap,
+      mainAxis: node.mainAxis,
+      crossAxis: node.crossAxis,
+      expand: node.expand,
+      flex: node.flex,
+      w: node.w,
+      h: node.h,
+      hiddenOn: Set<String>.from(node.hiddenOn),
+      breakpointValues: {
+        for (final entry in node.breakpointValues.entries)
+          entry.key: Map<String, dynamic>.from(entry.value),
+      },
+      slots: Map<String, String>.from(node.slots),
+      slotNodes: kept,
+      locked: node.locked,
+    );
   }
 
   /// Replaces the doc theme (undoable, autosaved).
@@ -654,6 +743,14 @@ class CanvasStore extends ChangeNotifier {
               entry.key: Map<String, dynamic>.from(entry.value),
           },
           slots: Map<String, String>.from(n.slots),
+          // Track DD carry: the lock clones verbatim; slot refs inside the
+          // duplicated subtree re-point at the fresh clone ids (like
+          // `parentId` above), refs outside the subtree keep pointing out.
+          slotNodes: {
+            for (final entry in n.slotNodes.entries)
+              entry.key: idMap[entry.value] ?? entry.value,
+          },
+          locked: n.locked,
           items: [
             for (final i in n.items)
               CanvasItem(
@@ -913,6 +1010,9 @@ class CanvasStore extends ChangeNotifier {
                 entry.key: Map<String, dynamic>.from(entry.value),
             },
             slots: Map<String, String>.from(n.slots),
+            // Track DD carry: slot composition + lock ride every rebuild.
+            slotNodes: Map<String, String>.from(n.slotNodes),
+            locked: n.locked,
           )
         : n));
   }
@@ -991,6 +1091,9 @@ class CanvasStore extends ChangeNotifier {
             : (slots != null
                 ? Map<String, String>.from(slots)
                 : Map<String, String>.from(n.slots)),
+        // Track DD carry: slot composition + lock ride every rebuild.
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: n.locked,
       );
     }));
   }
@@ -1034,6 +1137,10 @@ class CanvasStore extends ChangeNotifier {
     final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
     if (index < 0) return;
     final current = _doc.nodes[index];
+    // Track DD (lock): resizing a locked node is a silent no-op without
+    // committing (matches the unknown-id precedent above; resize handles
+    // never show for locked nodes, so this only fires on stale calls).
+    if (current.locked) return;
     final nextW = clearW ? null : (w ?? current.w);
     final nextH = clearH ? null : (h ?? current.h);
     if (nextW == current.w && nextH == current.h) return;
@@ -1060,9 +1167,154 @@ class CanvasStore extends ChangeNotifier {
             entry.key: Map<String, dynamic>.from(entry.value),
         },
         slots: Map<String, String>.from(n.slots),
+        // Track DD carry: slot composition + lock ride every rebuild.
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: n.locked,
       );
     }));
   }
+
+  /// Assigns (or clears) one named-slot child on [nodeId] (Track DD).
+  ///
+  /// [slot] names a slot from [_kNodeSlots] (the catalog `kNodeSlots`
+  /// snapshot above) for the host's primary kind (its first item's kind;
+  /// rows and item-less nodes declare no slots). A null or empty
+  /// [childNodeId] CLEARS the entry.
+  ///
+  /// Validation (all before committing, so a refusal leaves history clean):
+  /// unknown [nodeId] is a no-op without committing (matching [deleteNode]);
+  /// clearing a slot with no entry is a no-op too. Assigning throws
+  /// [ArgumentError] when [slot] is empty or unknown for the host kind (bad
+  /// values throw, mirroring [setScreenDevice]); assigning or clearing on a
+  /// locked host throws [StateError] (the frozen-subtree rule — the
+  /// inspector disables slot pickers while locked, so this only fires on
+  /// stale calls). An unknown [childNodeId] is a no-op without committing
+  /// (matching [reparentNode]'s unknown-parent rule). A cross-screen child, a
+  /// self assignment, or a `parentId`-descendant child throws [StateError]
+  /// (via [isAncestorOf], mirroring [reparentNode]; message strings mirror
+  /// [validateNesting] where they overlap). Assigning the current value is a
+  /// no-op. Otherwise undoable and autosaved like every other mutation; every
+  /// other field is preserved with the [setNodeResponsive] deep-copy
+  /// precedent (plus the Track DD carry).
+  ///
+  /// NOTE: an ancestor (via `parentId`) of the host is NOT refused — only
+  /// self/descendants are. An ancestor slot edge still cycles at render time,
+  /// but the renderers and both codegen emitters are cycle-guarded (comment
+  /// + skip), so the doc can never hang through the UI.
+  void setSlotChild(String nodeId, String slot, String? childNodeId) {
+    final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (index < 0) return;
+    final node = _doc.nodes[index];
+    if (childNodeId == null || childNodeId.isEmpty) {
+      if (node.locked) {
+        throw StateError('locked node $nodeId');
+      }
+      if (!node.slotNodes.containsKey(slot)) return;
+      _commit(_mapNodes((n) {
+        if (n.id != nodeId) return n;
+        final next = Map<String, String>.from(n.slotNodes)..remove(slot);
+        return _nodeWithSlotNodes(n, next);
+      }));
+      return;
+    }
+    final kind = node.isRow
+        ? 'row'
+        : (node.items.isEmpty ? '' : node.items.first.kind);
+    final known = _kNodeSlots[kind] ?? const <String>[];
+    if (slot.isEmpty || !known.contains(slot)) {
+      throw ArgumentError('Unknown slot "$slot" for kind "$kind"');
+    }
+    if (node.locked) {
+      throw StateError('locked node $nodeId');
+    }
+    final childIndex = _doc.nodes.indexWhere((n) => n.id == childNodeId);
+    if (childIndex < 0) return;
+    final child = _doc.nodes[childIndex];
+    if (child.screenId != node.screenId) {
+      throw StateError(
+        'cross-screen slot $childNodeId for node $nodeId',
+      );
+    }
+    if (childNodeId == nodeId) {
+      throw StateError('self-slot $nodeId');
+    }
+    if (isAncestorOf(_doc, nodeId, childNodeId)) {
+      throw StateError('cycle: node $nodeId is its own ancestor');
+    }
+    if (node.slotNodes[slot] == childNodeId) return;
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      final next = Map<String, String>.from(n.slotNodes)..[slot] = childNodeId;
+      return _nodeWithSlotNodes(n, next);
+    }));
+  }
+
+  /// Locks or unlocks [nodeId] (Track DD — editor-only flag, see
+  /// [CanvasNode.locked]). Unknown [nodeId], or a value equal to the current
+  /// flag, is a no-op without committing (matching [deleteNode], so history
+  /// stays clean). Otherwise undoable and autosaved like every other
+  /// mutation; every other field is preserved with the [setNodeResponsive]
+  /// deep-copy precedent (plus the Track DD carry).
+  void setNodeLocked(String nodeId, bool locked) {
+    final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
+    if (index < 0) return;
+    if (_doc.nodes[index].locked == locked) return;
+    _commit(_mapNodes((n) {
+      if (n.id != nodeId) return n;
+      return CanvasNode(
+        id: n.id,
+        screenId: n.screenId,
+        x: n.x,
+        y: n.y,
+        items: n.items,
+        parentId: n.parentId,
+        isRow: n.isRow,
+        gap: n.gap,
+        mainAxis: n.mainAxis,
+        crossAxis: n.crossAxis,
+        expand: n.expand,
+        flex: n.flex,
+        w: n.w,
+        h: n.h,
+        hiddenOn: Set<String>.from(n.hiddenOn),
+        breakpointValues: {
+          for (final entry in n.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(n.slots),
+        slotNodes: Map<String, String>.from(n.slotNodes),
+        locked: locked,
+      );
+    }));
+  }
+
+  /// Rebuilds [node] with [slotNodes] (deep-copy precedent: every other
+  /// field carried, maps copied never aliased — see [setSlotChild]).
+  CanvasNode _nodeWithSlotNodes(CanvasNode node, Map<String, String> slotNodes) =>
+      CanvasNode(
+        id: node.id,
+        screenId: node.screenId,
+        x: node.x,
+        y: node.y,
+        items: node.items,
+        parentId: node.parentId,
+        isRow: node.isRow,
+        gap: node.gap,
+        mainAxis: node.mainAxis,
+        crossAxis: node.crossAxis,
+        expand: node.expand,
+        flex: node.flex,
+        w: node.w,
+        h: node.h,
+        hiddenOn: Set<String>.from(node.hiddenOn),
+        breakpointValues: {
+          for (final entry in node.breakpointValues.entries)
+            entry.key: Map<String, dynamic>.from(entry.value),
+        },
+        slots: Map<String, String>.from(node.slots),
+        slotNodes: slotNodes,
+        locked: node.locked,
+      );
 
   /// Moves the node with [nodeId] under a new parent ([newParentId], null =
   /// the screen root) in one undoable commit. Layout follows the new parent's
@@ -1089,10 +1341,21 @@ class CanvasStore extends ChangeNotifier {
     final index = _doc.nodes.indexWhere((n) => n.id == nodeId);
     if (index < 0) return;
     final node = _doc.nodes[index];
+    // Track DD (lock): a locked node cannot move anywhere — including back
+    // to the screen root — and nothing may move under a locked parent (the
+    // frozen-subtree rule). Illegal moves throw [StateError] like the
+    // cross-screen/self/cycle refusals below — DnD surfaces these before
+    // calling.
+    if (node.locked) {
+      throw StateError('locked node $nodeId');
+    }
     if (newParentId != null) {
       final parentIndex = _doc.nodes.indexWhere((n) => n.id == newParentId);
       if (parentIndex < 0) return;
       final parent = _doc.nodes[parentIndex];
+      if (parent.locked) {
+        throw StateError('locked parent $newParentId');
+      }
       if (parent.screenId != node.screenId) {
         throw StateError(
           'cross-screen parent $newParentId for node $nodeId',
@@ -1127,6 +1390,9 @@ class CanvasStore extends ChangeNotifier {
           entry.key: Map<String, dynamic>.from(entry.value),
       },
       slots: Map<String, String>.from(node.slots),
+      // Track DD carry: slot composition + lock ride every rebuild.
+      slotNodes: Map<String, String>.from(node.slotNodes),
+      locked: node.locked,
     );
     final rest = List.of(_doc.nodes)..removeAt(index);
     // Land at the end of the new group in doc order: after its last member,
@@ -1198,6 +1464,11 @@ class CanvasStore extends ChangeNotifier {
       if (byId[id]!.parentId != null) {
         throw StateError('non-root node in group: $id');
       }
+      // Track DD (lock): locked nodes refuse grouping (same throw precedent
+      // as the refusals above — the layers header surfaces it as a SnackBar).
+      if (byId[id]!.locked) {
+        throw StateError('locked node in group: $id');
+      }
     }
     final row = CanvasNode(
       id: uid(),
@@ -1248,6 +1519,9 @@ class CanvasStore extends ChangeNotifier {
               entry.key: Map<String, dynamic>.from(entry.value),
           },
           slots: Map<String, String>.from(byId[id]!.slots),
+          // Track DD carry: slot composition + lock ride every rebuild.
+          slotNodes: Map<String, String>.from(byId[id]!.slotNodes),
+          locked: byId[id]!.locked,
         ),
     ];
     rest.insertAll(at.clamp(0, rest.length), [row, ...children]);

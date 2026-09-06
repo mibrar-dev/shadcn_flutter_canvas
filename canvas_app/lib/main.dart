@@ -1,12 +1,13 @@
-/// Forge editor shell (Y6 cutover, FORGE.md §5).
+/// Forge editor shell (Y6 cutover, FORGE.md §5) with the restored classic
+/// left aside (Track CC sidebar revert).
 ///
-/// Three columns at a 1440x900 viewport: a 300px left Library column
-/// (Library|Layers pills + content + Theme disclosure), the flexible canvas
+/// Three columns at a 1440x900 viewport: a 320px left aside (52px icon rail +
+/// parts panel, switched by the rail selection incl. Layers and the
+/// Color/Shape/Type/Motion theme panels), the flexible canvas
 /// (ForgeCanvasHeader + DesignCanvas + ForgeSelectionToolbar), and a 320px
-/// right aside. The icon rail is DELETED (FORGE.md §1-2d); Layers lives
-/// behind the left pills and Color/Shape/Type/Motion live in the bottom
-/// Theme disclosure. Chrome follows the doc theme as before (no forced
-/// light — FORGE.md §5 DECISIONS); dark values are kept.
+/// right aside. The columns share one background with no dividers — see
+/// [EditorMetrics] for the measured values. Chrome follows the doc theme as
+/// before (no forced light — FORGE.md §5 DECISIONS); dark values are kept.
 library;
 
 import 'package:flutter/material.dart';
@@ -20,6 +21,7 @@ import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/export_panel.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
+import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/keyboard_shortcuts.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/open_dialog.dart';
@@ -41,10 +43,6 @@ export 'ui/selection_model.dart'
 
 /// Package asset prefix for fonts bundled by `flutter_shadcn_kit`.
 const _kitFonts = 'packages/flutter_shadcn_kit/assets/fonts';
-
-/// Forge left Library width. APPROXIMATE ~300px (FORGE.md §3 — replaces the
-/// measured 320); all §3 numbers are APPROXIMATE per FORGE.md §6.
-const double _kForgeLibraryWidth = 300;
 
 /// Forge selection-toolbar hover height above the canvas bottom (FORGE.md §3:
 /// shell-centered near the canvas bottom; anchoring to the selection is
@@ -139,8 +137,8 @@ class _ShellRelay extends ChangeNotifier {
 /// toggle/range callbacks and collapses only on plain taps (see the wiring in
 /// [_EditorShellState._leftPanel] and [_EditorShellState._collapseToNode]).
 
-/// Assembles the Forge shell: topbar + library column + canvas header/canvas/
-/// selection toolbar + right aside.
+/// Assembles the Forge shell: topbar + classic left aside (icon rail + parts
+/// panel) + canvas header/canvas/selection toolbar + right aside.
 class EditorShell extends StatefulWidget {
   final CanvasStore store;
 
@@ -156,11 +154,11 @@ class _EditorShellState extends State<EditorShell> {
   double _zoom = 0.79;
   bool _showGuides = true;
 
-  /// Forge left-column tab (FORGE.md §1-2d): 'library' shows the PartsPalette
-  /// with tap-to-add wired, 'layers' shows the LayersPanel. The old icon rail
-  /// (parts/layers/color/shape/type/motion/ai/lang) is deleted; AI/Lang
-  /// placeholders are dropped (Prompt lives in the right tabs).
-  String _leftTab = 'library';
+  /// Classic left-aside selection (Track CC sidebar revert): the icon rail
+  /// switches the parts palette, the layers panel, and the Color/Shape/
+  /// Type/Motion theme panels. The Forge Library|Layers pills + Theme
+  /// disclosure are removed.
+  String _railId = kRailParts;
 
   /// Shell-owned multi-selection, mutually exclusive with [_selectedScreenId]:
   /// selecting any node clears the screen selection and vice versa. Canvas
@@ -266,15 +264,16 @@ class _EditorShellState extends State<EditorShell> {
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                         SizedBox(
-                          // FORGE.md §3: left Library APPROXIMATE ~300px
-                          // (replaces the measured 320); inspector keeps 320.
-                          width: _kForgeLibraryWidth,
-                          child: Column(
+                          width: EditorMetrics.sidePanelWidth,
+                          child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              _leftPills(),
+                              EditorIconRail(
+                                activeId: _railId,
+                                onSelect: (id) =>
+                                    setState(() => _railId = id),
+                              ),
                               Expanded(child: _leftPanel()),
-                              _ForgeThemeDisclosure(store: widget.store),
                             ],
                           ),
                         ),
@@ -416,16 +415,6 @@ class _EditorShellState extends State<EditorShell> {
     });
   }
 
-  /// Library tap-to-add follow-up: selects/reveals the fresh node (clears any
-  /// screen selection, collapses the set to the new id).
-  void _onNodeAdded(String id) => setState(() {
-        _selectedScreenId = null;
-        _selectedNodeIds
-          ..clear()
-          ..add(id);
-        _selectionAnchorId = id;
-      });
-
   /// Forge selection-toolbar up/down: moves the primary within its own group
   /// (same screen + same parent, doc order) via `reorderNode` ±1. Edges and
   /// unknown ids are safe no-ops (reorder clamps / throws only on unknown —
@@ -446,95 +435,71 @@ class _EditorShellState extends State<EditorShell> {
     widget.store.reorderNode(nodeId, from + delta);
   }
 
-  /// Forge "Library | Layers" pills (FORGE.md §1-2d): Layers lives behind the
-  /// pills in the left column (imports `layers_panel.dart` untouched).
-  Widget _leftPills() {
-    final colors = EditorTheme.of(context);
-    Widget pill({required String label, required String value, required Key key}) {
-      final selected = _leftTab == value;
-      return Expanded(
-        child: GestureDetector(
-          key: key,
-          behavior: HitTestBehavior.opaque,
-          onTap: () => setState(() => _leftTab = value),
-          child: Container(
-            height: EditorMetrics.toolbarHeight,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: selected
-                  ? colors.toolbarActive
-                  : colors.surfaceContainerHigh,
-              borderRadius: BorderRadius.circular(
-                EditorMetrics.segmentInnerRadius,
-              ),
-            ),
-            child: Text(
-              label,
-              style: EditorType.readout.copyWith(
-                color: selected
-                    ? colors.onToolbarActive
-                    : colors.onSurfaceVariant,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
+  /// The left aside's body, switched by the icon rail's selection.
+  Widget _leftPanel() {
+    switch (_railId) {
+      case kRailParts:
+        return const PartsPalette();
+      case kRailLayers:
+        // Track S2: multi-aware layers — the panel receives the full set
+        // (primary ring + secondary tint + count header with delete/group
+        // actions) and three tap intents: plain collapses, Ctrl/Cmd toggles,
+        // Shift ranges. The panel reads the live modifiers itself, like the
+        // canvas tap path. The canvas ring stays primary-only (documented
+        // limitation, owned by another track).
+        return LayersPanel(
+          store: widget.store,
+          selectedNodeIds: _selectedNodeIds,
+          selectedNodeId: _primaryNodeId(),
+          onSelectNode: _collapseToNode,
+          onToggleNode: _toggleLayerNode,
+          onRangeSelectNode: _rangeLayerNode,
+          onGroupSelection: _groupSelection,
+          onUngroupSelection: _ungroupSelection,
+          onDeleteSelection: _deleteSelection,
+        );
+      // Theme panels hug their content: the loose scroll constraints stop
+      // the panel Card from stretching to the full column height.
+      case kRailColor:
+        return SingleChildScrollView(
+          child: ColorPanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
           ),
-        ),
-      );
+        );
+      case kRailShape:
+        return SingleChildScrollView(
+          child: ShapePanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
+      case kRailType:
+        return SingleChildScrollView(
+          child: TypePanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
+      case kRailMotion:
+        return SingleChildScrollView(
+          child: MotionPanel(
+            theme: widget.store.doc.theme,
+            onChanged: widget.store.setTheme,
+          ),
+        );
+      default:
+        return _placeholder(_railId);
     }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        EditorMetrics.panelInset,
-        EditorMetrics.panelInset,
-        EditorMetrics.panelInset,
-        0,
-      ),
-      child: Row(
-        children: [
-          pill(
-            label: 'Library',
-            value: 'library',
-            key: const ValueKey('forge-left-pill-library'),
-          ),
-          const SizedBox(width: EditorMetrics.segmentGap),
-          pill(
-            label: 'Layers',
-            value: 'layers',
-            key: const ValueKey('forge-left-pill-layers'),
-          ),
-        ],
-      ),
-    );
   }
 
-  /// The left column body, switched by the Library|Layers pills.
-  Widget _leftPanel() {
-    if (_leftTab == 'layers') {
-      // Track S2: multi-aware layers — the panel receives the full set
-      // (primary ring + secondary tint + count header with delete/group
-      // actions) and three tap intents: plain collapses, Ctrl/Cmd toggles,
-      // Shift ranges. The panel reads the live modifiers itself, like the
-      // canvas tap path. The canvas ring stays primary-only (documented
-      // limitation, owned by another track).
-      return LayersPanel(
-        store: widget.store,
-        selectedNodeIds: _selectedNodeIds,
-        selectedNodeId: _primaryNodeId(),
-        onSelectNode: _collapseToNode,
-        onToggleNode: _toggleLayerNode,
-        onRangeSelectNode: _rangeLayerNode,
-        onGroupSelection: _groupSelection,
-        onUngroupSelection: _ungroupSelection,
-        onDeleteSelection: _deleteSelection,
-      );
-    }
-    // Forge Library with tap-to-add live (FORGE.md §1-2b, Y3 additive params):
-    // the store + current screen id make every "+ Add" append via the same
-    // DnD creation path; the fresh id reselects through [_onNodeAdded].
-    return PartsPalette(
-      store: widget.store,
-      screenId: _currentScreenId(),
-      onNodeAdded: _onNodeAdded,
+  Widget _placeholder(String id) {
+    final colors = EditorTheme.of(context);
+    return Center(
+      child: Text(
+        '$id panel',
+        style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
+      ),
     );
   }
 
@@ -825,99 +790,5 @@ class _EditorShellState extends State<EditorShell> {
       }
       setState(() => _selectedScreenId = null);
     }
-  }
-}
-
-/// Forge bottom "Theme" disclosure (FORGE.md §1-2d, §3): the Color/Shape/
-/// Type/Motion panels live here, mounted untouched (`theme_panels.dart` is
-/// never edited). Collapsed by default so the Library tiles keep the column;
-/// expanding shows all four panels in a bounded scroll. Chrome follows the
-/// doc theme (no forced light); the panels edit via `store.setTheme`.
-class _ForgeThemeDisclosure extends StatefulWidget {
-  final CanvasStore store;
-
-  const _ForgeThemeDisclosure({required this.store});
-
-  @override
-  State<_ForgeThemeDisclosure> createState() => _ForgeThemeDisclosureState();
-}
-
-class _ForgeThemeDisclosureState extends State<_ForgeThemeDisclosure> {
-  bool _open = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = EditorTheme.of(context);
-    return Container(
-      decoration: BoxDecoration(
-        color: colors.surface,
-        border: Border(
-          top: BorderSide(color: colors.surfaceContainerHigh),
-        ),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          GestureDetector(
-            key: const ValueKey('forge-left-theme-disclosure'),
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _open = !_open),
-            child: Padding(
-              padding: const EdgeInsets.all(EditorMetrics.panelInset),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      'Theme',
-                      style: EditorType.sectionHeader.copyWith(
-                        color: colors.onSurface,
-                      ),
-                    ),
-                  ),
-                  Icon(
-                    _open ? Icons.expand_more : Icons.chevron_right,
-                    size: 18,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (_open)
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 280),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.only(
-                  left: EditorMetrics.panelInset,
-                  right: EditorMetrics.panelInset,
-                  bottom: EditorMetrics.panelInset,
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    ColorPanel(
-                      theme: widget.store.doc.theme,
-                      onChanged: widget.store.setTheme,
-                    ),
-                    ShapePanel(
-                      theme: widget.store.doc.theme,
-                      onChanged: widget.store.setTheme,
-                    ),
-                    TypePanel(
-                      theme: widget.store.doc.theme,
-                      onChanged: widget.store.setTheme,
-                    ),
-                    MotionPanel(
-                      theme: widget.store.doc.theme,
-                      onChanged: widget.store.setTheme,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 }

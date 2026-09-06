@@ -102,19 +102,27 @@ void main() {
       }
     });
 
-    testWidgets('card_image: 16:9 tonal art fills the card width', (
+    // Track BB art cap (2026-09-06): the old "fills the card width at any
+    // width" pin is INTENTIONALLY narrowed — uncapped 16:9 art on wide phones
+    // was the giant-empty-box "stretched" feel. Below the 200px cap the art
+    // still fills (this test); at phone width it pins to 200px tall and
+    // centers (next test). Both keep the exact 16:9 ratio.
+    testWidgets('card_image: 16:9 tonal art fills narrow cards below the cap', (
       tester,
     ) async {
       _setPhoneViewport(tester);
       for (final dark in [false, true]) {
         await _pumpBeauty(
           tester,
-          buildCatalogItem('card_image', {
-            'title': 'Sunset',
-            'subtitle': 'Golden hour',
-          }),
+          SizedBox(
+            width: 300,
+            child: buildCatalogItem('card_image', {
+              'title': 'Sunset',
+              'subtitle': 'Golden hour',
+            }),
+          ),
           dark: dark,
-          reason: 'card_image dark=$dark',
+          reason: 'card_image below-cap dark=$dark',
         );
         expect(find.byType(shadcn.CardImage), findsOneWidget);
         // Tonal art only: the kit preview's network image never ships here.
@@ -134,15 +142,66 @@ void main() {
           ),
           findsNothing,
         );
-        // Art fills the card width (cross-axis stretch): the 1px/side
-        // delta is the kit button's own border chrome around the image
-        // slot, not a builder inset.
-        final artWidth = tester.getSize(art).width;
+        // Art fills the card width (cross-axis stretch): up to ~4px of
+        // proportional slack when the title block exceeds the 76px text
+        // budget (ratio always exact — see the registry art-cap pins).
+        final artSize = tester.getSize(art);
+        expect(artSize.width / artSize.height, moreOrLessEquals(16 / 9));
         final cardWidth = tester.getSize(find.byType(shadcn.CardImage)).width;
-        expect(cardWidth - artWidth, lessThanOrEqualTo(2.0));
-        expect(artWidth, greaterThan(cardWidth * 0.95));
+        expect(cardWidth - artSize.width, lessThanOrEqualTo(4.0));
+        expect(artSize.width, greaterThan(cardWidth * 0.95));
         expect(find.text('Sunset'), findsOneWidget);
         expect(find.text('Golden hour'), findsOneWidget);
+      }
+    });
+
+    testWidgets('card_image: art caps at 200px and centers on wide cards', (
+      tester,
+    ) async {
+      _setPhoneViewport(tester);
+      for (final dark in [false, true]) {
+        await _pumpBeauty(
+          tester,
+          buildCatalogItem('card_image', {
+            'title': 'Sunset',
+            'subtitle': 'Golden hour',
+          }),
+          dark: dark,
+          reason: 'card_image at-cap dark=$dark',
+        );
+        expect(find.byType(shadcn.CardImage), findsOneWidget);
+        expect(find.byType(Image), findsNothing);
+
+        final art = find.byWidgetPredicate(
+          (w) => w is AspectRatio && w.aspectRatio == 16 / 9,
+        );
+        expect(art, findsOneWidget, reason: 'art keeps the 16:9 ratio');
+        final size = tester.getSize(art);
+        expect(
+          size.height,
+          moreOrLessEquals(200, epsilon: 1.5),
+          reason: 'the BB cap, never a giant stretched box',
+        );
+        expect(size.width / size.height, moreOrLessEquals(16 / 9));
+        // The cap is engaged (not filling) and the card itself still spans
+        // the full node width (the shell pins it — capped art alone would
+        // shrink-wrap the kit's IntrinsicWidth card).
+        final card = find.byType(shadcn.CardImage);
+        final cardWidth = tester.getSize(card).width;
+        expect(cardWidth - size.width, greaterThan(10.0));
+        final cardLeft = tester.getTopLeft(card).dx;
+        final artLeft = tester.getTopLeft(art).dx;
+        expect(
+          artLeft - cardLeft,
+          moreOrLessEquals((cardWidth - size.width) / 2, epsilon: 2.0),
+        );
+        // Designed placeholder: tonal gradient + bigger 48px centered glyph.
+        expect(
+          find.byWidgetPredicate(
+            (w) => w is Icon && w.icon == Icons.image && w.size == 48,
+          ),
+          findsOneWidget,
+        );
       }
     });
   });

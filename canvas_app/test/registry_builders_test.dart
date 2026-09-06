@@ -2570,4 +2570,305 @@ void main() {
       expect(find.text('=nick'), findsOneWidget);
     });
   });
+
+  group('track BB slots', () {
+    /// The 13 splice-container kinds: the BB `content` slot complements (never
+    /// replaces) the C1 children splice — slot first, then spliced children.
+    const contentKinds = [
+      'card',
+      'dialog',
+      'alert_dialog',
+      'drawer',
+      'form',
+      'outlined_container',
+      'hidden',
+      'clickable',
+      'scrollbar',
+      'chat',
+      'toast',
+      'validated',
+      'refresh_trigger',
+    ];
+
+    test('kNodeSlots pins the slot registry (16 kinds, 19 slots)', () {
+      expect(kNodeSlots, hasLength(16));
+      expect(kNodeSlots['scaffold'], ['appBar', 'body', 'footer']);
+      expect(kNodeSlots['card_image'], ['image']);
+      expect(kNodeSlots['basic'], ['leading', 'trailing']);
+      for (final kind in contentKinds) {
+        expect(kNodeSlots[kind], ['content'], reason: kind);
+      }
+      // Every registered kind resolves to a real catalog builder (slots never
+      // dangle), and every registered builder honors its slots (pinned below).
+      for (final kind in kNodeSlots.keys) {
+        expect(findEntry(kind), isNotNull, reason: 'no catalog entry $kind');
+      }
+    });
+
+    testWidgets('content slots render when provided, vanish when not', (
+      tester,
+    ) async {
+      for (final kind in contentKinds) {
+        // The refresh_trigger splice lands in the 140px scroll shell, so
+        // trailing rows are built but offstage (same idiom as the D1 kidIn).
+        Finder slot() => kind == 'refresh_trigger'
+            ? find.text('BB slot', skipOffstage: false)
+            : find.text('BB slot');
+        await _pump(
+          tester,
+          buildCatalogItem(kind, {
+            'content': const Text('BB slot'),
+          }),
+        );
+        expect(slot(), findsOneWidget, reason: '$kind renders');
+        await _pump(tester, buildCatalogItem(kind, {}));
+        expect(find.text('BB slot'), findsNothing, reason: '$kind absent');
+        // Explicit null equals absent (the renderers' empty-slot copy).
+        await _pump(
+          tester,
+          buildCatalogItem(kind, {
+            'content': null,
+          }),
+        );
+        expect(find.text('BB slot'), findsNothing, reason: '$kind null');
+      }
+    });
+
+    testWidgets('content slots complement spliced children (slot first)', (
+      tester,
+    ) async {
+      for (final kind in contentKinds) {
+        await _pump(
+          tester,
+          buildCatalogItem(kind, {
+            'content': const Text('BB slot'),
+          }, const [Text('BB kid')]),
+        );
+        // The refresh_trigger splice lands in the 140px scroll shell, so
+        // rows past the viewport are built but offstage (same idiom as the
+        // D1 kidIn + the render/absent pin above).
+        final slot = kind == 'refresh_trigger'
+            ? find.text('BB slot', skipOffstage: false)
+            : find.text('BB slot');
+        expect(slot, findsOneWidget, reason: '$kind slot');
+        // The refresh_trigger splice lands in the 140px scroll shell, so the
+        // trailing kid is built but offstage (same idiom as the D1 kidIn).
+        final kid = kind == 'refresh_trigger'
+            ? find.text('BB kid', skipOffstage: false)
+            : find.text('BB kid');
+        expect(kid, findsOneWidget, reason: '$kind kid');
+      }
+    });
+
+    testWidgets('non-Widget slot values collapse to the default', (
+      tester,
+    ) async {
+      // Stray hand-written values must never crash: [_slotOf] only honors
+      // Widgets (see kNodeSlots docs).
+      await _pump(
+        tester,
+        buildCatalogItem('card', {
+          'content': 'not-a-widget',
+        }),
+      );
+      expect(find.text('Title'), findsOneWidget);
+      await _pump(tester, buildCatalogItem('scaffold', {'body': 42}));
+      expect(find.text('Welcome'), findsOneWidget);
+    });
+
+    group('scaffold slots', () {
+      testWidgets('appBar/body/footer render when provided (light + dark)', (
+        tester,
+      ) async {
+        const props = {
+          'appBar': Text('BB bar'),
+          'body': Text('BB body'),
+          'footer': Text('BB foot'),
+        };
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('scaffold', props),
+            dark: dark,
+          );
+          expect(find.byType(shadcn.Scaffold), findsOneWidget);
+          expect(find.text('BB bar'), findsOneWidget);
+          expect(find.text('BB body'), findsOneWidget);
+          expect(find.text('BB foot'), findsOneWidget);
+          // The default chrome is replaced/shadowed, not duplicated.
+          expect(find.text('My App'), findsNothing);
+          expect(find.text('Welcome'), findsNothing);
+          // The appBar renders above the body.
+          final barY = tester.getTopLeft(find.text('BB bar')).dy;
+          final bodyY = tester.getTopLeft(find.text('BB body')).dy;
+          expect(barY, lessThan(bodyY), reason: 'dark=$dark');
+        }
+      });
+
+      testWidgets('absent slots keep the default shell (light + dark)', (
+        tester,
+      ) async {
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('scaffold', {}),
+            dark: dark,
+          );
+          expect(find.byType(shadcn.Scaffold), findsOneWidget);
+          expect(find.byType(shadcn.AppBar), findsOneWidget);
+          expect(find.text('My App'), findsOneWidget);
+          expect(find.text('Welcome'), findsOneWidget);
+          // No footer chrome without a footer slot.
+          expect(find.text('BB foot'), findsNothing);
+        }
+      });
+
+      testWidgets('body slot complements spliced children (light + dark)', (
+        tester,
+      ) async {
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('scaffold', {
+              'body': const Text('BB body'),
+            }, const [Text('BB kid')]),
+            dark: dark,
+          );
+          expect(find.text('BB body'), findsOneWidget);
+          expect(find.text('BB kid'), findsOneWidget);
+          expect(find.text('Welcome'), findsNothing);
+        }
+      });
+    });
+
+    group('card_image slots + art cap', () {
+      testWidgets('image slot replaces the default art (light + dark)', (
+        tester,
+      ) async {
+        final art = find.byWidgetPredicate(
+          (w) => w is AspectRatio && w.aspectRatio == 16 / 9,
+        );
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('card_image', {
+              'image': const Text('BB art'),
+            }),
+            dark: dark,
+          );
+          expect(find.byType(shadcn.CardImage), findsOneWidget);
+          expect(find.text('BB art'), findsOneWidget);
+          expect(art, findsNothing, reason: 'default art replaced');
+          expect(find.text('Card title'), findsOneWidget);
+          await _pump(
+            tester,
+            buildCatalogItem('card_image', {}),
+            dark: dark,
+          );
+          expect(art, findsOneWidget, reason: 'default art kept');
+          expect(find.text('BB art'), findsNothing);
+        }
+      });
+
+      testWidgets('art keeps 16:9 below the cap at narrow widths', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          SizedBox(
+            width: 300,
+            child: buildCatalogItem('card_image', {
+              'title': 'Sunset',
+              'subtitle': 'Golden hour',
+            }),
+          ),
+        );
+        final art = find.byWidgetPredicate(
+          (w) => w is AspectRatio && w.aspectRatio == 16 / 9,
+        );
+        expect(art, findsOneWidget);
+        // Ratio is always exact; the size is width-driven up to ~1.5px of
+        // proportional shrink when the title block exceeds the 76px text
+        // budget (see _kCardImageTextBudget — shrink, never overflow).
+        final size = tester.getSize(art);
+        expect(size.width / size.height, moreOrLessEquals(16 / 9));
+        expect(size.height, lessThanOrEqualTo(300 * 9 / 16 + 0.5));
+        expect(size.height, greaterThan(160));
+        final cardWidth = tester.getSize(find.byType(shadcn.CardImage)).width;
+        expect(cardWidth - size.width, lessThanOrEqualTo(4.0));
+      });
+
+      testWidgets('art caps at 200px and centers on wide cards', (
+        tester,
+      ) async {
+        await _pump(
+          tester,
+          SizedBox(
+            width: 600,
+            child: buildCatalogItem('card_image', {
+              'title': 'Sunset',
+              'subtitle': 'Golden hour',
+            }),
+          ),
+        );
+        final art = find.byWidgetPredicate(
+          (w) => w is AspectRatio && w.aspectRatio == 16 / 9,
+        );
+        expect(art, findsOneWidget);
+        final size = tester.getSize(art);
+        expect(size.height, moreOrLessEquals(200, epsilon: 1.5));
+        expect(size.width / size.height, moreOrLessEquals(16 / 9));
+        // The cap is engaged (not filling) and the card itself still spans
+        // the full node width with the art centered inside it.
+        final card = find.byType(shadcn.CardImage);
+        final cardWidth = tester.getSize(card).width;
+        expect(cardWidth, moreOrLessEquals(600, epsilon: 2.0));
+        expect(cardWidth - size.width, greaterThan(10.0));
+        final cardLeft = tester.getTopLeft(card).dx;
+        final artLeft = tester.getTopLeft(art).dx;
+        expect(
+          artLeft - cardLeft,
+          moreOrLessEquals((cardWidth - size.width) / 2, epsilon: 2.0),
+        );
+      });
+    });
+
+    group('basic slots', () {
+      testWidgets('leading/trailing replace the default chrome', (
+        tester,
+      ) async {
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('basic', {
+              'leading': const Text('BB lead'),
+              'trailing': const Text('BB trail'),
+            }),
+            dark: dark,
+          );
+          expect(find.byType(shadcn.Basic), findsOneWidget);
+          expect(find.text('BB lead'), findsOneWidget);
+          expect(find.text('BB trail'), findsOneWidget);
+          expect(find.byIcon(Icons.person), findsNothing);
+          expect(find.byIcon(Icons.chevron_right), findsNothing);
+        }
+      });
+
+      testWidgets('absent slots keep the bool chrome (light + dark)', (
+        tester,
+      ) async {
+        for (final dark in [false, true]) {
+          await _pump(
+            tester,
+            buildCatalogItem('basic', {}),
+            dark: dark,
+          );
+          expect(find.byIcon(Icons.person), findsOneWidget);
+          expect(find.byIcon(Icons.chevron_right), findsOneWidget);
+          expect(find.text('BB lead'), findsNothing);
+          expect(find.text('BB trail'), findsNothing);
+        }
+      });
+    });
+  });
 }

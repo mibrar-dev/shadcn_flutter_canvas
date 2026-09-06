@@ -528,9 +528,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     final roots = [
       for (final node in widget.doc.nodes)
         if (node.screenId == current.id && !effectivelyHidden(node))
-          if (node.parentId == null ||
-              byId[node.parentId] == null ||
-              byId[node.parentId]!.screenId != node.screenId)
+          if ((node.parentId == null ||
+                  byId[node.parentId] == null ||
+                  byId[node.parentId]!.screenId != node.screenId) &&
+              !_slotAssignedIds.contains(node.id))
             node,
     ];
 
@@ -550,23 +551,77 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     );
   }
 
+  /// Ids assigned into named slots anywhere in the doc (every value in any
+  /// node's [CanvasNode.slotNodes]).
+  ///
+  /// FLOW-VS-SLOT RULE (Track AA, canvas parity): slot assignment wins —
+  /// these nodes render ONLY inside their slot and are skipped by the flow
+  /// (roots in [_stageContent] and children in [_previewChildren], rows
+  /// included). The `parentId` edges are untouched; unknown ids skip nothing;
+  /// corrupt slot cycles with no live host render nothing (canvas parity).
+  Set<String> get _slotAssignedIds => {
+    for (final n in widget.doc.nodes)
+      for (final id in n.slotNodes.values) id,
+  };
+
+  /// Builds [node]'s named-slot widgets (Track AA generic injection, canvas
+  /// parity): for each [CanvasNode.slotNodes] entry whose child id resolves
+  /// to a visible same-screen node, recursively builds the child through
+  /// [_buildPreviewNode] (same tier/hidden/action semantics — hidden children
+  /// are omitted — and cycle-safe via [ancestors]), keyed by slot name.
+  /// Unknown/missing ids, cross-screen ids, and ids already on the build path
+  /// are omitted, never a crash. Callers spread the result over item props
+  /// (`{...props, ...slotWidgets}`) so builders read
+  /// `props['<slot>'] as Widget?`. No slot names are known here.
+  Map<String, Widget> _previewSlotWidgets(
+    CanvasNode node,
+    String tierName,
+    double stageWidth,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) {
+    if (node.slotNodes.isEmpty) return const {};
+    final byId = {for (final n in widget.doc.nodes) n.id: n};
+    final out = <String, Widget>{};
+    for (final entry in node.slotNodes.entries) {
+      final child = byId[entry.value];
+      if (child == null) continue;
+      if (child.screenId != node.screenId) continue;
+      if (child.id == node.id || ancestors.contains(child.id)) continue;
+      if (hidden(child)) continue;
+      out[entry.key] = _buildPreviewNode(
+        child,
+        tierName,
+        stageWidth,
+        hidden,
+        {...ancestors, node.id},
+      );
+    }
+    return out;
+  }
+
   /// Visible direct children of [node] for the preview tree: core
   /// [childrenOf] order (document order), same-screen only, hidden subtrees
   /// pruned, self-parents and ids already on the build path ([ancestors])
-  /// excluded so corrupt cyclic docs terminate. Never reimplements
+  /// excluded so corrupt cyclic docs terminate, and slot-assigned nodes
+  /// withheld (slot wins — see [_slotAssignedIds]). Never reimplements
   /// traversal — filtering over the core helper.
   List<CanvasNode> _previewChildren(
     CanvasNode node,
     bool Function(CanvasNode) hidden,
     Set<String> ancestors,
-  ) => [
-    for (final child in childrenOf(widget.doc, node.id))
-      if (child.screenId == node.screenId &&
-          child.id != node.id &&
-          !ancestors.contains(child.id) &&
-          !hidden(child))
-        child,
-  ];
+  ) {
+    final slotIds = _slotAssignedIds;
+    return [
+      for (final child in childrenOf(widget.doc, node.id))
+        if (child.screenId == node.screenId &&
+            child.id != node.id &&
+            !ancestors.contains(child.id) &&
+            !hidden(child) &&
+            !slotIds.contains(child.id))
+          child,
+    ];
+  }
 
   /// Whether [items] (already slot-filtered, breakpoint-merged) render
   /// children inside chrome: a non-row node whose first visible item's kind
@@ -583,9 +638,18 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// nested overrides apply exactly like roots. Node w/h pin via
   /// [applyNodeSizeValues] (same helper as the editor canvas).
   ///
+  /// TRACK AA NATURAL-FILL AUDIT: node-content columns here are all
+  /// `stretch` + `MainAxisSize.min` (intrinsic heights, full widths) and the
+  /// only vertical [Expanded]s in this file sit in bounded chrome (the top
+  /// bar's `Scaffold` column and the adaptive-nav demo's fixed stage box) —
+  /// never under the unbounded stage `ListView`. Row `stretch` rides
+  /// [IntrinsicHeight] (bounded by the tallest child).
+  ///
   /// Track Z1 full-bleed parity: fixed-w wraps in [Align] left so the pinned
   /// [SizedBox] keeps exact pixels inside the stretch-tight list (bare
   /// SizedBox would be forced full width); auto fills via stretch columns.
+  /// Track AA: top-left (canvas parity — pinned boxes ride the top naturally
+  /// inside tight-height slots instead of vertically centering).
   Widget _buildPreviewNode(
     CanvasNode node,
     String tierName,
@@ -602,7 +666,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     );
     if (node.w == null) return applyNodeSize(node, inner);
     return Align(
-      alignment: Alignment.centerLeft,
+      alignment: Alignment.topLeft,
       child: applyNodeSize(node, inner),
     );
   }
@@ -618,14 +682,26 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       return _buildPreviewRow(node, tierName, stageWidth, hidden, ancestors);
     }
     final items = visibleItems(node, tierName);
+    final slots = _previewSlotWidgets(
+      node,
+      tierName,
+      stageWidth,
+      hidden,
+      ancestors,
+    );
     final kids = _previewChildren(node, hidden, ancestors);
     if (kids.isEmpty) {
       // Track Z1 full-bleed parity: stretch so auto nodes fill the stage
       // width (fixed-w keeps pixels via [applyNodeSize]'s SizedBox win).
+      // Track AA: every item builds with this node's slotWidgets spread over
+      // its props (same generic injection as the canvas renderer).
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         mainAxisSize: MainAxisSize.min,
-        children: [for (final item in items) _previewItem(item)],
+        children: [
+          for (final item in items)
+            _previewItem(item, node, tierName, stageWidth, hidden, ancestors),
+        ],
       );
     }
     final next = {...ancestors, node.id};
@@ -638,7 +714,7 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       // Track R1: container chrome resolves bindings through the session.
       final built = buildCatalogItem(
         first.kind,
-        first.props,
+        {...first.props, ...slots},
         builtKids,
         _session,
       );
@@ -654,7 +730,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         mainAxisSize: MainAxisSize.min,
         children: [
           container,
-          for (final item in items.skip(1)) _previewItem(item),
+          for (final item in items.skip(1))
+            _previewItem(item, node, tierName, stageWidth, hidden, ancestors),
         ],
       );
     }
@@ -662,7 +739,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
-        for (final item in items) _previewItem(item),
+        for (final item in items)
+          _previewItem(item, node, tierName, stageWidth, hidden, ancestors),
         for (var i = 0; i < builtKids.length; i++) ...[
           const SizedBox(height: kFlowScreenGap),
           builtKids[i],
@@ -736,12 +814,25 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
 
   /// Action-less items render bare so every gesture reaches the real widget.
   /// Track R1: bound props resolve through the preview session.
-  Widget _previewItem(CanvasItem item) {
+  /// Track AA: the host node's slotWidgets spread over the item props (same
+  /// generic injection as the canvas renderer; Widget values pass bindings
+  /// through untouched).
+  Widget _previewItem(
+    CanvasItem item,
+    CanvasNode host,
+    String tierName,
+    double stageWidth,
+    bool Function(CanvasNode) hidden,
+    Set<String> ancestors,
+  ) {
     final built = alignIntrinsicKind(
       item.kind,
       buildCatalogItem(
         item.kind,
-        item.props,
+        {
+          ...item.props,
+          ..._previewSlotWidgets(host, tierName, stageWidth, hidden, ancestors),
+        },
         const [],
         _session,
       ),

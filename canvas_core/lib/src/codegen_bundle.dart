@@ -871,10 +871,40 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
     for (final n in doc.nodes)
       if (n.screenId == screen.id) n,
   ];
-  final nodes = [
+  // Track DD single ownership: slot-consumed nodes render inside their
+  // host's slot, never also as flow roots — UNLESS no plain root reaches
+  // them (a host slotting its own ancestor, or a host lost to a `parentId`
+  // cycle): unreachable slotted candidates fall back to roots so their
+  // subtrees still emit (cycle-guarded) instead of vanishing silently
+  // (mirrors `_rootNodes` in `codegen_single.dart`).
+  final slotted = _bundleSlotChildIds(doc);
+  final candidates = [
     for (final n in screenNodes)
       if (n.parentId == null || !nodeIds.contains(n.parentId)) n,
-  ]..sort((a, b) {
+  ];
+  final plain = [
+    for (final c in candidates) if (!slotted.contains(c.id)) c,
+  ];
+  var roots = candidates;
+  if (plain.length != candidates.length) {
+    final seen = {for (final r in plain) r.id};
+    final queue = [...plain];
+    while (queue.isNotEmpty) {
+      final cur = queue.removeLast();
+      for (final k in childrenOf(doc, cur.id)) {
+        if (seen.add(k.id)) queue.add(k);
+      }
+      for (final s in _bundleSlotKids(doc, cur)) {
+        if (seen.add(s.child.id)) queue.add(s.child);
+      }
+    }
+    roots = [
+      for (final c in candidates)
+        if (!slotted.contains(c.id) || !seen.contains(c.id)) c,
+    ];
+  }
+  final nodes = roots
+    ..sort((a, b) {
       final dy = a.y.compareTo(b.y);
       return dy != 0 ? dy : a.x.compareTo(b.x);
     });
@@ -3226,6 +3256,10 @@ CanvasNode _withBundleProps(
       hiddenOn: node.hiddenOn,
       breakpointValues: node.breakpointValues,
       slots: node.slots,
+      // Track DD carry: tier branches keep the host's slot composition and
+      // lock, so responsive + slotted nodes emit their slots per branch.
+      slotNodes: Map<String, String>.from(node.slotNodes),
+      locked: node.locked,
     );
 
 /// Writes [node]'s item rows at [indent]: real bodies for catalog kinds
@@ -3441,8 +3475,10 @@ void _writeBundleCore(
   String indent,
   Set<String> visited,
 ) {
-  final kids = childrenOf(doc, node.id);
-  if (kids.isEmpty) {
+  // Track DD: slot-consumed nodes never render as flow children here —
+  // they splice into the host's slot via the container/fallback branches.
+  final kids = _bundleFlowKids(doc, node.id);
+  if (kids.isEmpty && _bundleSlotKids(doc, node).isEmpty) {
     for (final item in node.items) {
       rows.add('$indent${_bundleItemComment(item, routes, ids)}');
       for (final line in _bundleItemExpr(item, routes, ids)) {
@@ -3460,6 +3496,7 @@ void _writeBundleCore(
     _writeBundleContainer(
       rows,
       doc,
+      node,
       node.items.single,
       kids,
       routes,
@@ -3533,6 +3570,73 @@ void _writeBundleResponsiveNode(
     ..add('$indent),');
 }
 
+/// Track DD: live node ids consumed as named-slot children anywhere in
+/// [doc] (values of every `slotNodes` map that resolve to a real node).
+/// Dangling ids are dropped — emission omits those slots (see
+/// [_bundleSlotKids]) instead of excluding anything from the flow.
+Set<String> _bundleSlotChildIds(ScreenDoc doc) {
+  final live = {for (final n in doc.nodes) n.id};
+  return {
+    for (final node in doc.nodes)
+      for (final childId in node.slotNodes.values)
+        if (live.contains(childId)) childId,
+  };
+}
+
+/// Track DD: `parentId`-children of [nodeId] minus slot-consumed nodes (see
+/// [_bundleSlotChildIds]). Slotless docs resolve identically to
+/// [childrenOf], so historical output is byte-identical.
+List<CanvasNode> _bundleFlowKids(ScreenDoc doc, String nodeId) {
+  final slotted = _bundleSlotChildIds(doc);
+  return [
+    for (final n in doc.nodes)
+      if (n.parentId == nodeId && !slotted.contains(n.id)) n,
+  ];
+}
+
+/// Track DD: resolved `(slotName, childNode)` pairs for [node] in
+/// deterministic (slot-name sorted) order. Missing children are dropped
+/// (missing child → omit slot), never a crash.
+List<({String slot, CanvasNode child})> _bundleSlotKids(
+  ScreenDoc doc,
+  CanvasNode node,
+) {
+  if (node.slotNodes.isEmpty) return const [];
+  final byId = {for (final n in doc.nodes) n.id: n};
+  final names = node.slotNodes.keys.toList()..sort();
+  final out = <({String slot, CanvasNode child})>[];
+  for (final name in names) {
+    final child = byId[node.slotNodes[name]];
+    if (child != null) out.add((slot: name, child: child));
+  }
+  return out;
+}
+
+/// Track DD: unindented statement blocks for [node]'s named-slot children
+/// (recursion funnels through [_writeBundleNode], so per-level tiers/taps/
+/// cycle-guards are preserved exactly like flow children). Each block carries
+/// a `// slot: <name>` trace line so goldens show which slot each spliced
+/// child fills; kids emitting nothing are dropped. Slot blocks splice BEFORE
+/// flow blocks into the same builder arg (the host kind's §2 slot for
+/// containers, the below-stack for leaves) — the named-slot collapse shared
+/// with `codegen_single.dart`, slot-first for canvas parity (see
+/// `_writeNonRowCore` there for the multi-slot-host note).
+List<List<String>> _bundleSlotBlocks(
+  ScreenDoc doc,
+  CanvasNode node,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  final blocks = <List<String>>[];
+  for (final s in _bundleSlotKids(doc, node)) {
+    final lines = _bundleSubtreeLines(doc, s.child, routes, ids, visited);
+    if (lines.isEmpty) continue;
+    blocks.add(['// slot: ${s.slot}', ...lines]);
+  }
+  return blocks;
+}
+
 /// Unindented statement lines for [node]'s full subtree (statement style,
 /// trailing commas), for splicing into container slots and tier-branch
 /// expressions. Recursion funnels through [_writeBundleNode], which is
@@ -3577,6 +3681,7 @@ List<String> _bundleSubtreeLines(
 void _writeBundleContainer(
   List<String> rows,
   ScreenDoc doc,
+  CanvasNode node,
   CanvasItem item,
   List<CanvasNode> kids,
   Map<String, String> routes,
@@ -3585,7 +3690,11 @@ void _writeBundleContainer(
   Set<String> visited,
 ) {
   rows.add('$indent${_bundleItemComment(item, routes, ids)}');
-  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  // Track DD: slot blocks splice before flow blocks (named-slot collapse).
+  final nested = [
+    ..._bundleSlotBlocks(doc, node, routes, ids, visited),
+    ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+  ];
   for (final line in _bundleWrapTap(
     _bundleContainerBody(item, nested),
     item,
@@ -3610,7 +3719,11 @@ void _writeBundleFallback(
   String indent,
   Set<String> visited,
 ) {
-  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  // Track DD: slot blocks stack before flow blocks (named-slot collapse).
+  final nested = [
+    ..._bundleSlotBlocks(doc, node, routes, ids, visited),
+    ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+  ];
   final body = _bundleFallbackLines(node.items, nested, routes, ids);
   if (body.isEmpty) {
     rows.add('${indent}const SizedBox.shrink(),');
@@ -3715,8 +3828,13 @@ String _bundleBranchExpr(
   Set<String> ids,
   Set<String> visited,
 ) {
-  final kids = childrenOf(doc, node.id);
-  if (kids.isEmpty) return _bundleNodeExpr(items, routes, ids);
+  // Track DD: flow children minus slot-consumed nodes; slot blocks splice
+  // before flow blocks (named-slot collapse, same as the statement paths).
+  final kids = _bundleFlowKids(doc, node.id);
+  final slotBlocks = _bundleSlotBlocks(doc, node, routes, ids, visited);
+  if (kids.isEmpty && slotBlocks.isEmpty) {
+    return _bundleNodeExpr(items, routes, ids);
+  }
   if (node.isRow) {
     final lines = <String>[];
     _writeBundleRow(
@@ -3732,7 +3850,10 @@ String _bundleBranchExpr(
   }
   if (items.length == 1 &&
       _bundleContainerKinds.contains(items.single.kind)) {
-    final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+    final nested = [
+      ...slotBlocks,
+      ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+    ];
     final lines = _bundleWrapTap(
       _bundleContainerBody(items.single, nested),
       items.single,
@@ -3741,7 +3862,10 @@ String _bundleBranchExpr(
     );
     return _stripBundleTrailingComma(lines.join('\n'));
   }
-  final nested = _bundleNestedBlocks(doc, kids, routes, ids, visited);
+  final nested = [
+    ...slotBlocks,
+    ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+  ];
   final lines = _bundleFallbackLines(items, nested, routes, ids);
   if (lines.isEmpty) return 'SizedBox.shrink()';
   return _stripBundleTrailingComma(lines.join('\n'));
@@ -3791,7 +3915,8 @@ void _writeBundleRow(
       }
     }
   }
-  for (final child in childrenOf(doc, node.id)) {
+  // Track DD: slot-consumed nodes never render as row children either.
+  for (final child in _bundleFlowKids(doc, node.id)) {
     empty = false;
     separator();
     _writeBundleRowChild(rows, doc, child, routes, ids, childIndent, visited);
@@ -3872,7 +3997,10 @@ void _writeBundleRowChildCore(
   }
   final flex = child.flex ?? 1;
   final wrapper = expand == 'expanded' ? 'Expanded' : 'Flexible';
-  if (child.isRow || childrenOf(doc, child.id).isNotEmpty) {
+  // Track DD: slotted hosts take the subtree path even with no flow kids.
+  if (child.isRow ||
+      _bundleFlowKids(doc, child.id).isNotEmpty ||
+      _bundleSlotKids(doc, child).isNotEmpty) {
     // Flex stays outside the whole subtree (mirrors `codegen_single.dart`).
     final nested = _bundleSubtreeLines(doc, child, routes, ids, visited);
     final text = nested.isEmpty

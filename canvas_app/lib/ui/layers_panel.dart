@@ -22,6 +22,12 @@
 /// lighter secondary tint. A count header ("N selected") with a Shift-range
 /// hint plus delete-set/group/ungroup actions sits above the screens while
 /// anything is selected.
+///
+/// Track DD: every row carries a lock toggle (`store.setNodeLocked`; locked
+/// rows show the filled lock glyph) and hosts render their named-slot chips
+/// directly underneath (read-only `slot → child` labels — tap selects the
+/// child, dangling refs show `missing`). The header delete-set skips locked
+/// ids (they survive; see [_LayersBodyState._onDeletePressed]).
 library;
 
 import 'package:flutter/foundation.dart' as foundation;
@@ -102,8 +108,11 @@ class LayersPanel extends StatelessWidget {
   /// selection cannot round-trip through the single-id [onSelectNode]).
   final VoidCallback? onUngroupSelection;
 
-  /// Header "Delete selection" action. Null falls back to one
-  /// `store.deleteNode` per selected id plus [onSelectNode] `(null)`.
+/// Header "Delete selection" action. Null falls back to one
+/// `store.deleteNode` per selected id plus [onSelectNode] `(null)`.
+/// Track DD: the fallback skips locked ids (they survive; the selection
+/// collapses onto the first skipped lock, or clears when nothing was
+/// skipped).
   final VoidCallback? onDeleteSelection;
 
   @override
@@ -338,16 +347,27 @@ class _LayersBodyState extends State<_LayersBody> {
   /// Header delete-set: the wired callback when present (the shell deletes
   /// the whole set and clears), else one [CanvasStore.deleteNode] per id plus
   /// a clear (cascade covers parent+child pairs, unknown ids no-op).
+  ///
+  /// Track DD: locked ids are skipped (the store would no-op them anyway) —
+  /// they survive and the selection collapses onto the first survivor so the
+  /// skip stays visible; the selection clears only when nothing was skipped.
   void _onDeletePressed() {
     final callback = widget.onDeleteSelection;
     if (callback != null) {
       callback();
       return;
     }
+    final byId = {for (final n in widget.store.doc.nodes) n.id: n};
+    final skippedLocked = <String>[];
     for (final id in _effectiveSelection().toList()) {
+      final node = byId[id];
+      if (node != null && node.locked) {
+        skippedLocked.add(id);
+        continue;
+      }
       widget.store.deleteNode(id);
     }
-    widget.onSelectNode(null);
+    widget.onSelectNode(skippedLocked.isEmpty ? null : skippedLocked.first);
   }
 
   /// Header group: the wired callback when present (the shell groups and
@@ -435,6 +455,9 @@ class _LayersBodyState extends State<_LayersBody> {
         selected: selected,
         primary: primary,
       ),
+      // Track DD: named-slot chips sit directly under their host (read-only
+      // labels — tap selects the child; dangling refs show `missing`).
+      ..._slotChips(doc, node, depth),
       if (!_collapsed.contains(node.id))
         for (var ci = 0; ci < kids.length; ci++)
           ..._subtreeRows(
@@ -451,6 +474,66 @@ class _LayersBodyState extends State<_LayersBody> {
     ];
   }
 
+  /// Track DD slot chips for [node]: one read-only row per `slotNodes`
+  /// entry (slot-name sorted, indented one level under the host). Live
+  /// children tap-select (modifier-aware, like rows); dangling refs render
+  /// a `missing` label with no tap target. Chips are shortcuts, not tree
+  /// rows — the child keeps its own tree position.
+  List<Widget> _slotChips(ScreenDoc doc, CanvasNode node, int depth) {
+    if (node.slotNodes.isEmpty) return const [];
+    final byId = {for (final n in doc.nodes) n.id: n};
+    final names = node.slotNodes.keys.toList()..sort();
+    return [
+      for (final slot in names)
+        _slotChip(node, slot, byId[node.slotNodes[slot]], depth),
+    ];
+  }
+
+  /// One slot chip (see [_slotChips]).
+  Widget _slotChip(
+    CanvasNode host,
+    String slot,
+    CanvasNode? child,
+    int depth,
+  ) {
+    final colors = EditorTheme.of(context);
+    final label = child == null
+        ? '$slot → missing'
+        : '$slot → ${_kindLabel(child)} · ${child.id}';
+    final row = Row(
+      children: [
+        const SizedBox(width: _kActionButtonSize),
+        Icon(
+          Icons.link,
+          size: _kActionIconSize,
+          color: colors.onSurfaceVariant,
+        ),
+        const SizedBox(width: EditorMetrics.tileGap),
+        Expanded(
+          child: Text(
+            label,
+            key: ValueKey('slot-chip-${host.id}-$slot'),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: EditorType.tileLabel.copyWith(
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+      ],
+    );
+    final padded = Padding(
+      padding: EdgeInsets.only(left: (depth + 1) * EditorMetrics.panelInset),
+      child: row,
+    );
+    if (child == null) return padded;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _onRowTap(child.id),
+      child: padded,
+    );
+  }
+
   /// One layer row wired to the store: tap selects (rows select for gap
   /// editing) with multi-aware modifiers (see [_onRowTap]), duplicate/delete
   /// act, and the reorder buttons move within the node's visual group
@@ -458,6 +541,9 @@ class _LayersBodyState extends State<_LayersBody> {
   /// passing the group-relative doc index. [depth] indents the row one level
   /// per nesting depth; [hasChildren] shows the expand/collapse toggle
   /// (collapsed hides the subtree via [_collapsed]).
+  ///
+  /// Track DD: rows carry a lock toggle writing through the undoable
+  /// `store.setNodeLocked` (locked rows show the filled lock glyph).
   Widget _layerRow(
     CanvasNode node,
     int groupLength,
@@ -473,7 +559,10 @@ class _LayersBodyState extends State<_LayersBody> {
         node: node,
         selected: selected.contains(node.id),
         primary: node.id == primary,
+        locked: node.locked,
         onTap: () => _onRowTap(node.id),
+        onToggleLock: () =>
+            widget.store.setNodeLocked(node.id, !node.locked),
         onDuplicate: () => widget.store.duplicateNode(node.id),
         onDelete: () => widget.store.deleteNode(node.id),
         // Displayed frontmost-first: group-relative doc index of this row is
@@ -604,6 +693,7 @@ String _kindLabel(CanvasNode node) {
 /// edges ([onMoveUp] null on the frontmost row, [onMoveDown] on the backmost).
 class _LayerAction extends StatelessWidget {
   const _LayerAction({
+    super.key,
     required this.tooltip,
     required this.icon,
     required this.onPressed,
@@ -643,7 +733,9 @@ class _LayerRow extends StatefulWidget {
     required this.node,
     required this.selected,
     required this.primary,
+    required this.locked,
     required this.onTap,
+    required this.onToggleLock,
     required this.onDuplicate,
     required this.onDelete,
     required this.onMoveUp,
@@ -662,7 +754,12 @@ class _LayerRow extends StatefulWidget {
   /// ([selected] without [primary]) get the lighter tint only. Both use the
   /// [EditorColors.toolbarActive] token.
   final bool primary;
+
+  /// Track DD: editor lock — locked rows show the filled lock glyph and the
+  /// toggle flips it via [onToggleLock].
+  final bool locked;
   final VoidCallback onTap;
+  final VoidCallback onToggleLock;
   final VoidCallback onDuplicate;
   final VoidCallback onDelete;
 
@@ -749,6 +846,12 @@ class _LayerRowState extends State<_LayerRow> {
                 tooltip: 'Move down',
                 icon: Icons.arrow_downward,
                 onPressed: widget.onMoveDown,
+              ),
+              _LayerAction(
+                key: ValueKey('layer-lock-${widget.node.id}'),
+                tooltip: widget.locked ? 'Unlock' : 'Lock',
+                icon: widget.locked ? Icons.lock : Icons.lock_outline,
+                onPressed: widget.onToggleLock,
               ),
               _LayerAction(
                 tooltip: 'Duplicate',

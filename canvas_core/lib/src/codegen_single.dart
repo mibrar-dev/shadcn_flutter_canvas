@@ -4482,11 +4482,100 @@ List<_Decl>? _topLevelDecls(String body) {
 /// row via [_writeFlowChild] and are excluded here.
 List<CanvasNode> _rootNodes(ScreenDoc doc, String screenId) {
   final ids = {for (final n in doc.nodes) n.id};
-  return [
+  final candidates = [
     for (final node in doc.nodes)
       if (node.screenId == screenId &&
           (node.parentId == null || !ids.contains(node.parentId))) node,
   ];
+  // Track DD single ownership: slot-consumed nodes render inside their
+  // host's slot, never also as flow roots — UNLESS no plain root reaches
+  // them (a host slotting its own ancestor, or a host lost to a `parentId`
+  // cycle): unreachable slotted candidates fall back to roots so their
+  // subtrees still emit (cycle-guarded) instead of vanishing silently.
+  final slotted = _slotChildIds(doc);
+  final plain = [
+    for (final c in candidates) if (!slotted.contains(c.id)) c,
+  ];
+  if (plain.length == candidates.length) return candidates;
+  final seen = {for (final r in plain) r.id};
+  final queue = [...plain];
+  while (queue.isNotEmpty) {
+    final cur = queue.removeLast();
+    for (final k in childrenOf(doc, cur.id)) {
+      if (seen.add(k.id)) queue.add(k);
+    }
+    for (final s in _slotKids(doc, cur)) {
+      if (seen.add(s.child.id)) queue.add(s.child);
+    }
+  }
+  return [
+    for (final c in candidates)
+      if (!slotted.contains(c.id) || !seen.contains(c.id)) c,
+  ];
+}
+
+/// Track DD: live node ids consumed as named-slot children anywhere in
+/// [doc] (values of every `slotNodes` map that resolve to a real node).
+/// Dangling ids are dropped here — emission omits those slots (see
+/// [_slotKids]) instead of excluding anything from the flow.
+Set<String> _slotChildIds(ScreenDoc doc) {
+  final live = {for (final n in doc.nodes) n.id};
+  return {
+    for (final node in doc.nodes)
+      for (final childId in node.slotNodes.values)
+        if (live.contains(childId)) childId,
+  };
+}
+
+/// Track DD: `parentId`-children of [nodeId] minus slot-consumed nodes (see
+/// [_slotChildIds]). Slotless docs resolve identically to [childrenOf], so
+/// historical output is byte-identical.
+List<CanvasNode> _flowKids(ScreenDoc doc, String nodeId) {
+  final slotted = _slotChildIds(doc);
+  return [
+    for (final n in doc.nodes)
+      if (n.parentId == nodeId && !slotted.contains(n.id)) n,
+  ];
+}
+
+/// Track DD: resolved `(slotName, childNode)` pairs for [node] in
+/// deterministic (slot-name sorted) order. Missing children are dropped
+/// (missing child → omit slot), never a crash.
+List<({String slot, CanvasNode child})> _slotKids(
+  ScreenDoc doc,
+  CanvasNode node,
+) {
+  if (node.slotNodes.isEmpty) return const [];
+  final byId = {for (final n in doc.nodes) n.id: n};
+  final names = node.slotNodes.keys.toList()..sort();
+  final out = <({String slot, CanvasNode child})>[];
+  for (final name in names) {
+    final child = byId[node.slotNodes[name]];
+    if (child != null) out.add((slot: name, child: child));
+  }
+  return out;
+}
+
+/// Track DD: unindented statement strings for [node]'s named-slot children
+/// (each: tap comments, tap wraps, and its own responsive wrapper when
+/// responsive — recursion funnels through [_writeFlowChild], so per-level
+/// tiers/taps/cycle-guards are preserved exactly like flow children). Each
+/// unit carries a `// slot: <name>` trace line so goldens show which slot
+/// each spliced child fills. Units emitting nothing are dropped.
+List<String> _slotUnits(
+  ScreenDoc doc,
+  CanvasNode node,
+  Set<String> visited,
+) {
+  final units = <String>[];
+  for (final s in _slotKids(doc, node)) {
+    final buf = StringBuffer();
+    _writeFlowChild(buf, doc, s.child, '', visited);
+    final text = buf.toString().trimRight();
+    if (text.isEmpty) continue;
+    units.add('// slot: ${s.slot}\n$text');
+  }
+  return units;
 }
 
 /// Track C3 (COMPOSITION.md §2): kinds whose child slot codegen splices
@@ -4694,7 +4783,8 @@ String? _tapCommentFor(ScreenDoc doc, CanvasNode node) {
   if (!node.isRow &&
       node.items.length == 1 &&
       node.items.single.action != null &&
-      childrenOf(doc, node.id).isEmpty) {
+      _flowKids(doc, node.id).isEmpty &&
+      _slotKids(doc, node).isEmpty) {
     return _tapCommentLine(node.items.single);
   }
   return null;
@@ -4734,6 +4824,10 @@ CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
       hiddenOn: node.hiddenOn,
       breakpointValues: node.breakpointValues,
       slots: node.slots,
+      // Track DD carry: tier branches keep the host's slot composition and
+      // lock, so responsive + slotted nodes emit their slots per branch.
+      slotNodes: Map<String, String>.from(node.slotNodes),
+      locked: node.locked,
     );
 
 /// Renders [node]'s content as a single widget expression (unindented, no
@@ -4753,9 +4847,11 @@ CanvasNode _withProps(CanvasNode node, Map<String, dynamic> overrides) =>
 /// [visited] guards the capture (the node's own id is already a member —
 /// [_writeFlowChild] adds it before dispatching here).
 String _nodeContentExpr(ScreenDoc doc, CanvasNode node, Set<String> visited) {
-  final kids = childrenOf(doc, node.id);
+  // Track DD: flow children minus slot-consumed nodes; slot children ride
+  // the same capture via [_writeNonRowCore] (see [_slotUnits]).
+  final kids = _flowKids(doc, node.id);
   if (!node.isRow) {
-    if (kids.isEmpty) {
+    if (kids.isEmpty && _slotKids(doc, node).isEmpty) {
       if (node.items.length == 1) {
         final item = node.items.single;
         final expr = _itemExpression(item);
@@ -4835,7 +4931,8 @@ void _writeBranch(
   if (!node.isRow &&
       node.items.length == 1 &&
       node.items.single.action != null &&
-      childrenOf(doc, node.id).isEmpty) {
+      _flowKids(doc, node.id).isEmpty &&
+      _slotKids(doc, node).isEmpty) {
     out.writeln('$indent${_tapCommentLine(node.items.single)}');
   }
   _writeReturn(
@@ -5006,8 +5103,10 @@ void _writeFlowChildCore(
   Set<String> visited,
 ) {
   if (!node.isRow) {
-    final kids = childrenOf(doc, node.id);
-    if (kids.isEmpty) {
+    // Track DD: slot-consumed nodes never render as flow children here —
+    // they splice into the host's slot via [_writeNonRowCore] instead.
+    final kids = _flowKids(doc, node.id);
+    if (kids.isEmpty && _slotKids(doc, node).isEmpty) {
       _writeItemBlock(out, doc, node.items, indent);
       return;
     }
@@ -5039,7 +5138,8 @@ void _writeFlowChildCore(
     separator();
     _writeItemBlock(out, doc, node.items, childIndent);
   }
-  for (final child in childrenOf(doc, node.id)) {
+  // Track DD: slot-consumed nodes never render as row children either.
+  for (final child in _flowKids(doc, node.id)) {
     empty = false;
     separator();
     _writeRowChild(out, doc, child, childIndent, visited);
@@ -5124,7 +5224,10 @@ void _writeRowChildCore(
 ) {
   final expand = child.expand;
   if (expand != 'expanded' && expand != 'flex') {
-    if (child.isRow || childrenOf(doc, child.id).isNotEmpty) {
+    // Track DD: slotted hosts recurse even with no flow children.
+    if (child.isRow ||
+        _flowKids(doc, child.id).isNotEmpty ||
+        _slotKids(doc, child).isNotEmpty) {
       _writeFlowChild(out, doc, child, indent, visited);
     } else {
       _writeItemBlock(out, doc, child.items, indent);
@@ -5148,8 +5251,11 @@ void _writeRowChildCore(
     out.writeln('$indent),');
     return;
   }
-  final kids = childrenOf(doc, child.id);
-  if (kids.isNotEmpty) {
+  // Track DD: slotted hosts take the subtree path even with no flow kids
+  // (the flex wrapper stays outside the whole subtree, slots included).
+  final hasKids = _flowKids(doc, child.id).isNotEmpty ||
+      _slotKids(doc, child).isNotEmpty;
+  if (hasKids) {
     // Flex stays outside the whole subtree (the layout role is
     // tap-independent and tier-independent, like the row/responsive
     // wrappers); the subtree carries its own tap wraps and conditionals.
@@ -5211,11 +5317,27 @@ void _writeItemBlock(
   }
 }
 
-/// Writes a non-row node WITH children ([kids] is non-empty; [node.id] is
-/// already in [visited]): a single-item container node splices the children
-/// into its §2 slot ([_writeContainerNode]); anything else (multi-item,
-/// leaf-kind, empty, or unknown-kind nodes) stacks the children BELOW the
-/// node's own widget ([_writeLeafFallback], COMPOSITION.md §1).
+/// Writes a non-row node WITH children ([kids] is non-empty, or the node
+/// carries named slots; [node.id] is already in [visited]): a single-item
+/// container node splices the children into its §2 slot
+/// ([_writeContainerNode]); anything else (multi-item, leaf-kind, empty, or
+/// unknown-kind nodes) stacks the children BELOW the node's own widget
+/// ([_writeLeafFallback], COMPOSITION.md §1).
+///
+/// Track DD (named-slot collapse): resolved slot children ([_slotUnits],
+/// slot-name sorted with `// slot:` trace lines) splice BEFORE the flow
+/// children into the SAME builder arg — the host kind's §2 slot for
+/// containers, the below-stack for leaves. Slot-first mirrors the canvas
+/// render complement order (`_withContentSlot` in `component_catalog.dart`:
+/// slot, then spliced children), so export keeps canvas parity. Slotless
+/// nodes pass empty slot units, so historical output is byte-identical.
+///
+/// NOTE (multi-slot hosts): kinds with several named slots (`scaffold`
+/// `appBar`/`body`/`footer`, `basic` `leading`/`trailing`) collapse every
+/// resolved slot into the one §2 splice in slot-name order — the render
+/// injects those into distinct kit params (replace semantics), which the
+/// generic emitters cannot address per kind. Single-`content` hosts (the
+/// common case) match the render exactly.
 void _writeNonRowCore(
   StringBuffer out,
   ScreenDoc doc,
@@ -5224,12 +5346,16 @@ void _writeNonRowCore(
   String indent,
   Set<String> visited,
 ) {
+  final nested = [
+    ..._slotUnits(doc, node, visited),
+    ..._childUnits(doc, kids, visited),
+  ];
   if (node.items.length == 1 &&
       _kContainerKinds.contains(node.items.single.kind)) {
-    _writeContainerNode(out, doc, node.items.single, kids, indent, visited);
+    _writeContainerNode(out, doc, node.items.single, nested, indent);
     return;
   }
-  _writeLeafFallback(out, doc, node, kids, indent, visited);
+  _writeLeafFallback(out, doc, node, nested, indent);
 }
 
 /// Writes a container node: its item expression with recursively emitted
@@ -5241,16 +5367,15 @@ void _writeContainerNode(
   StringBuffer out,
   ScreenDoc doc,
   CanvasItem item,
-  List<CanvasNode> kids,
+  List<String> nested,
   String indent,
-  Set<String> visited,
 ) {
   final taps = _tapTargets(doc);
   final comment = _tapCommentLine(item);
   if (comment != null) {
     out.writeln('$indent$comment');
   }
-  var expr = _itemExpression(item, _childUnits(doc, kids, visited));
+  var expr = _itemExpression(item, nested);
   expr = _tapWrapStatement(expr, item, taps) ?? expr;
   for (final line in expr.split('\n')) {
     out.writeln('$indent$line');
@@ -5266,13 +5391,12 @@ void _writeLeafFallback(
   StringBuffer out,
   ScreenDoc doc,
   CanvasNode node,
-  List<CanvasNode> kids,
+  List<String> nested,
   String indent,
-  Set<String> visited,
 ) {
   final units = [
     ..._ownItemUnits(doc, node.items),
-    ..._childUnits(doc, kids, visited),
+    ...nested,
   ];
   if (units.isEmpty) {
     out.writeln('${indent}SizedBox.shrink(),');
