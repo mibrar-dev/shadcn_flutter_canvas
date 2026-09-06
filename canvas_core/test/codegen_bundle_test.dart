@@ -2026,6 +2026,89 @@ void main() {
       expect(respScreen, contains("'Wide'"));
     });
   });
+
+  group('Track X2 fill parity (SizedBox + stretch Column + Expanded-when-h)', () {
+    ScreenDoc x2bDoc(List<Map<String, dynamic>> nodes) => ScreenDoc.fromJson({
+          'screens': [
+            {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          ],
+          'nodes': nodes,
+          'theme': {
+            'paletteKey': 'clean-slate',
+            'dark': true,
+            'shape': 'rounded',
+            'motion': 'standard',
+          },
+          'meta': {'title': 'Fill', 'brief': ''},
+        });
+
+    Map<String, dynamic> x2bLeaf({
+      required String id,
+      double? w,
+      double? h,
+    }) => {
+          'id': id,
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i$id', 'kind': 'button', 'label': 'Go'},
+          ],
+          if (w != null) 'w': w,
+          if (h != null) 'h': h,
+        };
+
+    String x2bScreen(ScreenDoc doc) => buildCleanBundle(doc, const {})
+        .files['lib/ui/screens/home_screen.dart']!;
+
+    test('sized w+h emits fill box with stretch Column and Expanded', () {
+      final screen = x2bScreen(x2bDoc([x2bLeaf(id: 'n1', w: 120, h: 80)]));
+      expect(screen, contains('width: 120,'));
+      expect(screen, contains('height: 80,'));
+      expect(
+        screen,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(screen, contains('Expanded('));
+      expect(screen, contains('Go'));
+      expect(
+        screen.indexOf('width: 120,'),
+        lessThan(screen.indexOf('CrossAxisAlignment.stretch')),
+      );
+      expect(
+        screen.indexOf('CrossAxisAlignment.stretch'),
+        lessThan(screen.indexOf('Expanded(')),
+      );
+    });
+
+    test('w-only emits stretch without Expanded', () {
+      final screen = x2bScreen(x2bDoc([x2bLeaf(id: 'n1', w: 200)]));
+      expect(screen, contains('width: 200,'));
+      expect(
+        screen,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(screen, isNot(contains('height:')));
+      expect(screen, isNot(contains('Expanded(')));
+    });
+
+    test('h-only emits stretch with Expanded', () {
+      final screen = x2bScreen(x2bDoc([x2bLeaf(id: 'n1', h: 90)]));
+      expect(screen, contains('height: 90,'));
+      expect(
+        screen,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(screen, contains('Expanded('));
+    });
+
+    test('unsized docs emit no fill', () {
+      final screen = x2bScreen(x2bDoc([x2bLeaf(id: 'n1')]));
+      expect(screen, isNot(contains('CrossAxisAlignment.stretch')));
+      expect(screen, isNot(contains('Expanded(')));
+      expect(screen, isNot(contains('width:')));
+    });
+  });
 }
 
 /// Builds a one-screen doc from [nodes] for the C3 recursion tests.

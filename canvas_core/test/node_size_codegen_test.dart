@@ -146,7 +146,10 @@ void main() {
       );
     });
 
-    test('h-only row child without flex rides a bare SizedBox', () {
+    test('h-only row child without flex fills via inner Expanded', () {
+      // Track X2 fill parity: h-pinned content fills vertically with an
+      // inner Expanded (matching canvas applyNodeSizeValues) — no flex
+      // *role* (no Flexible/Expanded wrapper outside the SizedBox).
       final out = buildSingleFile(
         _doc([
           _row(id: 'r1'),
@@ -155,7 +158,7 @@ void main() {
         const {},
       );
       expect(out, contains('height: 90,'));
-      expect(out, isNot(contains('Expanded(')));
+      expect(out, contains('Expanded('));
       expect(out, isNot(contains('Flexible(')));
     });
 

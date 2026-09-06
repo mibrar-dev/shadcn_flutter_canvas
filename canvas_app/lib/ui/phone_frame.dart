@@ -24,9 +24,28 @@ import 'package:canvas_core/canvas_core.dart';
 /// the screen's far edges (content clips at the frame instead of exploding).
 const double _kMinNodeExtent = 48.0;
 
-/// Track U2 resize-handle hit box (square side, logical px). Handles sit
-/// inside the selected chrome edges (see [_ScreenSurfaceState._withHandles]).
-const double _kHandleSize = 14.0;
+/// Track X1 modern bezel: the visual padding inside the frame (the measured
+/// [EditorMetrics.phoneBezel] 7.5 stays as the OUTER budget — see the
+/// `outerWidth` formula at the `ScreenSurface` site and [screenOuterWidth] —
+/// so the outer body keeps its measured geometry while the freed pixels go to
+/// the screen). All screen-origin math ([_ScreenSurfaceState._nodeRect], the
+/// drop/hover conversions) subtracts this, never the token.
+const double _kFrameBezel = 4.0;
+
+/// Track X1 resize-handle gesture area (square side, logical px). The
+/// pointer target is >= 28px per side while the painted square stays small
+/// (see [_kHandleVisualSize]); handles sit inside the selected chrome edges
+/// (see [_ScreenSurfaceState._withHandles]).
+const double _kHandleHitSize = 28.0;
+
+/// Track X1 painted handle square (square side, logical px): the visual
+/// stays 10-12px, centered in the transparent [_kHandleHitSize] hit area.
+const double _kHandleVisualSize = 12.0;
+
+/// Track X1 status-bar strip height (logical px): the overlaid phone status
+/// bar (time + glyphs) plus the matching top reserve in the screen scroll
+/// view so no content hides underneath it.
+const double _kStatusBarHeight = 28.0;
 
 /// Snap threshold for drag aids, in logical px in pre-zoom screen space: a
 /// palette-drag pointer within this distance of a guide axis shows the guide
@@ -140,11 +159,70 @@ class PhoneFrame extends StatelessWidget {
       decoration: BoxDecoration(
         color: colors.bezel,
         borderRadius: BorderRadius.circular(EditorMetrics.phoneOuterRadius),
+        // Track X1 frame polish: a soft drop shadow grounds the device on the
+        // canvas well. The shadow paints outside the measured box without
+        // changing layout (a decoration *border* would deflate the child by
+        // its width and shift the screen origin — never add one here; the
+        // drop math subtracts exactly [_kFrameBezel]).
+        // Token colors only — no hardcoded hex.
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.28),
+            blurRadius: 28,
+            offset: const Offset(0, 10),
+          ),
+        ],
       ),
-      padding: const EdgeInsets.all(EditorMetrics.phoneBezel),
+      padding: const EdgeInsets.all(_kFrameBezel),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(EditorMetrics.phoneInnerRadius),
         child: ColoredBox(color: screenColor, child: child),
+      ),
+    );
+  }
+}
+
+/// Track X1 phone status bar: overlaid strip with the classic `9:41` time on
+/// the left and signal/wifi/battery glyphs on the right. Token-styled
+/// ([EditorColors.onSurfaceVariant] on the screen background); `IgnorePointer`
+/// Wrapped in [IgnorePointer] so it never claims taps, selection, or drops.
+class _StatusBar extends StatelessWidget {
+  final EditorColors colors;
+  final Color background;
+
+  const _StatusBar({required this.colors, required this.background});
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        height: _kStatusBarHeight,
+        color: background,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Row(
+          children: [
+            Text(
+              '9:41',
+              style: EditorType.readout.copyWith(
+                color: colors.onSurfaceVariant,
+              ),
+            ),
+            const Spacer(),
+            Icon(
+              Icons.signal_cellular_alt,
+              size: 14,
+              color: colors.onSurfaceVariant,
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.wifi, size: 14, color: colors.onSurfaceVariant),
+            const SizedBox(width: 4),
+            Icon(
+              Icons.battery_full,
+              size: 16,
+              color: colors.onSurfaceVariant,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -188,7 +266,13 @@ class ScreenLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
-    final activeId = specForScreenDevice(device).id;
+    final spec = specForScreenDevice(device);
+    final activeId = spec.id;
+    // Track X1: live WxH readout of the screen device (frameless fluid
+    // presets carry no fixed height, so they read width-only).
+    final dims = spec.height == null
+        ? '${spec.width.round()}'
+        : '${spec.width.round()}×${spec.height!.round()}';
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -217,6 +301,11 @@ class ScreenLabel extends StatelessWidget {
               color: selected ? colors.onSurface : colors.onSurfaceVariant,
             ),
           ),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          dims,
+          style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
         ),
       ],
     );
@@ -342,7 +431,10 @@ CrossAxisAlignment rowCrossAxis(String? value) {
 /// (canvas shares, export shrink-wraps as before) — documented on
 /// [CanvasNode].
 Widget wrapRowChild(CanvasNode child, Widget content) {
-  if (child.w != null) return SizedBox(width: child.w, child: content);
+  // Track X1 fill: a fixed-w cell fills its pixels through the same
+  // [applyNodeSizeValues] rule (stretch column, intrinsic height) instead of
+  // a bare SizedBox.
+  if (child.w != null) return applyNodeSizeValues(child.w, null, content);
   switch (child.expand) {
     case 'expanded':
       return Expanded(flex: child.flex ?? 1, child: content);
@@ -357,11 +449,16 @@ Widget wrapRowChild(CanvasNode child, Widget content) {
   }
 }
 
-/// Applies a node's explicit size to [content] (Track U2): null dims pass
-/// through untouched (auto — today's behavior), set dims wrap in a
-/// [SizedBox]. Pure widget helper shared by leaves, containers, and row
-/// bodies so canvas sizing has one rule; codegen mirrors it with the same
-/// `SizedBox` idiom.
+/// Applies a node's explicit size to [content] (Track U2, fill Track X1):
+/// null dims pass through untouched (auto — today's behavior, byte-identical
+/// tree), set dims wrap in a [SizedBox] whose child FILLS the pinned box —
+/// a `Column` with [CrossAxisAlignment.stretch] holding [content] directly
+/// for width-only pins (intrinsic height) or in an [Expanded] once a height
+/// is pinned (fills both axes). Without the stretch layer the intermediate
+/// start-aligned content columns loosen the tight box and kit surfaces paint
+/// intrinsic top-left while the selection ring grows (the reported bug).
+/// Pure widget helper shared by leaves, containers, and row bodies so canvas
+/// sizing has one rule; codegen mirrors it with the same `SizedBox` idiom.
 Widget applyNodeSize(CanvasNode node, Widget content) =>
     applyNodeSizeValues(node.w, node.h, content);
 
@@ -369,7 +466,24 @@ Widget applyNodeSize(CanvasNode node, Widget content) =>
 /// (in-gesture tentative ?? stored) dims, used while a resize drag is live.
 Widget applyNodeSizeValues(double? w, double? h, Widget content) {
   if (w == null && h == null) return content;
-  return SizedBox(width: w, height: h, child: content);
+  if (h == null) {
+    return SizedBox(
+      width: w,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [content],
+      ),
+    );
+  }
+  return SizedBox(
+    width: w,
+    height: h,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [Expanded(child: content)],
+    ),
+  );
 }
 
 /// Converts a drag [delta] from global (pointer) px to screen-local logical
@@ -405,6 +519,11 @@ double clampResizeHeight(double value, double maxHeight) {
 /// `'right'`/`'bottom'`/`'corner'` (used by resize-handle tests).
 ValueKey<String> resizeHandleKey(String nodeId, String edge) =>
     ValueKey<String>('resize-$edge:$nodeId');
+
+/// Finder key for the Track X1 live WxH readout chip shown near the selected
+/// node while its resize drag is live (used by stretch/handle tests).
+ValueKey<String> resizeReadoutKey(String nodeId) =>
+    ValueKey<String>('resize-readout:$nodeId');
 
 /// Insertion index for [pointerMain] (pointer position along a container's
 /// main axis, in screen-local logical px) given the container's
@@ -554,6 +673,23 @@ class ScreenSurface extends StatefulWidget {
 }
 
 class _ScreenSurfaceState extends State<ScreenSurface> {
+  /// Track X1 vertical scroll for over-tall content: the screen viewport keeps
+  /// its fixed frame height while the flow scrolls inside it (see [build]).
+  /// Drop/hover math resolves in DOC coords (viewport pointer + scroll offset)
+  /// so the landing and the insert line agree while scrolled.
+  final ScrollController _scrollController = ScrollController();
+
+  /// Current vertical scroll offset in screen-local logical px (0 when the
+  /// scroll view is not laid out yet).
+  double get _scrollY =>
+      _scrollController.hasClients ? _scrollController.offset : 0.0;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   /// Measured-layout keys per node id (rows and leaves alike).
   final Map<String, GlobalKey> _flowKeys = {};
 
@@ -606,6 +742,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
 
   /// Effective (rendered) height of [node] (see [_effW]).
   double? _effH(CanvasNode node) => _dragSizes[node.id]?.h ?? node.h;
+
+  /// Track X1 fill axis for a node's own content column: a pinned dim
+  /// (live drag size wins, like the chrome) stretches the column so kit
+  /// surfaces paint at the pinned width instead of shrinking to intrinsic
+  /// top-left. Auto nodes keep `start` — today's behavior, so badges stay
+  /// intrinsic and the row squeeze fix is untouched.
+  CrossAxisAlignment _contentCrossAxis(CanvasNode node) =>
+      (_effW(node) != null || _effH(node) != null)
+          ? CrossAxisAlignment.stretch
+          : CrossAxisAlignment.start;
 
   /// Measured render size of [id]'s chrome, or null before first layout.
   Size? _measuredSize(String id) {
@@ -770,15 +916,17 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     ];
   }
 
-  /// Screen-local rect of a laid-out node, or null before first layout.
+  /// Viewport-local rect of a laid-out node, or null before first layout.
+  /// The origin is the screen top-left (inside the frame bezel); callers
+  /// working in doc coords shift by [_scrollY] (see [_flowHit]).
   Rect? _nodeRect(String id, RenderBox screenBox) {
     final nodeContext = _flowKeys[id]?.currentContext;
     final box = nodeContext?.findRenderObject();
     if (box is! RenderBox || !box.hasSize) return null;
     final topLeft = screenBox.globalToLocal(box.localToGlobal(Offset.zero));
     return Rect.fromLTWH(
-      topLeft.dx - EditorMetrics.phoneBezel,
-      topLeft.dy - EditorMetrics.phoneBezel,
+      topLeft.dx - _kFrameBezel,
+      topLeft.dy - _kFrameBezel,
       box.size.width,
       box.size.height,
     );
@@ -801,25 +949,41 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// and leaves all build through [_nodeChrome] or the row detector), so
   /// empty containers stay hit-testable through their chrome rect — no
   /// placeholder needed in the builders.
-  _FlowHit _flowHit(Offset pointer, RenderBox screenBox) {
+  _FlowHit _flowHit(Offset pointerDoc, RenderBox screenBox) {
+    // Track X1 scroll: [pointerDoc] is in DOC coords (viewport pointer +
+    // scroll offset). Measured rects arrive viewport-local from [_nodeRect]
+    // and shift to doc for the math; the returned line/rect go back to
+    // viewport for the overlay visuals. At scroll 0 doc == viewport, so the
+    // unscrolled behavior is byte-identical to before.
+    final scrollY = _scrollY;
     // Deepest container-or-row containing the pointer wins; smallest area
     // breaks ties so nested targets (row-in-card, card-in-row, 3-deep
     // chains) resolve inward.
     CanvasNode? hitTarget;
-    Rect? hitRect;
+    Rect? hitRectVp;
     for (final node in _visibleNodes) {
       if (!node.isRow && !_isContainerNode(node)) continue;
-      final rect = _nodeRect(node.id, screenBox);
-      if (rect == null || !rect.contains(pointer)) continue;
-      if (hitRect == null ||
-          rect.width * rect.height < hitRect.width * hitRect.height) {
+      final rectVp = _nodeRect(node.id, screenBox);
+      if (rectVp == null) continue;
+      final rect =
+          Rect.fromLTWH(rectVp.left, rectVp.top + scrollY, rectVp.width, rectVp.height);
+      if (!rect.contains(pointerDoc)) continue;
+      if (hitRectVp == null ||
+          rect.width * rect.height <
+              hitRectVp.width * hitRectVp.height) {
         hitTarget = node;
-        hitRect = rect;
+        hitRectVp = rectVp;
       }
     }
-    if (hitTarget != null && hitRect != null) {
+    if (hitTarget != null && hitRectVp != null) {
       final target = hitTarget;
-      final targetRect = hitRect;
+      final targetRectVp = hitRectVp;
+      final targetRectDoc = Rect.fromLTWH(
+        targetRectVp.left,
+        targetRectVp.top + scrollY,
+        targetRectVp.width,
+        targetRectVp.height,
+      );
       final horizontal = target.isRow;
       final kids = [
         for (final node in _visibleNodes)
@@ -829,38 +993,39 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       final starts = <double?>[];
       final ends = <double?>[];
       for (final kid in kids) {
-        final rect = _nodeRect(kid.id, screenBox);
-        if (rect == null) {
-          // Pre-layout fallback: stored x/y as the center proxy along the
-          // target's axis.
+        final rectVp = _nodeRect(kid.id, screenBox);
+        if (rectVp == null) {
+          // Pre-layout fallback: stored x/y (doc coords) as the center
+          // proxy along the target's axis.
           centers.add(horizontal ? kid.x : kid.y);
           starts.add(null);
           ends.add(null);
         } else if (horizontal) {
-          centers.add((rect.left + rect.right) / 2);
-          starts.add(rect.left);
-          ends.add(rect.right);
+          centers.add((rectVp.left + rectVp.right) / 2);
+          starts.add(rectVp.left);
+          ends.add(rectVp.right);
         } else {
-          centers.add((rect.top + rect.bottom) / 2);
-          starts.add(rect.top);
-          ends.add(rect.bottom);
+          centers.add((rectVp.top + rectVp.bottom) / 2 + scrollY);
+          starts.add(rectVp.top + scrollY);
+          ends.add(rectVp.bottom + scrollY);
         }
       }
-      final pointerMain = horizontal ? pointer.dx : pointer.dy;
+      final pointerMain = horizontal ? pointerDoc.dx : pointerDoc.dy;
       final index =
           flowInsertionIndex(pointerMain, centers).clamp(0, kids.length);
+      final lineDoc = _boundary(
+        pointerMain,
+        index,
+        starts,
+        ends,
+        horizontal ? targetRectDoc.left : targetRectDoc.top,
+        horizontal ? targetRectDoc.right : targetRectDoc.bottom,
+      );
       return _FlowHit(
         parentId: target.id,
         index: index,
-        lineMain: _boundary(
-          pointerMain,
-          index,
-          starts,
-          ends,
-          horizontal ? targetRect.left : targetRect.top,
-          horizontal ? targetRect.right : targetRect.bottom,
-        ),
-        targetRect: targetRect,
+        lineMain: horizontal ? lineDoc : lineDoc - scrollY,
+        targetRect: targetRectVp,
         targetIsRow: horizontal,
       );
     }
@@ -872,31 +1037,33 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     final starts = <double?>[];
     final ends = <double?>[];
     for (final root in roots) {
-      final rect = _nodeRect(root.id, screenBox);
-      if (rect == null) {
-        // Pre-layout fallback: stored y as the center proxy.
+      final rectVp = _nodeRect(root.id, screenBox);
+      if (rectVp == null) {
+        // Pre-layout fallback: stored y (doc coords) as the center proxy.
         centers.add(root.y);
         starts.add(null);
         ends.add(null);
       } else {
-        centers.add((rect.top + rect.bottom) / 2);
-        starts.add(rect.top);
-        ends.add(rect.bottom);
+        centers.add((rectVp.top + rectVp.bottom) / 2 + scrollY);
+        starts.add(rectVp.top + scrollY);
+        ends.add(rectVp.bottom + scrollY);
       }
     }
+    const edgeStartDoc = kFlowScreenPadding + _kStatusBarHeight;
     final index =
-        flowInsertionIndex(pointer.dy, centers).clamp(0, roots.length);
+        flowInsertionIndex(pointerDoc.dy, centers).clamp(0, roots.length);
     return _FlowHit(
       parentId: null,
       index: index,
       lineMain: _boundary(
-        pointer.dy,
-        index,
-        starts,
-        ends,
-        kFlowScreenPadding,
-        null,
-      ),
+            pointerDoc.dy,
+            index,
+            starts,
+            ends,
+            edgeStartDoc,
+            null,
+          ) -
+          scrollY,
       targetRect: null,
     );
   }
@@ -942,8 +1109,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     _resizeStarts.removeWhere(
       (id, _) => !widget.nodes.any((node) => node.id == id),
     );
+    final screenColor = _screenBackground(context, colors, widget.screen);
     final frame = PhoneFrame(
-      screenColor: _screenBackground(context, colors, widget.screen),
+      screenColor: screenColor,
+      // Outer body keeps the measured bezel budget (see [_kFrameBezel]).
       outerWidth: _innerWidth + EditorMetrics.phoneBezel * 2,
       child: DragTarget<String>(
         onAcceptWithDetails: (details) {
@@ -962,18 +1131,26 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           // double-correct and land the node at ~half the intended point.
           // [zoom] is therefore kept as a parameter for future-proofing but
           // intentionally unused in this conversion.
+          //
+          // Track X1 scroll: the stored landing is in DOC coords (viewport
+          // pointer + scroll offset) so drops while scrolled land at the
+          // right doc position and agree with the stored node axes.
+          final scrollY = _scrollY;
           final position = Offset(
-            local.dx - EditorMetrics.phoneBezel,
-            local.dy - EditorMetrics.phoneBezel,
+            local.dx - _kFrameBezel,
+            local.dy - _kFrameBezel + scrollY,
           );
           // Magnetic snap applies to pointer drops only — `onAccept` itself
           // stays verbatim/unsnapped for programmatic callers, so the snapped
           // point is computed here and forwarded through `onDropKind`.
-          // Guides track the actual stage width, not the phone default.
+          // Guides track the actual stage width, not the phone default; the
+          // center axis rides the scroll so snapped drops agree while
+          // scrolled (identical to before at scroll 0).
           final snapped = snapDropPosition(
             position,
             _visibleNodes,
             centerX: _innerWidth / 2,
+            centerY: scrollY + EditorMetrics.phoneInnerHeight / 2,
           );
           // Shared insert path with the hover visuals below: the target and
           // index resolve from measured geometry and `onAccept` lands the
@@ -1000,14 +1177,17 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 final box = context.findRenderObject() as RenderBox?;
                 if (box != null) {
                   final local = box.globalToLocal(global);
+                  final scrollY = _scrollY;
                   final pointer = Offset(
-                    local.dx - EditorMetrics.phoneBezel,
-                    local.dy - EditorMetrics.phoneBezel,
+                    local.dx - _kFrameBezel,
+                    local.dy - _kFrameBezel + scrollY,
                   );
                   guides = guidesForPointer(
                     pointer,
                     _visibleNodes,
                     centerX: _innerWidth / 2,
+                    centerY:
+                        scrollY + EditorMetrics.phoneInnerHeight / 2,
                   );
                   hover = _flowHit(pointer, box);
                 }
@@ -1041,12 +1221,54 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               // on nodes are claimed by the inner leaf/row `onTap`s (which
               // win the arena as the deeper recognizer), so this fires only
               // for empty screen area.
+              // Track X1 scroll: the flow rides a vertical scroll view (the
+              // frame height stays fixed) with a top reserve for the overlaid
+              // status bar, so over-tall content scrolls instead of clipping.
+              // The scrollable is a plain (non-positioned) Stack child like
+              // the old column, so the viewport layout is unchanged.
+              final scrollY = _scrollY;
               return GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTap: widget.onSelectScreen,
                 child: Stack(
                   children: [
-                    _buildFlow(colors, ghost: ghost),
+                    SingleChildScrollView(
+                      controller: _scrollController,
+                      padding: const EdgeInsets.only(top: _kStatusBarHeight),
+                      child: _buildFlow(colors, ghost: ghost),
+                    ),
+                    // Track X1 frame polish: overlaid status bar + floating
+                    // home indicator (both pointer-transparent, token colors
+                    // only). They sit above the hover washes so the device
+                    // chrome reads while dragging.
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: _StatusBar(
+                        colors: colors,
+                        background: screenColor,
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            width: 134,
+                            height: 5,
+                            decoration: BoxDecoration(
+                              color: colors.onSurfaceVariant.withValues(
+                                alpha: 0.7,
+                              ),
+                              borderRadius: BorderRadius.circular(2.5),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (candidate.isNotEmpty && !hoveringTarget)
                     Positioned.fill(
                       child: ColoredBox(
@@ -1092,7 +1314,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                   if (guides.y != null)
                     Positioned(
                       key: kDragGuideHorizontalKey,
-                      top: guides.y,
+                      // Guides resolve in doc coords (see [_flowHit]); shift
+                      // back to viewport for the overlay.
+                      top: guides.y! - scrollY,
                       left: 0,
                       right: 0,
                       child: Container(
@@ -1207,12 +1431,14 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
     return _buildLeafFallback(node, colors, ancestors, kids, ghost: ghost);
   }
 
-  /// One row cell (Track U2): the live drag width wins while a handle drags,
-  /// else the [wrapRowChild] rule (fixed `w` → exact pixels, auto → equal
-  /// flex share). Keeps gesture preview and committed render on one path.
+  /// One row cell (Track U2, fill Track X1): the live drag width wins while
+  /// a handle drags, else the [wrapRowChild] rule (fixed `w` → exact pixels,
+  /// auto → equal flex share). Both fixed paths ride [applyNodeSizeValues]
+  /// so the cell fills its pixels. Keeps gesture preview and committed
+  /// render on one path.
   Widget _rowCell(CanvasNode kid, Widget built) {
     final dragW = _dragSizes[kid.id]?.w;
-    if (dragW != null) return SizedBox(width: dragW, child: built);
+    if (dragW != null) return applyNodeSizeValues(dragW, null, built);
     return wrapRowChild(kid, built);
   }
 
@@ -1227,14 +1453,22 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Cursor previews the axis ([SystemMouseCursors.resizeRight]/[resizeDown]/
   /// [resizeDownRight]); the gesture math divides by [ScreenSurface.zoom]
   /// (see [resizeDeltaToLocal]).
+  ///
+  /// Track X1: while a resize drag is live a token-styled WxH readout chip
+  /// floats at the chrome's top-right (pointer-transparent, so it never
+  /// steals the gesture).
   Widget _withHandles(CanvasNode node, Widget chrome) {
     if (node.id != widget.selectedNodeId) return chrome;
+    final tentative = _dragSizes[node.id];
     return Stack(
       children: [
         chrome,
+        // Edge strips stop one hit-size short of the corner so the three
+        // pads never overlap (overlapping pads let the later sibling steal
+        // the gesture and pin the wrong axis).
         Positioned(
           top: 0,
-          bottom: 0,
+          bottom: _kHandleHitSize,
           right: 0,
           child: Align(
             alignment: Alignment.centerRight,
@@ -1249,7 +1483,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         ),
         Positioned(
           left: 0,
-          right: 0,
+          right: _kHandleHitSize,
           bottom: 0,
           child: Align(
             alignment: Alignment.bottomCenter,
@@ -1273,15 +1507,43 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             vertical: true,
           ),
         ),
+        if (tentative != null)
+          Positioned(
+            top: 4,
+            right: 4,
+            child: IgnorePointer(
+              child: Container(
+                key: resizeReadoutKey(node.id),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: EditorTheme.of(context).surfaceContainerHigh,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${tentative.w.round()}×${tentative.h.round()}',
+                  style: EditorType.readout.copyWith(
+                    color: EditorTheme.of(context).onSurface,
+                  ),
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
 
-  /// One 14px resize handle (Track U2): pan events drive [_updateResize] in
-  /// screen-local px; release commits once via [_endResize]. The pan
-  /// recognizer owns the gesture on move (content taps underneath are
+  /// One resize handle (Track U2, grab area Track X1): pan events drive
+  /// [_updateResize] in screen-local px; release commits once via [_endResize].
+  /// The pan recognizer owns the gesture on move (content taps underneath are
   /// suppressed mid-drag); a tap without movement re-selects the already
   /// selected node, which is harmless.
+  ///
+  /// Usability: the gesture target is a [_kHandleHitSize] transparent pad
+  /// while only the centered [_kHandleVisualSize] square paints, so the grab
+  /// area is finger-friendly without changing the chrome's visual language.
   Widget _resizeHandle({
     required CanvasNode node,
     required String edge,
@@ -1306,12 +1568,18 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         onPanCancel: () => _cancelResize(node.id),
         child: Container(
           key: resizeHandleKey(node.id, edge),
-          width: _kHandleSize,
-          height: _kHandleSize,
-          decoration: BoxDecoration(
-            color: colors.toolbarActive,
-            borderRadius: BorderRadius.circular(3),
-            border: Border.all(color: colors.surface, width: 1),
+          width: _kHandleHitSize,
+          height: _kHandleHitSize,
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: Container(
+            width: _kHandleVisualSize,
+            height: _kHandleVisualSize,
+            decoration: BoxDecoration(
+              color: colors.toolbarActive,
+              borderRadius: BorderRadius.circular(3),
+              border: Border.all(color: colors.surface, width: 1),
+            ),
           ),
         ),
       ),
@@ -1437,7 +1705,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Track X1 fill: pinned dims stretch so the paint fills the box
+        // (see [_contentCrossAxis]); auto keeps `start`.
+        crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
             buildCatalogItem(item.kind, item.props),
@@ -1532,7 +1802,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Track X1 fill (see [_contentCrossAxis]).
+        crossAxisAlignment: _contentCrossAxis(node),
         children: [
           buildCatalogItem(items.first.kind, items.first.props, builtKids),
           for (final item in items.skip(1))
@@ -1560,7 +1831,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       colors,
       Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        // Track X1 fill (see [_contentCrossAxis]).
+        crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
             buildCatalogItem(item.kind, item.props),

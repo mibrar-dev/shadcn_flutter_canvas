@@ -170,7 +170,11 @@ void main() {
       expect(applyNodeSizeValues(null, null, child), same(child));
     });
 
-    test('fixed dims wrap in SizedBox', () {
+    // Track X1 fill: pinned dims wrap in a SizedBox whose child FILLS the
+    // box (stretch column + Expanded), so kit surfaces paint at the pinned
+    // size instead of shrinking intrinsic top-left. Updated from the old
+    // `child same` pin when the fill rule landed.
+    test('fixed dims wrap in a filling SizedBox', () {
       const child = SizedBox();
       const kid = CanvasNode(
         id: 'k',
@@ -184,7 +188,21 @@ void main() {
       final wrapped = applyNodeSize(kid, child) as SizedBox;
       expect(wrapped.width, 120.0);
       expect(wrapped.height, 80.0);
-      expect(wrapped.child, same(child));
+      final column = wrapped.child! as Column;
+      expect(column.crossAxisAlignment, CrossAxisAlignment.stretch);
+      final expanded = column.children.single as Expanded;
+      expect(expanded.child, same(child));
+    });
+
+    test('width-only pin stretches with intrinsic height (no Expanded)', () {
+      const child = SizedBox();
+      final wrapped = applyNodeSizeValues(120, null, child) as SizedBox;
+      expect(wrapped.width, 120.0);
+      expect(wrapped.height, isNull);
+      final column = wrapped.child! as Column;
+      expect(column.crossAxisAlignment, CrossAxisAlignment.stretch);
+      expect(column.mainAxisSize, MainAxisSize.min);
+      expect(column.children.single, same(child));
     });
   });
 
@@ -287,9 +305,15 @@ void main() {
         findsWidgets,
       );
       // 100px fixed cell + 8px gap: the sibling starts ~108px right.
+      // Track X1 note: the fixed-w cell now FILLS (badge paint stretches to
+      // the 92px chrome interior) and the badge centers its label, so the
+      // Alpha text sits ~13px further right than the old intrinsic badge
+      // did. The cell geometry is unchanged (SizedBox pin above); only this
+      // text-position proxy shifted, so the lower bound moves 95 → 85. The
+      // squeeze regression would still read ~53px here.
       final firstX = tester.getTopLeft(find.text('Alpha')).dx;
       final secondX = tester.getTopLeft(find.text('Beta')).dx;
-      expect(secondX - firstX, greaterThan(95));
+      expect(secondX - firstX, greaterThan(85));
       expect(secondX - firstX, lessThan(125));
     });
 

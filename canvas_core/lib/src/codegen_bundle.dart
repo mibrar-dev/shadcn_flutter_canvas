@@ -3303,9 +3303,16 @@ String _bundleSizedInnerExpr(
   return _bundleBranchExpr(doc, node, node.items, routes, ids, visited);
 }
 
-/// Writes `SizedBox([width][height]child: <content>)` for the single
-/// [content] expression (unindented, no trailing comma) at [indent] — the
-/// canvas `applyNodeSize` idiom in generated code.
+/// Writes the Track X2 fill box for a sized node: `SizedBox(w/h)` pinning
+/// the outer dims, with a `Column(crossAxisAlignment: stretch)` stretching
+/// content to fill the pinned box, and an `Expanded` around the content when
+/// `h` is set (vertical fill). Mirrors `applyNodeSizeValues` in
+/// `canvas_app/lib/ui/phone_frame.dart` (SizedBox + stretch Column +
+/// Expanded-when-h) and [_writeSizedBox] in `codegen_single.dart`.
+///
+/// [content] is a single unindented expression with no trailing comma (see
+/// [_bundleSizedInnerExpr]); unsized nodes never reach here (see
+/// [_isBundleSized]), so unsized docs keep byte-identical output.
 void _writeBundleSizedBox(
   List<String> rows,
   double? w,
@@ -3316,17 +3323,32 @@ void _writeBundleSizedBox(
   final lines = [
     for (final line in content.split('\n')) if (line.isNotEmpty) line,
   ];
+  final inner =
+      lines.isEmpty ? const ['SizedBox.shrink(),'] : lines;
   rows.add('${indent}SizedBox(');
   if (w != null) rows.add('$indent  width: ${_bundleFlowNum(w)},');
   if (h != null) rows.add('$indent  height: ${_bundleFlowNum(h)},');
-  if (lines.isEmpty) {
-    rows.add('${indent}  child: SizedBox.shrink(),');
+  rows.add('$indent  child: Column(');
+  rows.add('$indent    crossAxisAlignment: CrossAxisAlignment.stretch,');
+  rows.add('$indent    children: [');
+  if (h != null) {
+    rows.add('$indent      Expanded(');
+    rows.add('$indent        child: ${inner.first}');
+    for (final line in inner.skip(1)) {
+      rows.add('$indent        $line');
+    }
+    rows.add('$indent      ),');
   } else {
-    rows.add('$indent  child: ${lines.first}');
-    for (final line in lines.skip(1)) {
-      rows.add('$indent  $line');
+    for (var i = 0; i < inner.length; i++) {
+      var line = inner[i];
+      if (i == inner.length - 1 && !line.trimRight().endsWith(',')) {
+        line = '$line,';
+      }
+      rows.add('$indent      $line');
     }
   }
+  rows.add('$indent    ],');
+  rows.add('$indent  ),');
   rows.add('$indent),');
 }
 

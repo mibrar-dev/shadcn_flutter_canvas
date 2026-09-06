@@ -2499,6 +2499,98 @@ typedef AliasFn = Widget Function(BuildContext context);
       expect(respOut, contains("'Wide'"));
     });
   });
+
+  group('Track X2 fill parity (SizedBox + stretch Column + Expanded-when-h)', () {
+    ScreenDoc x2Doc(List<Map<String, dynamic>> nodes) => ScreenDoc.fromJson({
+          'screens': [
+            {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          ],
+          'nodes': nodes,
+          'theme': {
+            'paletteKey': 'clean-slate',
+            'dark': true,
+            'shape': 'rounded',
+            'motion': 'standard',
+          },
+          'meta': {'title': 'Fill', 'brief': ''},
+        });
+
+    Map<String, dynamic> x2Leaf({
+      required String id,
+      double? w,
+      double? h,
+    }) => {
+          'id': id,
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i$id', 'kind': 'button', 'label': 'Go'},
+          ],
+          if (w != null) 'w': w,
+          if (h != null) 'h': h,
+        };
+
+    test('sized w+h emits fill box with stretch Column and Expanded', () {
+      final out = buildSingleFile(
+        x2Doc([x2Leaf(id: 'n1', w: 120, h: 80)]),
+        const {},
+      );
+      expect(out, contains('width: 120,'));
+      expect(out, contains('height: 80,'));
+      expect(
+        out,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(out, contains('Expanded('));
+      expect(out, contains("'Go'"));
+      expect(
+        out.indexOf('width: 120,'),
+        lessThan(out.indexOf('CrossAxisAlignment.stretch')),
+      );
+      expect(
+        out.indexOf('CrossAxisAlignment.stretch'),
+        lessThan(out.indexOf('Expanded(')),
+      );
+      expect(out.indexOf('Expanded('), lessThan(out.indexOf("'Go'")));
+    });
+
+    test('w-only emits stretch without Expanded', () {
+      final out = buildSingleFile(
+        x2Doc([x2Leaf(id: 'n1', w: 200)]),
+        const {},
+      );
+      expect(out, contains('width: 200,'));
+      expect(
+        out,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(out, isNot(contains('height:')));
+      expect(out, isNot(contains('Expanded(')));
+    });
+
+    test('h-only emits stretch with Expanded', () {
+      final out = buildSingleFile(
+        x2Doc([x2Leaf(id: 'n1', h: 90)]),
+        const {},
+      );
+      expect(out, contains('height: 90,'));
+      expect(
+        out,
+        contains('crossAxisAlignment: CrossAxisAlignment.stretch,'),
+      );
+      expect(out, contains('Expanded('));
+    });
+
+    test('unsized docs emit no fill (byte-identical guard)', () {
+      final out = buildSingleFile(x2Doc([x2Leaf(id: 'n1')]), const {});
+      expect(out, isNot(contains('CrossAxisAlignment.stretch')));
+      expect(out, isNot(contains('Expanded(')));
+      expect(out, isNot(contains('width:')));
+      // Unsized two-screen doc stays byte-identical to the golden.
+      expect(buildSingleFile(buildTwoScreenDoc(), kTestSources), kSingleFileGolden);
+    });
+  });
 }
 
 /// Builds a one-screen doc from [nodes] for the C3 recursion tests.

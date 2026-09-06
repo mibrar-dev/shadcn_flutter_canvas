@@ -57,6 +57,7 @@ import 'package:flutter/material.dart';
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/canvas/props_schema.dart';
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/property_editors.dart';
 import 'package:canvas_app/ui/state_scope.dart';
@@ -1495,11 +1496,114 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
+  /// Track X2 stage width for size presets: the node's screen device width
+  /// (`store → node → screenId → screen.device → specForScreenDevice().width`).
+  /// Null device means the phone default (see [specForScreenDevice]); a
+  /// missing screen or an unknown non-null device id yields null (presets
+  /// disable — see [_sizePresetReason]).
+  double? _stageWidthForNode(CanvasNode node) {
+    CanvasScreen? screen;
+    for (final s in widget.store.doc.screens) {
+      if (s.id == node.screenId) {
+        screen = s;
+        break;
+      }
+    }
+    if (screen == null) return null;
+    final deviceId = screen.device;
+    if (deviceId != null &&
+        !kPreviewDevices.any((d) => d.id == deviceId)) {
+      return null;
+    }
+    return specForScreenDevice(deviceId).width;
+  }
+
+  /// Disabled reason for the size presets, or null when they are enabled.
+  /// Unknown screen (no matching screen for the node) or unknown device
+  /// (non-null id outside [kPreviewDevices]) disables every preset button.
+  String? _sizePresetReason(CanvasNode node) {
+    for (final s in widget.store.doc.screens) {
+      if (s.id == node.screenId) {
+        final deviceId = s.device;
+        if (deviceId != null &&
+            !kPreviewDevices.any((d) => d.id == deviceId)) {
+          return 'Unknown device "$deviceId" — presets unavailable';
+        }
+        return null;
+      }
+    }
+    return 'Unknown screen — presets unavailable';
+  }
+
+  /// Track X2 width presets (Track U2 steppers above stay verbatim): Fill
+  /// clears to auto, Half sets `stage/2`, Third sets `stage/3`. All write
+  /// through the undoable `store.setNodeSize` (no store changes). Disabled
+  /// while the stage is unknown (see [_sizePresetReason]).
+  Widget _widthPresets(CanvasNode node, double? stageWidth) {
+    final disabled = stageWidth == null;
+    return Wrap(
+      spacing: _kInspectorGap,
+      runSpacing: _kInspectorGap,
+      children: [
+        shadcn.OutlineButton(
+          key: const ValueKey('node-width-fill'),
+          size: shadcn.ButtonSize.small,
+          onPressed: disabled
+              ? null
+              : () => widget.store.setNodeSize(node.id, clearW: true),
+          child: const Text('Fill'),
+        ),
+        shadcn.OutlineButton(
+          key: const ValueKey('node-width-half'),
+          size: shadcn.ButtonSize.small,
+          onPressed: disabled
+              ? null
+              : () => widget.store.setNodeSize(node.id, w: stageWidth / 2),
+          child: const Text('Half'),
+        ),
+        shadcn.OutlineButton(
+          key: const ValueKey('node-width-third'),
+          size: shadcn.ButtonSize.small,
+          onPressed: disabled
+              ? null
+              : () => widget.store.setNodeSize(node.id, w: stageWidth / 3),
+          child: const Text('Third'),
+        ),
+      ],
+    );
+  }
+
+  /// Track X2 height presets: Fill only (clears to auto). Gated on the same
+  /// known-stage rule as the width presets (unknown screen/device disables
+  /// even the clear, so every preset shares one reason).
+  Widget _heightPresets(CanvasNode node, double? stageWidth) {
+    final disabled = stageWidth == null;
+    return Wrap(
+      spacing: _kInspectorGap,
+      runSpacing: _kInspectorGap,
+      children: [
+        shadcn.OutlineButton(
+          key: const ValueKey('node-height-fill'),
+          size: shadcn.ButtonSize.small,
+          onPressed: disabled
+              ? null
+              : () => widget.store.setNodeSize(node.id, clearH: true),
+          child: const Text('Fill'),
+        ),
+      ],
+    );
+  }
+
   /// Track U2 node-size card: one stepper row per dimension (W/H) writing
   /// through the undoable `store.setNodeSize`. Shown for every selected node
   /// (leaves and rows alike — rows additionally carry their container
   /// editors in [_rowCard]).
+  ///
+  /// Track X2: one-tap presets below each stepper (width Fill/Half/Third,
+  /// height Fill only — see [_widthPresets]/[_heightPresets]).
   Widget _sizeCard(CanvasNode node) {
+    final stageWidth = _stageWidthForNode(node);
+    final reason = _sizePresetReason(node);
     return shadcn.Card(
       padding: const EdgeInsets.all(EditorMetrics.panelInset),
       child: Column(
@@ -1516,6 +1620,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
             onClear: () => widget.store.setNodeSize(node.id, clearW: true),
           ),
           const SizedBox(height: _kInspectorGap),
+          _widthPresets(node, stageWidth),
+          const SizedBox(height: _kInspectorGap),
           _nodeSizeRow(
             label: 'Height',
             value: node.h,
@@ -1524,6 +1630,16 @@ class _InspectorPanelState extends State<InspectorPanel> {
             onSet: (v) => widget.store.setNodeSize(node.id, h: v),
             onClear: () => widget.store.setNodeSize(node.id, clearH: true),
           ),
+          const SizedBox(height: _kInspectorGap),
+          _heightPresets(node, stageWidth),
+          if (reason != null) ...[
+            const SizedBox(height: _kInspectorGap),
+            Text(
+              reason,
+              key: const ValueKey('node-size-preset-reason'),
+              style: EditorType.tileLabel,
+            ),
+          ],
         ],
       ),
     );
@@ -1701,6 +1817,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 onClear: () => widget.store.setNodeSize(node.id, clearW: true),
               ),
               const SizedBox(height: _kInspectorGap),
+              _widthPresets(node, _stageWidthForNode(node)),
+              const SizedBox(height: _kInspectorGap),
               _nodeSizeRow(
                 label: 'Height',
                 value: node.h,
@@ -1709,6 +1827,16 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 onSet: (v) => widget.store.setNodeSize(node.id, h: v),
                 onClear: () => widget.store.setNodeSize(node.id, clearH: true),
               ),
+              const SizedBox(height: _kInspectorGap),
+              _heightPresets(node, _stageWidthForNode(node)),
+              if (_sizePresetReason(node) != null) ...[
+                const SizedBox(height: _kInspectorGap),
+                Text(
+                  _sizePresetReason(node)!,
+                  key: const ValueKey('node-size-preset-reason'),
+                  style: EditorType.tileLabel,
+                ),
+              ],
               if (children.isNotEmpty) ...[
                 const SizedBox(height: _kInspectorGap),
                 const Padding(

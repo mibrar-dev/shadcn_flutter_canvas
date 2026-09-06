@@ -4638,9 +4638,16 @@ String _sizedInnerExpr(ScreenDoc doc, CanvasNode node, Set<String> visited) {
   return _nodeContentExpr(doc, node, visited);
 }
 
-/// Writes `SizedBox([width][height]child: <content>)` for the single
-/// [content] expression (unindented, no trailing comma) at [indent] —
-/// the canvas `applyNodeSize` idiom in generated code.
+/// Writes the Track X2 fill box for a sized node: `SizedBox(w/h)` pinning
+/// the outer dims, with a `Column(crossAxisAlignment: stretch)` stretching
+/// content to fill the pinned box, and an `Expanded` around the content when
+/// `h` is set (vertical fill). Mirrors `applyNodeSizeValues` in
+/// `canvas_app/lib/ui/phone_frame.dart` (SizedBox + stretch Column +
+/// Expanded-when-h).
+///
+/// [content] is a single unindented expression with no trailing comma (see
+/// [_sizedInnerExpr]); unsized nodes never reach here (see [_isSized]), so
+/// unsized docs keep byte-identical output.
 void _writeSizedBox(
   StringBuffer out,
   double? w,
@@ -4651,17 +4658,32 @@ void _writeSizedBox(
   final lines = [
     for (final line in content.split('\n')) if (line.isNotEmpty) line,
   ];
+  final inner =
+      lines.isEmpty ? const ['SizedBox.shrink(),'] : lines;
   out.writeln('${indent}SizedBox(');
   if (w != null) out.writeln('$indent  width: ${_flowNum(w)},');
   if (h != null) out.writeln('$indent  height: ${_flowNum(h)},');
-  if (lines.isEmpty) {
-    out.writeln('${indent}  child: SizedBox.shrink(),');
+  out.writeln('$indent  child: Column(');
+  out.writeln('$indent    crossAxisAlignment: CrossAxisAlignment.stretch,');
+  out.writeln('$indent    children: [');
+  if (h != null) {
+    out.writeln('$indent      Expanded(');
+    out.writeln('$indent        child: ${inner.first}');
+    for (final line in inner.skip(1)) {
+      out.writeln('$indent        $line');
+    }
+    out.writeln('$indent      ),');
   } else {
-    out.writeln('$indent  child: ${lines.first}');
-    for (final line in lines.skip(1)) {
-      out.writeln('$indent  $line');
+    for (var i = 0; i < inner.length; i++) {
+      var line = inner[i];
+      if (i == inner.length - 1 && !line.trimRight().endsWith(',')) {
+        line = '$line,';
+      }
+      out.writeln('$indent      $line');
     }
   }
+  out.writeln('$indent    ],');
+  out.writeln('$indent  ),');
   out.writeln('$indent),');
 }
 

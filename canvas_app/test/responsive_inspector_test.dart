@@ -133,11 +133,21 @@ void main() {
         findsOneWidget,
       );
 
+      // Track X2: the Size presets lengthen the panel, so the Visibility
+      // toggle can sit below the fold — scroll it into view before tapping.
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('visibility-mobile')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('visibility-mobile')));
       await tester.pump();
       expect(_node(store, nodeId).hiddenOn, {'mobile'});
       expect(find.text('hidden on: mobile'), findsOneWidget);
 
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('visibility-mobile')),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byKey(const ValueKey('visibility-mobile')));
       await tester.pump();
       expect(_node(store, nodeId).hiddenOn, isEmpty);
