@@ -102,7 +102,8 @@ void main() {
     expect(node.y, 8);
   });
 
-  testWidgets('renders every screen side by side with its label', (tester) async {
+  testWidgets('renders every screen side by side (labels live in the header)',
+      (tester) async {
     // Wide viewport so both phones fit without a debug overflow.
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1.0;
@@ -117,8 +118,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('Pay'), findsOneWidget);
-    expect(find.text('Done'), findsOneWidget);
+    // Y4 (FORGE.md §1-3g): the ScreenLabel row is dropped from the canvas —
+    // names move to the Forge header breadcrumb at the Y6 cutover — so the
+    // canvas renders frames only. See `forge_canvas_test.dart` for the
+    // breadcrumb trail coverage.
+    expect(find.text('Pay'), findsNothing);
+    expect(find.text('Done'), findsNothing);
     expect(find.byType(ScreenSurface), findsNWidgets(2));
   });
 

@@ -1,6 +1,11 @@
 /// Center floating toolbar, measured from the m3e-canvas reference
 /// (https://lnkiai.github.io/m3e-canvas/) at a 1440x900 viewport.
 /// Single row centered over the canvas; see CHROME_SPEC.md.
+///
+/// Track Y4 (FORGE.md §1-3f) adds [ForgeSelectionToolbar] below: the floating
+/// black selection toolbar. [CanvasToolbar] itself is KEPT verbatim until the
+/// Y6 cutover remounts the shell (its actions move to the topbar/header
+/// there); nothing above this line changed for Y4.
 library;
 
 import 'package:flutter/material.dart';
@@ -153,6 +158,96 @@ class CanvasToolbar extends StatelessWidget {
           tooltip: 'Export',
         ),
       ],
+    );
+  }
+}
+
+/// Finder for the Forge selection toolbar (used by forge-canvas tests).
+const ValueKey<String> kForgeSelectionToolbarKey =
+    ValueKey<String>('forge-selection-toolbar');
+
+/// Floating black selection toolbar (Track Y4, FORGE.md §1-3f, §3).
+///
+/// Black pill (near-black, white icons), radius full, three 32px targets:
+/// move up, move down, duplicate. Renders NOTHING while [selectedNodeId] is
+/// null — the toolbar shows only when a node is selected.
+///
+/// Stateless vs the store, like [ForgeTopbar]: the shell wires the actions
+/// at the Y6 cutover (up/down resolve the node's group index and call
+/// `store.reorderNode(id, i ± 1)` within the node's group; duplicate calls
+/// `store.duplicateNode(id)` and reselects the clone, mirroring the shell's
+/// keyboard-duplicate path). Null callbacks render the disabled state (the
+/// same idiom as [CanvasToolbar]'s undo/redo).
+///
+/// Position (FORGE.md §3) is shell-centered horizontally near the canvas
+/// bottom, above zoom — the Y6 shell mount owns the placement; this widget
+/// only owns the pill. All §3 numbers are APPROXIMATE per FORGE.md §6.
+class ForgeSelectionToolbar extends StatelessWidget {
+  /// Currently selected node id (shell-owned). Null hides the toolbar.
+  final String? selectedNodeId;
+
+  /// Move the selection one slot earlier within its group. Null disables.
+  final VoidCallback? onMoveUp;
+
+  /// Move the selection one slot later within its group. Null disables.
+  final VoidCallback? onMoveDown;
+
+  /// Duplicate the selection. Null disables.
+  final VoidCallback? onDuplicate;
+
+  const ForgeSelectionToolbar({
+    super.key,
+    this.selectedNodeId,
+    this.onMoveUp,
+    this.onMoveDown,
+    this.onDuplicate,
+  });
+
+  /// Pill target size: three 32px targets (FORGE.md §3).
+  static const double _kTargetSize = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    if (selectedNodeId == null) return const SizedBox.shrink();
+    final colors = EditorTheme.of(context);
+    // Near-black pill with light icons: [onSurface] inverts per mode (light
+    // near-black, dark light) with [surface] icons, so the pill stays
+    // legible under both chrome modes — the same idiom as the Forge topbar's
+    // active tab / Preview pill.
+    return Container(
+      key: kForgeSelectionToolbarKey,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: colors.onSurface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          EditorIconButton(
+            icon: Icons.arrow_upward,
+            size: _kTargetSize,
+            foreground: colors.surface,
+            onPressed: onMoveUp,
+            tooltip: 'Move up',
+          ),
+          EditorIconButton(
+            icon: Icons.arrow_downward,
+            size: _kTargetSize,
+            foreground: colors.surface,
+            onPressed: onMoveDown,
+            tooltip: 'Move down',
+          ),
+          EditorIconButton(
+            icon: Icons.content_copy,
+            size: _kTargetSize,
+            foreground: colors.surface,
+            onPressed: onDuplicate,
+            tooltip: 'Duplicate',
+          ),
+        ],
+      ),
     );
   }
 }

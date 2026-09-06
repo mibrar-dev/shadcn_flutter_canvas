@@ -1,12 +1,14 @@
-/// Three-tab right aside: Inspector | Prompt | Audit, with
-/// selection-driven auto-switch.
+/// Four-tab right aside: Design | Code | Prompt | Audit, with
+/// selection-driven auto-switch (FORGE.md §1-4a — the 4-pill deviation from
+/// the 2-pill reference, so Prompt/Audit keep their home).
 ///
 /// Fills the shell-fixed 320px column (see [EditorMetrics.promptPanelWidth]).
-/// Tab auto-switch rule: a non-null [RightAside.nodeId] selects the Inspector
+/// Tab auto-switch rule: a non-null [RightAside.nodeId] selects the Design
 /// tab, a null one selects the Prompt tab. Tapping a tab overrides the auto
-/// choice until the selection changes again. The Audit tab is manual-only
-/// (selection never auto-opens it) and recomputes from the live doc on every
-/// store notification, so its counts stay fresh with no Re-run button.
+/// choice until the selection changes again. The Code and Audit tabs are
+/// manual-only (selection never auto-opens them); the Audit list recomputes
+/// from the live doc on every store notification, so its counts stay fresh
+/// with no Re-run button.
 ///
 /// Empty-inspector hints and prompt error states live in [InspectorPanel] and
 /// [PromptPanel] respectively and are not duplicated here.
@@ -17,13 +19,14 @@ import 'package:canvas_app/canvas/canvas_store.dart' hide ChangeNotifier;
 import 'package:canvas_app/canvas/component_catalog.dart' as catalog;
 import 'package:canvas_app/canvas/component_registry.dart' as registry;
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_app/ui/code_peek.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/inspector_panel.dart';
 import 'package:canvas_app/ui/prompt_panel.dart';
 import 'package:flutter/foundation.dart' as foundation;
 import 'package:flutter/material.dart';
 
-/// Right aside with Inspector, Prompt, and Audit tabs.
+/// Right aside with Design, Code, Prompt, and Audit tabs.
 ///
 /// The shell integrator places this in the fixed-width right column:
 /// `SizedBox(width: EditorMetrics.promptPanelWidth, child: RightAside(...))`.
@@ -35,6 +38,8 @@ class RightAside extends StatelessWidget {
     this.itemId,
     this.onSelectNode,
     this.onSelectScreen,
+    this.onDuplicate,
+    this.onDelete,
   });
 
   /// Undoable editor state; forwarded to the tab bodies.
@@ -56,6 +61,13 @@ class RightAside extends StatelessWidget {
   final ValueChanged<String?>? onSelectNode;
   final ValueChanged<String?>? onSelectScreen;
 
+  /// Forge SELECTED-card actions (FORGE.md §1-4e, Y5 pass-through): the
+  /// inspector's Duplicate/Delete row calls these with the selected node
+  /// id. The shell wires them to `store.duplicateNode`/`store.deleteNode`
+  /// (Y6); null renders the row's buttons disabled.
+  final ValueChanged<String>? onDuplicate;
+  final ValueChanged<String>? onDelete;
+
   @override
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
@@ -68,6 +80,8 @@ class RightAside extends StatelessWidget {
         itemId: itemId,
         onSelectNode: onSelectNode,
         onSelectScreen: onSelectScreen,
+        onDuplicate: onDuplicate,
+        onDelete: onDelete,
       ),
     );
   }
@@ -121,6 +135,8 @@ class _RightAsideBody extends StatefulWidget {
   final String? itemId;
   final ValueChanged<String?>? onSelectNode;
   final ValueChanged<String?>? onSelectScreen;
+  final ValueChanged<String>? onDuplicate;
+  final ValueChanged<String>? onDelete;
 
   const _RightAsideBody({
     required this.store,
@@ -128,6 +144,8 @@ class _RightAsideBody extends StatefulWidget {
     this.itemId,
     this.onSelectNode,
     this.onSelectScreen,
+    this.onDuplicate,
+    this.onDelete,
   });
 
   @override
@@ -186,7 +204,10 @@ class _RightAsideBodyState extends State<_RightAsideBody> {
               infos++;
           }
         }
-        final index = _overrideIndex ?? (widget.nodeId != null ? 0 : 1);
+        // Tab order: 0 Design (inspector), 1 Code (code-peek), 2 Prompt,
+        // 3 Audit. Auto-switch lands on Design with a selection, Prompt
+        // without; Code and Audit are manual-only.
+        final index = _overrideIndex ?? (widget.nodeId != null ? 0 : 2);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -206,8 +227,15 @@ class _RightAsideBodyState extends State<_RightAsideBody> {
                   store: widget.store,
                   nodeId: widget.nodeId,
                   itemId: widget.itemId,
+                  onDuplicate: widget.onDuplicate,
+                  onDelete: widget.onDelete,
                 ),
-                2 => AuditPanel(
+                1 => CodePeek(
+                  doc: widget.store.doc,
+                  nodeId: widget.nodeId,
+                  itemId: widget.itemId,
+                ),
+                3 => AuditPanel(
                   issues: issues,
                   onSelectNode: widget.onSelectNode,
                   onSelectScreen: widget.onSelectScreen,
@@ -222,16 +250,17 @@ class _RightAsideBodyState extends State<_RightAsideBody> {
   }
 }
 
-/// Three-segment tab header. [EditorSegmented] does not fit here — it is
-/// icon-only fixed 40px squares with no text labels — so this is a minimal
-/// full-width three-text-tab row built from the same tokens and corner
-/// conventions (outer [EditorMetrics.segmentOuterRadius], touching
+/// Four-segment tab header (FORGE.md §1-4a: Design | Code | Prompt | Audit).
+/// [EditorSegmented] does not fit here — it is icon-only fixed 40px squares
+/// with no text labels — so this is a minimal full-width four-text-tab row
+/// built from the same tokens and corner conventions (outer
+/// [EditorMetrics.segmentOuterRadius], touching
 /// [EditorMetrics.segmentInnerRadius], [EditorMetrics.segmentGap]).
 /// Selected tab uses [EditorColors.toolbarActive] /
 /// [EditorColors.onToolbarActive], matching the reference toolbar convention.
 ///
 /// The Audit segment carries live `errors/warnings/infos` counts in its
-/// label (`Audit 1/2/3`) with the legend in its tooltip — three tabs share
+/// label (`Audit 1/2/3`) with the legend in its tooltip — four tabs share
 /// the 320px column, so the slash-compact form keeps every label on one
 /// line; the tooltip spells out `1 error, 2 warnings, 3 infos`.
 class _TabHeader extends StatelessWidget {
@@ -254,53 +283,63 @@ class _TabHeader extends StatelessWidget {
     final outer = EditorMetrics.segmentOuterRadius;
     final inner = EditorMetrics.segmentInnerRadius;
     final auditLabel = 'Audit $errorCount/$warningCount/$infoCount';
+    final segments = [
+      _TabSegment(
+        key: const ValueKey('aside-tab-design'),
+        label: 'Design',
+        icon: Icons.tune,
+        tooltip: 'Design',
+        selected: selectedIndex == 0,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(outer),
+          bottomLeft: Radius.circular(outer),
+          topRight: Radius.circular(inner),
+          bottomRight: Radius.circular(inner),
+        ),
+        onTap: () => onSelect(0),
+      ),
+      _TabSegment(
+        key: const ValueKey('aside-tab-code'),
+        label: 'Code',
+        icon: Icons.code,
+        tooltip: 'Code',
+        selected: selectedIndex == 1,
+        borderRadius: BorderRadius.all(Radius.circular(inner)),
+        onTap: () => onSelect(1),
+      ),
+      _TabSegment(
+        key: const ValueKey('aside-tab-prompt'),
+        label: 'Prompt',
+        icon: Icons.auto_awesome,
+        tooltip: 'Prompt',
+        selected: selectedIndex == 2,
+        borderRadius: BorderRadius.all(Radius.circular(inner)),
+        onTap: () => onSelect(2),
+      ),
+      _TabSegment(
+        key: const ValueKey('aside-tab-audit'),
+        label: auditLabel,
+        icon: Icons.fact_check,
+        tooltip:
+            'Audit: ${_countLabel(errorCount, 'error', 'errors')}, '
+            '${_countLabel(warningCount, 'warning', 'warnings')}, '
+            '${_countLabel(infoCount, 'info', 'infos')}',
+        selected: selectedIndex == 3,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(inner),
+          bottomLeft: Radius.circular(inner),
+          topRight: Radius.circular(outer),
+          bottomRight: Radius.circular(outer),
+        ),
+        onTap: () => onSelect(3),
+      ),
+    ];
     return Row(
       children: [
-        Expanded(
-          child: _TabSegment(
-            label: 'Inspector',
-            icon: Icons.tune,
-            tooltip: 'Inspector',
-            selected: selectedIndex == 0,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(outer),
-              bottomLeft: Radius.circular(outer),
-              topRight: Radius.circular(inner),
-              bottomRight: Radius.circular(inner),
-            ),
-            onTap: () => onSelect(0),
-          ),
-        ),
-        const SizedBox(width: EditorMetrics.segmentGap),
-        Expanded(
-          child: _TabSegment(
-            label: 'Prompt',
-            icon: Icons.auto_awesome,
-            tooltip: 'Prompt',
-            selected: selectedIndex == 1,
-            borderRadius: BorderRadius.all(Radius.circular(inner)),
-            onTap: () => onSelect(1),
-          ),
-        ),
-        const SizedBox(width: EditorMetrics.segmentGap),
-        Expanded(
-          child: _TabSegment(
-            label: auditLabel,
-            icon: Icons.fact_check,
-            tooltip:
-                'Audit: ${_countLabel(errorCount, 'error', 'errors')}, '
-                '${_countLabel(warningCount, 'warning', 'warnings')}, '
-                '${_countLabel(infoCount, 'info', 'infos')}',
-            selected: selectedIndex == 2,
-            borderRadius: BorderRadius.only(
-              topLeft: Radius.circular(inner),
-              bottomLeft: Radius.circular(inner),
-              topRight: Radius.circular(outer),
-              bottomRight: Radius.circular(outer),
-            ),
-            onTap: () => onSelect(2),
-          ),
-        ),
+        for (var i = 0; i < segments.length; i++) ...[
+          if (i > 0) const SizedBox(width: EditorMetrics.segmentGap),
+          Expanded(child: segments[i]),
+        ],
       ],
     );
   }
@@ -319,6 +358,7 @@ class _TabSegment extends StatelessWidget {
   static const _tabIconSize = 20.0;
 
   const _TabSegment({
+    super.key,
     required this.label,
     required this.icon,
     required this.tooltip,
@@ -368,7 +408,7 @@ class _TabSegment extends StatelessWidget {
   }
 }
 
-/// Third right-aside tab: the static doc audit (UI-Check parity).
+/// Fourth right-aside tab: the static doc audit (UI-Check parity).
 ///
 /// Renders precomputed [issues] (the parent body runs `auditDoc` on the
 /// live doc inside its store relay, so this list re-runs automatically on

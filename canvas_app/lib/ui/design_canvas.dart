@@ -81,6 +81,101 @@ double wheelZoomFactor(double scrollDeltaY) =>
 double screenOuterWidth(CanvasScreen screen) =>
     specForScreenDevice(screen.device).width + EditorMetrics.phoneBezel * 2;
 
+/// Dotted canvas background painter (Track Y4, FORGE.md §1-3d, §2).
+///
+/// Dot grid: spacing APPROXIMATE ~18px, radius APPROXIMATE ~1px. The color is
+/// token-derived ([EditorColors.onSurfaceVariant] at low alpha via
+/// `withValues`, the existing idiom) so no new token is needed and the dots
+/// read in both chrome modes. Custom paint is a documented exception to the
+/// kit dogfood rule (FORGE.md §2 — no kit dotted-box exists; same exception
+/// class as the existing `_DashedOutline` in `phone_frame.dart`).
+class ForgeDotsPainter extends CustomPainter {
+  /// Token-derived dot color (pass the `withValues(alpha: …)` variant).
+  final Color color;
+
+  /// Grid spacing in logical px. APPROXIMATE ~18px (FORGE.md §2).
+  final double spacing;
+
+  /// Dot radius in logical px. APPROXIMATE ~1px (FORGE.md §2).
+  final double radius;
+
+  const ForgeDotsPainter({
+    required this.color,
+    this.spacing = 18,
+    this.radius = 1,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final paint = Paint()..color = color;
+    for (var y = spacing / 2; y < size.height; y += spacing) {
+      for (var x = spacing / 2; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), radius, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(ForgeDotsPainter oldDelegate) =>
+      oldDelegate.color != color ||
+      oldDelegate.spacing != spacing ||
+      oldDelegate.radius != radius;
+}
+
+/// First-run hint pill (Track Y4, FORGE.md §1-3c, §3).
+///
+/// Dark pill, radius full, padding APPROXIMATE 8×16px, with a × dismiss
+/// button. The copy is the reference text verbatim. Visibility state lives in
+/// [_DesignCanvasState] (no persistence — the pill reappears on restart, per
+/// spec); this widget only owns the pill chrome.
+class ForgeHintPill extends StatelessWidget {
+  /// Dismiss tap (×). Null hides the × button.
+  final VoidCallback? onDismiss;
+
+  const ForgeHintPill({super.key, this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    // Dark pill with light text: [onSurface]/[surface] invert per mode (the
+    // same idiom as the Forge topbar's dark pills), so the hint stays
+    // legible under both chrome modes.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: colors.onSurface,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Text(
+              'Drop widgets… · click a block… · drag the corner…',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w400)
+                  .copyWith(color: colors.surface),
+            ),
+          ),
+          if (onDismiss != null) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onDismiss,
+              child: Padding(
+                padding: const EdgeInsets.all(2),
+                child: Icon(Icons.close, size: 14, color: colors.surface),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 /// Forwards pure-Dart store notifications to Flutter listeners.
 class _StoreRelay extends foundation.ChangeNotifier {
   _StoreRelay(this._store) {
@@ -131,6 +226,18 @@ class DesignCanvas extends StatefulWidget {
   /// adjusts its pan around the requested zoom.
   final ValueChanged<double>? onZoomChanged;
 
+  /// Whether snap guides (alignment guides + magnetic snap) are on. Shell-
+  /// owned, toggled by the header's grid icon; defaults on.
+  ///
+  /// Y4 CONTRACT NOTE (FORGE.md §1-3b deviation): the flag is accepted,
+  /// stored, and exposed here, but the guide visuals + snap live in
+  /// [ScreenSurface] (`phone_frame.dart`, island-only for Y4), so enforcement
+  /// is a follow-up: add `showGuides` (default true) to [ScreenSurface] and
+  /// gate its `guidesForPointer`/`snapDropPosition` calls plus the guide
+  /// overlays on it. Until then the toggle flips state without suppressing
+  /// guides; zoom math, pan, and drop accuracy are untouched.
+  final bool showGuides;
+
   const DesignCanvas({
     super.key,
     required this.store,
@@ -142,6 +249,7 @@ class DesignCanvas extends StatefulWidget {
     this.selectedScreenId,
     this.onSelectScreen,
     this.onZoomChanged,
+    this.showGuides = true,
   });
 
   /// Store-level drop handler: adds exactly one node carrying [kind] to the
@@ -377,6 +485,10 @@ class _DesignCanvasState extends State<DesignCanvas> {
     _pointerGlobal.value = e.position;
   }
 
+  /// Hint-pill visibility: plain state, no persistence — the pill reappears
+  /// on restart (FORGE.md §3, deliberate).
+  bool _hintVisible = true;
+
   /// Unscaled content size for the cursor-anchored zoom math (must match the
   /// `SizedBox` pair in [build]).
   Size _contentSize(ScreenDoc doc) {
@@ -388,8 +500,9 @@ class _DesignCanvasState extends State<DesignCanvas> {
     if (doc.screens.length > 1) {
       contentWidth += screenGap * (doc.screens.length - 1);
     }
-    const contentHeight =
-        EditorMetrics.screenLabelHeight + 10 + EditorMetrics.phoneOuterHeight;
+    // Y4: the ScreenLabel row is dropped (FORGE.md §1-3g — names move to the
+    // Forge header breadcrumb), so the content height is the phone alone.
+    const contentHeight = EditorMetrics.phoneOuterHeight;
     return Size(contentWidth, contentHeight);
   }
 
@@ -482,51 +595,38 @@ class _DesignCanvasState extends State<DesignCanvas> {
           children: [
             for (var i = 0; i < doc.screens.length; i++) ...[
               if (i > 0) const SizedBox(width: screenGap),
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  ScreenLabel(
-                    name: doc.screens[i].name,
-                    device: doc.screens[i].device,
-                    selected: doc.screens[i].id == widget.selectedScreenId,
-                    onSelect: () =>
-                        widget.onSelectScreen?.call(doc.screens[i].id),
-                    onDeviceChanged: (device) => widget.store.setScreenDevice(
-                      doc.screens[i].id,
-                      device,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  ScreenSurface(
-                    screen: doc.screens[i],
-                    nodes: [
-                      for (final n in doc.nodes)
-                        if (n.screenId == doc.screens[i].id) n,
-                    ],
-                    selectedNodeId: widget.selectedNodeId,
-                    selected: doc.screens[i].id == widget.selectedScreenId,
-                    onSelectScreen: () =>
-                        widget.onSelectScreen?.call(doc.screens[i].id),
-                    zoom: widget.zoom,
-                    panMode: widget.panMode,
-                    onSelectNode: (id) => widget.onSelectNode?.call(id),
-                    onResizeNode: (id, w, h) =>
-                        widget.store.setNodeSize(id, w: w, h: h),
-                    onDropKind: (kind, position, {parentId, index}) =>
-                        widget.onAccept(
-                      kind,
-                      position,
-                      screenId: doc.screens[i].id,
-                      parentId: parentId,
-                      index: index,
-                    ),
-                    // Hover-visual plumbing (D3): the same live pointer that
-                    // the accept path snaps also drives the guides, the flow
-                    // insert line, and the in-chrome drop-preview ghost.
-                    dropPointer: _pointerGlobal,
-                  ),
+              // Y4: the ScreenLabel row (per-screen device buttons + name/dims)
+              // is dropped (FORGE.md §1-3g). Names move to the Forge header
+              // breadcrumb and the device strip moves into the header at the
+              // Y6 cutover; screen tap selection stays on the empty-area path
+              // below, and `store.setScreenDevice` is untouched.
+              ScreenSurface(
+                screen: doc.screens[i],
+                nodes: [
+                  for (final n in doc.nodes)
+                    if (n.screenId == doc.screens[i].id) n,
                 ],
+                selectedNodeId: widget.selectedNodeId,
+                selected: doc.screens[i].id == widget.selectedScreenId,
+                onSelectScreen: () =>
+                    widget.onSelectScreen?.call(doc.screens[i].id),
+                zoom: widget.zoom,
+                panMode: widget.panMode,
+                onSelectNode: (id) => widget.onSelectNode?.call(id),
+                onResizeNode: (id, w, h) =>
+                    widget.store.setNodeSize(id, w: w, h: h),
+                onDropKind: (kind, position, {parentId, index}) =>
+                    widget.onAccept(
+                  kind,
+                  position,
+                  screenId: doc.screens[i].id,
+                  parentId: parentId,
+                  index: index,
+                ),
+                // Hover-visual plumbing (D3): the same live pointer that
+                // the accept path snaps also drives the guides, the flow
+                // insert line, and the in-chrome drop-preview ghost.
+                dropPointer: _pointerGlobal,
               ),
             ],
           ],
@@ -546,9 +646,9 @@ class _DesignCanvasState extends State<DesignCanvas> {
           contentWidth += screenOuterWidth(screen);
         }
         contentWidth += math.max(0, doc.screens.length - 1) * screenGap;
-        const contentHeight =
-            EditorMetrics.screenLabelHeight + 10 + EditorMetrics.phoneOuterHeight;
-        return Listener(
+        // Y4: tracks [_contentSize] (label row dropped — phone height only).
+        const contentHeight = EditorMetrics.phoneOuterHeight;
+        final viewport = Listener(
           onPointerSignal: _onPointerSignal,
           onPointerMove: _onPointerMove,
           child: GestureDetector(
@@ -579,6 +679,33 @@ class _DesignCanvasState extends State<DesignCanvas> {
               ),
             ),
           ),
+        );
+        // Y4 Forge canvas chrome (FORGE.md §1-3c–3d): the dotted background
+        // paints behind the viewport and the dismissible hint pill floats
+        // top-center above it. Both are pure overlays — pan/zoom/gesture code
+        // above is untouched.
+        return Stack(
+          children: [
+            Positioned.fill(
+              child: CustomPaint(
+                painter: ForgeDotsPainter(
+                  color: colors.onSurfaceVariant.withValues(alpha: 0.35),
+                ),
+              ),
+            ),
+            viewport,
+            if (_hintVisible)
+              Positioned(
+                top: 12,
+                left: 0,
+                right: 0,
+                child: Center(
+                  child: ForgeHintPill(
+                    onDismiss: () => setState(() => _hintVisible = false),
+                  ),
+                ),
+              ),
+          ],
         );
       },
     );

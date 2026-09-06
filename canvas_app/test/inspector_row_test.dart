@@ -10,8 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// entry — loop test below.
 ///
 /// ROW UI: row container nodes (created via `store.addRow`) carry no items,
-/// so the inspector shows the container editor (badge + id + child count +
-/// gap stepper reporting through `store.patchNode`).
+/// so the inspector shows the container editor (Forge `Kind · id` header +
+/// child count + gap stepper reporting through `store.patchNode`).
 void main() {
   group('inspector schema audit', () {
     test('every catalog kind resolves a schema (loop)', () {
@@ -119,8 +119,19 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(find.text('row'), findsOneWidget);
-      expect(find.text(rowId), findsOneWidget);
+      // Forge SELECTED header (Y5 restyle): the old badge + id row is now
+      // one `Kind · id` line (keyed — the row's own parent-picker entry
+      // renders the same label text, so a bare `find.text` matches twice).
+      expect(
+        find.byKey(const ValueKey('inspector-selected-header')),
+        findsOneWidget,
+      );
+      expect(
+        tester.widget<Text>(
+          find.byKey(const ValueKey('inspector-selected-header')),
+        ).data,
+        'Row · $rowId',
+      );
       expect(find.text('0 children'), findsOneWidget);
       expect(find.text('8'), findsOneWidget);
       // Step up to 12 through the real button.

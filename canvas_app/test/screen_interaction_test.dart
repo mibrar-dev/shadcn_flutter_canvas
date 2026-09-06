@@ -6,6 +6,7 @@ import 'package:canvas_app/main.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/device_picker.dart';
+import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
@@ -37,13 +38,13 @@ void _useReferenceViewport(WidgetTester tester) {
   addTearDown(tester.view.resetDevicePixelRatio);
 }
 
-/// Canvas screen label tap target (Y2: the Forge topbar tabs render the same
-/// screen names, so bare `find.text` is ambiguous — scope to the canvas to
-/// keep the canvas-tap selection path these tests cover).
-Finder _canvasScreenLabel(String name) => find.descendant(
-      of: find.byType(DesignCanvas),
-      matching: find.text(name),
-    );
+/// Canvas screen tap target (Y4, FORGE.md §1-3g: the ScreenLabel row is
+/// dropped — names move to the Forge header breadcrumb at the Y6 cutover —
+/// so select a screen by tapping its empty screen area, the same
+/// `onSelectScreen` path the label used).
+Future<void> _tapPhoneCenter(WidgetTester tester, int at) async {
+  await tester.tapAt(tester.getCenter(find.byType(PhoneFrame).at(at)));
+}
 
 void main() {
   group('CanvasStore.deleteScreen', () {
@@ -274,7 +275,7 @@ void main() {
   });
 
   group('screen selection (widget)', () {
-    testWidgets('tapping a label selects the screen with a ring',
+    testWidgets('tapping empty screen area selects the screen with a ring',
         (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _twoScreenDoc());
@@ -292,7 +293,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byKey(screenSelectedKey('s1')), findsNothing);
 
-      await tester.tap(find.text('Done'));
+      // Y4 (FORGE.md §1-3g): the label is gone — the second phone's empty
+      // screen area (the 'Drag a part here' placeholder) drives the same
+      // `onSelectScreen` path.
+      await _tapPhoneCenter(tester, 1);
       await tester.pump();
       expect(selected, 's9');
 
@@ -312,20 +316,46 @@ void main() {
       expect(find.byKey(screenSelectedKey('s1')), findsNothing);
     });
 
-    testWidgets('device buttons switch the screen device', (tester) async {
+    testWidgets('header device strip switches the screen device',
+        (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _twoScreenDoc());
+      // Y4 (FORGE.md §1-3g): the canvas device row moved into the Forge
+      // header as a compact strip over the same specs/contract — drive it
+      // there, wired to the untouched `setScreenDevice` store path.
       await tester.pumpWidget(
-        MaterialApp(home: Scaffold(body: DesignCanvas(store: store))),
+        MaterialApp(
+          home: Scaffold(
+            body: ForgeCanvasHeader(
+              projectTitle: 'Checkout',
+              screenId: 's1',
+              screenName: 'Pay',
+              zoom: 1.0,
+              onZoomIn: () {},
+              onZoomOut: () {},
+              onFit: () {},
+              screenDevice: store.doc.screens.first.device,
+              onDeviceChanged: (device) =>
+                  store.setScreenDevice('s1', device),
+            ),
+          ),
+        ),
       );
       await tester.pumpAndSettle();
       expect(store.doc.screens.first.device, isNull);
 
-      // Per-screen device tips are kit tooltips now: tap the tablet glyph
-      // directly (first screen's device row comes first).
+      // Per-screen device tips are kit tooltips: tap the tablet glyph
+      // directly.
       await tester.tap(find.byIcon(Icons.tablet_mac).first);
       await tester.pumpAndSettle();
       expect(store.doc.screens.first.device, 'tablet');
+
+      // The frame + undo contracts are unchanged: verify them store-side
+      // with the canvas rendering the tablet stage.
+      await tester.pumpWidget(
+        MaterialApp(home: Scaffold(body: DesignCanvas(store: store))),
+      );
+      await tester.pumpAndSettle();
       expect(
         tester.getSize(find.byType(PhoneFrame).first).width,
         moreOrLessEquals(768 + 7.5 * 2),
@@ -434,7 +464,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      await tester.tap(_canvasScreenLabel('Done'));
+      // Y4: labels are gone — select s9 via its empty screen area (same
+      // `onSelectScreen` path; see `_tapPhoneCenter`).
+      await _tapPhoneCenter(tester, 1);
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(
@@ -465,7 +497,9 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      await tester.tap(_canvasScreenLabel('Done'));
+      // Y4: labels are gone — select s9 via its empty screen area (same
+      // `onSelectScreen` path; see `_tapPhoneCenter`).
+      await _tapPhoneCenter(tester, 1);
       await tester.pumpAndSettle();
       await tester.tap(
         find.descendant(

@@ -262,6 +262,13 @@ class InspectorPanel extends StatefulWidget {
   final String? nodeId;
   final String? itemId;
 
+  /// Forge SELECTED-card actions (FORGE.md §1-4e, Y5 pass-through): the
+  /// Duplicate/Delete row calls these with the selected node id. The shell
+  /// wires them to `store.duplicateNode`/`store.deleteNode` (Y6); null
+  /// renders the row's buttons disabled.
+  final ValueChanged<String>? onDuplicate;
+  final ValueChanged<String>? onDelete;
+
   /// Pre-W2 per-kind schemas. Retained for source compatibility only; editors
   /// are driven by [kPropSchemas] from `props_schema.dart`.
   final Map<String, List<PropDef>>? schemas;
@@ -271,6 +278,8 @@ class InspectorPanel extends StatefulWidget {
     required this.store,
     this.nodeId,
     this.itemId,
+    this.onDuplicate,
+    this.onDelete,
     this.schemas,
   });
 
@@ -1356,6 +1365,61 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
+  /// Forge SELECTED-card header (FORGE.md §1-4c): the `<Kind> · <id>` idiom
+  /// from [_nodeShortLabel], painted as a single 13/600 line (see
+  /// [EditorType.readout]) instead of the old badge + id row. The prop
+  /// editors below are unchanged (same specs, same `patchItem` paths).
+  Widget _selectedHeader(String kind, String nodeId) {
+    final title = kind.isEmpty
+        ? 'Empty'
+        : '${kind[0].toUpperCase()}${kind.substring(1)}';
+    return Text(
+      '$title · $nodeId',
+      key: const ValueKey('inspector-selected-header'),
+      style: EditorType.readout.copyWith(
+        color: EditorTheme.of(context).onSurface,
+      ),
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+
+  /// Forge SELECTED-card action row (FORGE.md §1-4e, §3): Duplicate
+  /// (outline) + Delete (red-text via [EditorColors.danger], the Y2 token
+  /// for inspector deletes), side by side at the card bottom. Both fire the
+  /// Y5 pass-through callbacks with [nodeId] — the shell owns the
+  /// `duplicateNode`/`deleteNode` store calls (Y6), so this widget never
+  /// imports them; null callbacks render the buttons disabled.
+  Widget _duplicateDeleteRow(String nodeId) {
+    final colors = EditorTheme.of(context);
+    return Row(
+      children: [
+        Expanded(
+          child: shadcn.OutlineButton(
+            key: const ValueKey('inspector-duplicate'),
+            size: shadcn.ButtonSize.small,
+            onPressed: widget.onDuplicate == null
+                ? null
+                : () => widget.onDuplicate!(nodeId),
+            child: const Text('Duplicate'),
+          ),
+        ),
+        const SizedBox(width: _kInspectorGap),
+        Expanded(
+          child: shadcn.TextButton(
+            key: const ValueKey('inspector-delete'),
+            onPressed: widget.onDelete == null
+                ? null
+                : () => widget.onDelete!(nodeId),
+            child: Text(
+              'Delete',
+              style: EditorType.tileLabel.copyWith(color: colors.danger),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -1391,13 +1455,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          shadcn.PrimaryBadge(child: Text(item.kind)),
-                          const SizedBox(width: _kInspectorGap),
-                          Expanded(child: Text(item.id)),
-                        ],
-                      ),
+                      _selectedHeader(item.kind, widget.nodeId!),
                       const SizedBox(height: _kInspectorGap),
                       Text(
                         'No editable properties',
@@ -1412,6 +1470,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                           color: EditorTheme.of(context).onSurfaceVariant,
                         ),
                       ),
+                      const SizedBox(height: _kInspectorGap),
+                      _duplicateDeleteRow(widget.nodeId!),
                     ],
                   ),
                 ),
@@ -1462,15 +1522,19 @@ class _InspectorPanelState extends State<InspectorPanel> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          shadcn.PrimaryBadge(child: Text(item.kind)),
-                          const SizedBox(width: _kInspectorGap),
-                          Expanded(child: Text(item.id)),
-                        ],
-                      ),
+                      _selectedHeader(item.kind, widget.nodeId!),
                       const SizedBox(height: _kInspectorGap),
                       ..._rows(item, schema, kindDefaults),
+                      // TODO(Forge follow-up, FORGE.md §1-4d + §4.4):
+                      // SURFACE/RADIUS/PADDING editors are deferred — `card`
+                      // has no such props in `props_schema.dart`, so Y5 must
+                      // not invent them or hand-roll sliders. When the props
+                      // land (number PropSpecs with min/max/step so the
+                      // kit-Slider branch renders, plus catalog + codegen
+                      // support), their editors mount here above the action
+                      // row.
+                      const SizedBox(height: _kInspectorGap),
+                      _duplicateDeleteRow(widget.nodeId!),
                     ],
                   ),
                 ),
@@ -1735,13 +1799,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
-                children: [
-                  shadcn.PrimaryBadge(child: Text('row')),
-                  const SizedBox(width: _kInspectorGap),
-                  Expanded(child: Text(node.id)),
-                ],
-              ),
+              _selectedHeader('row', node.id),
               const SizedBox(height: _kInspectorGap),
               Text(
                 '${children.length} ${children.length == 1 ? 'child' : 'children'}',
@@ -1856,6 +1914,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
               ],
               const SizedBox(height: _kInspectorGap),
               const Text('Children are arranged on the canvas and in Layers.'),
+              const SizedBox(height: _kInspectorGap),
+              _duplicateDeleteRow(node.id),
             ],
           ),
         ),
@@ -1964,12 +2024,22 @@ class _InspectorPanelState extends State<InspectorPanel> {
       padding: const EdgeInsets.only(bottom: _kInspectorGap),
       child: Row(
         children: [
-          Expanded(child: Text(label, style: EditorType.tileLabel)),
+          Expanded(
+            child: Text(
+              label,
+              style: EditorType.tileLabel,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
           if (disabledReason != null)
-            Text(
-              disabledReason,
-              style: EditorType.tileLabel.copyWith(
-                color: EditorTheme.of(context).onSurfaceVariant,
+            Flexible(
+              child: Text(
+                disabledReason,
+                style: EditorType.tileLabel.copyWith(
+                  color: EditorTheme.of(context).onSurfaceVariant,
+                ),
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.end,
               ),
             )
           else

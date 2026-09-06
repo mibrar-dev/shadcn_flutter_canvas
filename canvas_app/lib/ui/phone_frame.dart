@@ -182,6 +182,16 @@ class PhoneFrame extends StatelessWidget {
   }
 }
 
+/// Track Y4 Forge Dynamic Island size (FORGE.md §3): black pill APPROXIMATE
+/// ~110×~28px, centered in the status strip. All §3 numbers are APPROXIMATE
+/// per FORGE.md §6 (structure/callbacks are tested, not pixels).
+const double _kDynamicIslandWidth = 110.0;
+const double _kDynamicIslandHeight = 28.0;
+
+/// Finder for the Dynamic Island overlay (used by forge-canvas tests).
+const ValueKey<String> kDynamicIslandKey =
+    ValueKey<String>('dynamic-island');
+
 /// Track X1 phone status bar: overlaid strip with the classic `9:41` time on
 /// the left and signal/wifi/battery glyphs on the right. Token-styled
 /// ([EditorColors.onSurfaceVariant] on the screen background); `IgnorePointer`
@@ -1248,6 +1258,34 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                       child: _StatusBar(
                         colors: colors,
                         background: screenColor,
+                      ),
+                    ),
+                    // Track Y4 Forge Dynamic Island (FORGE.md §1-3e, §3):
+                    // black pill centered in the status strip. Pure overlay —
+                    // `IgnorePointer`d like the status bar, so it never
+                    // claims taps, selection, or drops — and it does not
+                    // shift the status-bar reserve or any drop math. The
+                    // black is device-hardware black in both chrome modes
+                    // (same `Colors.black` precedent as the frame shadow
+                    // above); nothing else in this file changed for Y4.
+                    Positioned(
+                      top: 0,
+                      left: 0,
+                      right: 0,
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Container(
+                            key: kDynamicIslandKey,
+                            width: _kDynamicIslandWidth,
+                            height: _kDynamicIslandHeight,
+                            decoration: BoxDecoration(
+                              color: Colors.black,
+                              borderRadius: BorderRadius.circular(
+                                _kDynamicIslandHeight / 2,
+                              ),
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                     Positioned(
