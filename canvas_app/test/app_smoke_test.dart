@@ -44,7 +44,7 @@ void main() {
     expect(find.byType(DesignCanvas), findsOneWidget);
     expect(find.byType(RightAside), findsOneWidget);
     // No selection → the aside auto-shows the Prompt tab, not the Inspector,
-    // and the black selection toolbar stays hidden.
+    // and the neutral-pill selection toolbar stays hidden.
     expect(find.byType(InspectorPanel), findsNothing);
     expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
     expect(find.byType(PreviewPlayer), findsNothing);
@@ -52,10 +52,8 @@ void main() {
     // hides without a selection); the Forge Library|Layers pills + bottom
     // Theme disclosure are removed with the sidebar revert.
     expect(find.byType(CanvasToolbar), findsNothing);
-    expect(find.byKey(const ValueKey('forge-left-pill-library')),
-        findsNothing);
-    expect(find.byKey(const ValueKey('forge-left-pill-layers')),
-        findsNothing);
+    expect(find.byKey(const ValueKey('forge-left-pill-library')), findsNothing);
+    expect(find.byKey(const ValueKey('forge-left-pill-layers')), findsNothing);
     expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
         findsNothing);
     // The actions live in the Forge topbar (not in a floating bar): the

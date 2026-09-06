@@ -110,8 +110,9 @@ int _uidCounter = 0;
 String _nextId() => 'u${++_uidCounter}';
 
 /// One node with a single item of [kind] on [screenId] at flow row [row].
-CanvasNode _node(String screenId, int row, String kind,
-    Map<String, dynamic> props, [NodeAction? action]) {
+CanvasNode _node(
+    String screenId, int row, String kind, Map<String, dynamic> props,
+    [NodeAction? action]) {
   return CanvasNode(
     id: _nextId(),
     screenId: screenId,
@@ -244,8 +245,8 @@ List<CanvasNode> _loginFormNodes({NodeAction? signInAction}) {
           'label': 'Password',
           'placeholder': '••••••••',
         })),
-    _node(_loginScreenId, 4, 'button',
-        _labeled('button', {'label': 'Sign in'}), signInAction),
+    _node(_loginScreenId, 4, 'button', _labeled('button', {'label': 'Sign in'}),
+        signInAction),
   ];
 }
 
@@ -422,8 +423,7 @@ bool _hasAction(ScreenDoc doc, String from, String to, String transition) =>
       (node) =>
           node.screenId == from &&
           node.items.any((item) =>
-              item.action?.to == to &&
-              item.action?.transition == transition),
+              item.action?.to == to && item.action?.transition == transition),
     );
 
 void _checkStep1(ScreenDoc back) {

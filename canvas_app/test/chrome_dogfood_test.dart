@@ -52,7 +52,13 @@ List<String> _kitTipLabels(WidgetTester tester, Finder scope) {
 
 /// No raw Material interactive widgets may remain under [scope].
 void _expectNoRawChrome(WidgetTester tester, Finder scope) {
-  for (final type in [Tooltip, IconButton, TextButton, TextField, AlertDialog]) {
+  for (final type in [
+    Tooltip,
+    IconButton,
+    TextButton,
+    TextField,
+    AlertDialog
+  ]) {
     expect(
       find.descendant(of: scope, matching: find.byType(type)),
       findsNothing,
@@ -252,12 +258,14 @@ void main() {
           );
       // Single row: both z-order edges disabled, never hidden.
       expect(
-        tester.widget<shadcn.IconButton>(actionFor(Icons.arrow_upward, 0))
+        tester
+            .widget<shadcn.IconButton>(actionFor(Icons.arrow_upward, 0))
             .onPressed,
         isNull,
       );
       expect(
-        tester.widget<shadcn.IconButton>(actionFor(Icons.arrow_downward, 0))
+        tester
+            .widget<shadcn.IconButton>(actionFor(Icons.arrow_downward, 0))
             .onPressed,
         isNull,
       );

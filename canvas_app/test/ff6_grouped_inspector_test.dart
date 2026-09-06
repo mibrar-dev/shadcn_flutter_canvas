@@ -47,13 +47,8 @@ Future<void> _pumpInspector(
   await tester.pump();
 }
 
-Map<String, dynamic> _propsOf(CanvasStore store, String nodeId) => store
-    .doc
-    .nodes
-    .singleWhere((n) => n.id == nodeId)
-    .items
-    .single
-    .props;
+Map<String, dynamic> _propsOf(CanvasStore store, String nodeId) =>
+    store.doc.nodes.singleWhere((n) => n.id == nodeId).items.single.props;
 
 void main() {
   group('ff6 grouped sections', () {

@@ -3,7 +3,7 @@
 /// Single row centered over the canvas; see CHROME_SPEC.md.
 ///
 /// Track Y4 (FORGE.md §1-3f) adds [ForgeSelectionToolbar] below: the floating
-/// black selection toolbar. [CanvasToolbar] itself is KEPT verbatim until the
+/// neutral-pill selection toolbar (black at Y4, restyled FF5 — see below). [CanvasToolbar] itself is KEPT verbatim until the
 /// Y6 cutover remounts the shell (its actions move to the topbar/header
 /// there); nothing above this line changed for Y4.
 ///

@@ -143,9 +143,7 @@ class _FfRailButton extends StatelessWidget {
             Container(
               width: EditorMetrics.ffRailIndicatorWidth,
               height: EditorMetrics.ffRailButtonSize,
-              color: active
-                  ? colors.railActiveIndicator
-                  : Colors.transparent,
+              color: active ? colors.railActiveIndicator : Colors.transparent,
             ),
             Expanded(
               child: shadcn.IconButton.ghost(

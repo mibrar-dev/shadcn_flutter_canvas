@@ -181,9 +181,11 @@ void main() {
         findsOneWidget,
       );
       expect(
-        tester.widget<Text>(
-          find.byKey(const ValueKey('inspector-selected-header')),
-        ).data,
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('inspector-selected-header')),
+            )
+            .data,
         'Row · $rowId',
       );
       expect(find.text('0 children'), findsOneWidget);

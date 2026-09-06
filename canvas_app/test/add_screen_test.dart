@@ -13,7 +13,8 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(MaterialApp(home: EditorShell(store: CanvasStore())));
+    await tester
+        .pumpWidget(MaterialApp(home: EditorShell(store: CanvasStore())));
     await tester.pump();
     // Y4 (FORGE.md §1-3g): the canvas ScreenLabel row is dropped — screen
     // names move to the Forge header breadcrumb at the Y6 cutover — so count

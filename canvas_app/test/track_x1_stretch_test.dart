@@ -45,7 +45,9 @@ CanvasNode _node({
       screenId: 's1',
       x: 0,
       y: 0,
-      items: [CanvasItem(id: 'i-$id', kind: kind, props: {'label': label})],
+      items: [
+        CanvasItem(id: 'i-$id', kind: kind, props: {'label': label})
+      ],
       w: w,
       h: h,
     );
@@ -118,8 +120,8 @@ void main() {
       expect(box, findsWidgets);
       // Paint fills the pinned width while the height stays intrinsic (no
       // forced 200px-tall button).
-      final buttonBox =
-          tester.renderObject<RenderBox>(find.byType(shadcn.PrimaryButton).first);
+      final buttonBox = tester
+          .renderObject<RenderBox>(find.byType(shadcn.PrimaryButton).first);
       expect(buttonBox.size.width, 200.0);
       expect(buttonBox.size.height, lessThan(200.0));
     });

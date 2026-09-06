@@ -278,7 +278,8 @@ void main() {
     expect(find.byType(shadcn.Switch), findsOneWidget);
     await tester.tap(find.byType(shadcn.Switch));
     await tester.pump();
-    expect(tester.widget<shadcn.Switch>(find.byType(shadcn.Switch)).value, isTrue);
+    expect(
+        tester.widget<shadcn.Switch>(find.byType(shadcn.Switch)).value, isTrue);
   });
 
   testWidgets('builders tolerate empty props (defaults kick in)', (
@@ -321,7 +322,8 @@ void main() {
 
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(body: buildCatalogItem('dialog', {'showActions': false})),
+        home:
+            Scaffold(body: buildCatalogItem('dialog', {'showActions': false})),
       ),
     );
     expect(find.text('Close'), findsNothing);
@@ -416,7 +418,8 @@ void main() {
         expect(schema, isNotNull, reason: 'no schema copy for ${entry.kind}');
         for (final defaultProp in entry.defaults.entries) {
           final prop = schema!.where((p) => p['name'] == defaultProp.key);
-          expect(prop, hasLength(1), reason: '${entry.kind}.${defaultProp.key}');
+          expect(prop, hasLength(1),
+              reason: '${entry.kind}.${defaultProp.key}');
           final type = prop.single['type'] as String;
           final value = defaultProp.value;
           // Track F nullable style/dim props: null means unset — the block
@@ -431,33 +434,42 @@ void main() {
           }
           switch (type) {
             case 'bool':
-              expect(value, isA<bool>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<bool>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
             case 'string':
-              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<String>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
             case 'enum':
               final options = prop.single['enum'] as List<String>;
-              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<String>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
               expect(
                 options,
                 contains(value),
-                reason: '${entry.kind}.${defaultProp.key} default not in $options',
+                reason:
+                    '${entry.kind}.${defaultProp.key} default not in $options',
               );
             case 'double':
-              expect(value, isA<double>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<double>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
             case 'int':
-              expect(value, isA<int>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<int>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
             case 'alignment':
               // Track F named-constant alignment (never a free string).
-              expect(value, isA<String>(), reason: '${entry.kind}.${defaultProp.key}');
+              expect(value, isA<String>(),
+                  reason: '${entry.kind}.${defaultProp.key}');
             default:
-              fail('unknown schema type $type for ${entry.kind}.${defaultProp.key}');
+              fail(
+                  'unknown schema type $type for ${entry.kind}.${defaultProp.key}');
           }
           // Shared keys must agree on the default value (block is the source
           // of truth for canvas-level content props).
           expect(
             value,
             prop.single['default'],
-            reason: '${entry.kind}.${defaultProp.key} default drifted from block',
+            reason:
+                '${entry.kind}.${defaultProp.key} default drifted from block',
           );
         }
       });
@@ -467,7 +479,8 @@ void main() {
       // The switch canvas block declares a `label` prop, but `Switch` takes
       // no label (only `leading`/`trailing`) — reported as a follow-up
       // blocks finding, so the catalog stays constructor-true here.
-      expect(findEntry('switch')!.defaults, {'value': false, 'disabled': false});
+      expect(
+          findEntry('switch')!.defaults, {'value': false, 'disabled': false});
       expect(
         kBlockSchemas['switch']!.map((p) => p['name']),
         contains('label'),
@@ -492,7 +505,14 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {
       'name': 'variant',
       'type': 'enum',
-      'enum': ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link'],
+      'enum': [
+        'primary',
+        'secondary',
+        'outline',
+        'ghost',
+        'destructive',
+        'link'
+      ],
       'default': 'primary',
     },
     {
@@ -968,7 +988,11 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'initialValue', 'type': 'string', 'default': ''},
   ],
   'markdown': [
-    {'name': 'data', 'type': 'string', 'default': '# Title\n\nSome **rich** text.'},
+    {
+      'name': 'data',
+      'type': 'string',
+      'default': '# Title\n\nSome **rich** text.'
+    },
   ],
   'text_animate': [
     {'name': 'text', 'type': 'string', 'default': 'Watch the words appear.'},
@@ -994,10 +1018,18 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
   'navigation_menu': [
     {'name': 'menu1', 'type': 'string', 'default': 'Products'},
     {'name': 'item1', 'type': 'string', 'default': 'Web Apps'},
-    {'name': 'detail1', 'type': 'string', 'default': 'Landing pages and dashboards.'},
+    {
+      'name': 'detail1',
+      'type': 'string',
+      'default': 'Landing pages and dashboards.'
+    },
     {'name': 'menu2', 'type': 'string', 'default': 'Company'},
     {'name': 'item2', 'type': 'string', 'default': 'About'},
-    {'name': 'detail2', 'type': 'string', 'default': 'Team, culture, and careers.'},
+    {
+      'name': 'detail2',
+      'type': 'string',
+      'default': 'Team, culture, and careers.'
+    },
   ],
   'dropzone': [
     {'name': 'hint', 'type': 'string', 'default': 'Drag files here'},
@@ -1028,9 +1060,21 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'page2', 'type': 'string', 'default': 'Page 2'},
   ],
   'scrollable': [
-    {'name': 'text1', 'type': 'string', 'default': 'First line of scrollable content.'},
-    {'name': 'text2', 'type': 'string', 'default': 'Second line of scrollable content.'},
-    {'name': 'text3', 'type': 'string', 'default': 'Third line of scrollable content.'},
+    {
+      'name': 'text1',
+      'type': 'string',
+      'default': 'First line of scrollable content.'
+    },
+    {
+      'name': 'text2',
+      'type': 'string',
+      'default': 'Second line of scrollable content.'
+    },
+    {
+      'name': 'text3',
+      'type': 'string',
+      'default': 'Third line of scrollable content.'
+    },
   ],
   'stage_container': [
     {'name': 'label', 'type': 'string', 'default': 'Stage content'},

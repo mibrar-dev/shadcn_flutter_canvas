@@ -41,7 +41,8 @@ class _MemoryPrefs implements PrefsPort {
 }
 
 void main() {
-  test('openai-shape success posts chat/completions and returns a doc', () async {
+  test('openai-shape success posts chat/completions and returns a doc',
+      () async {
     late final http.Request seen;
     final client = MockClient((request) async {
       seen = request;
@@ -167,6 +168,5 @@ void main() {
 }
 
 /// Matches a single-element iterable holding [value].
-Matcher singleEquals(Object? value) =>
-    predicate<Iterable>((it) => it.length == 1 && it.single == value,
-        'single element $value');
+Matcher singleEquals(Object? value) => predicate<Iterable>(
+    (it) => it.length == 1 && it.single == value, 'single element $value');

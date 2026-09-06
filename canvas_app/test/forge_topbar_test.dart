@@ -333,8 +333,7 @@ void main() {
       expect(landscape, isTrue);
     });
 
-    testWidgets('wired zoom strip shows the readout and zooms',
-        (tester) async {
+    testWidgets('wired zoom strip shows the readout and zooms', (tester) async {
       useReferenceViewport(tester);
       var ins = 0;
       var outs = 0;

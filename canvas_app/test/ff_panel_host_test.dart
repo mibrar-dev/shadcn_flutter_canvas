@@ -97,8 +97,7 @@ void main() {
                       key: const ValueKey('tree-search'),
                       controller: searchController,
                     ),
-                    FfRailDestination.palette:
-                        const Text('palette body'),
+                    FfRailDestination.palette: const Text('palette body'),
                   },
                 ),
               ),

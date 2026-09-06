@@ -103,8 +103,10 @@ void main(List<String> args) {
     for (final g in sharedManifest['groups'] as List)
       ((g as Map)['id'] as String): [
         for (final f in (g['files'] as List))
-          {'source': (f as Map)['source'] as String,
-           'destination': f['destination'] as String},
+          {
+            'source': (f as Map)['source'] as String,
+            'destination': f['destination'] as String
+          },
       ],
   };
   // Registry-relative source → owning component id / shared group id.
@@ -123,7 +125,8 @@ void main(List<String> args) {
 
   // Seed: catalog kinds (live-parsed) + ready kinds (live-parsed) +
   // text_field, then the transitive dependsOn closure.
-  final catalogKinds = _parseCatalogKinds('${appRoot.path}/lib/canvas/component_catalog.dart');
+  final catalogKinds =
+      _parseCatalogKinds('${appRoot.path}/lib/canvas/component_catalog.dart');
   final readyKinds = _parseReadyKinds('${appRoot.path}/tool/gen_registry.dart');
   final seed = <String>{...catalogKinds, ...readyKinds, _textFieldKind};
   for (final kind in seed) {
@@ -138,7 +141,8 @@ void main(List<String> args) {
   };
   for (final id in neededShared) {
     if (!groups.containsKey(id)) {
-      stderr.writeln('embed_sources: shared "$id" has no shared_manifest group');
+      stderr
+          .writeln('embed_sources: shared "$id" has no shared_manifest group');
       exit(1);
     }
   }
@@ -152,9 +156,9 @@ void main(List<String> args) {
 
   final contentCache = <String, String>{};
   String readSource(String source) => contentCache.putIfAbsent(
-    source,
-    () => File('$kitLib/$source').readAsStringSync(),
-  );
+        source,
+        () => File('$kitLib/$source').readAsStringSync(),
+      );
 
   bool excluded(String source, String content) {
     // Preview libraries never embed (repo policy — previews render full
@@ -220,7 +224,8 @@ void main(List<String> args) {
     if (!pulledGroups.add(id)) return;
     final files = groups[id];
     if (files == null) {
-      stderr.writeln('embed_sources: shared "$id" has no shared_manifest group');
+      stderr
+          .writeln('embed_sources: shared "$id" has no shared_manifest group');
       exit(1);
     }
     for (final f in files) {
@@ -240,7 +245,8 @@ void main(List<String> args) {
     if (!pulledComponents.add(id)) return;
     final spec = byId[id];
     if (spec == null) {
-      stderr.writeln('embed_sources: dependsOn "$id" is not a component; skipped');
+      stderr.writeln(
+          'embed_sources: dependsOn "$id" is not a component; skipped');
       return;
     }
     for (final dep in (spec['dependsOn'] as List).cast<String>()) {
@@ -375,7 +381,8 @@ void main(List<String> args) {
   // the kit has no named `part of`).
   final partToLibrary = <String, String>{};
   for (final entry in destToSource.entries) {
-    for (final uri in _directiveUris(readSource(entry.value), which: 'part of')) {
+    for (final uri
+        in _directiveUris(readSource(entry.value), which: 'part of')) {
       partToLibrary[entry.key] = sourceByDest.keys.firstWhere(
         (d) => sourceByDest[d] == resolveTarget(entry.value, uri),
       );
@@ -533,9 +540,9 @@ class _Ref {
 /// exporter's stripper relies on). With [which] set to `'part of'`, only
 /// `part of` targets are returned. Both quote styles.
 List<String> _directiveUris(String content, {String? which}) => [
-  for (final r in _directiveRefs(content))
-    if (which == null || (which == 'part of' && r.kind == 'partof')) r.uri,
-];
+      for (final r in _directiveRefs(content))
+        if (which == null || (which == 'part of' && r.kind == 'partof')) r.uri,
+    ];
 
 /// [_directiveUris] with the directive kind attached (the fixpoint treats
 /// `part` targets as runtime-by-construction; see [main]'s closure).
@@ -583,8 +590,8 @@ List<_Ref> _directiveRefs(String content) {
 /// `dart:` + `package:` URIs from `import`/`export` directives (both quote
 /// styles; single-line form — the kit keeps these on one line).
 List<String> _packageUris(String content) => [
-  for (final m in RegExp(
-    '''(?:import|export)\\s+['"](dart:[^'"]+|package:[^'"]+)['"]''',
-  ).allMatches(content))
-    m.group(1)!,
-];
+      for (final m in RegExp(
+        '''(?:import|export)\\s+['"](dart:[^'"]+|package:[^'"]+)['"]''',
+      ).allMatches(content))
+        m.group(1)!,
+    ];

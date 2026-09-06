@@ -303,9 +303,7 @@ void main() {
     test('login template wires the sign-in cycle', () {
       final doc = buildLoginTemplate();
       bool hasAction(String from, String to) => doc.nodes.any(
-            (n) =>
-                n.screenId == from &&
-                n.items.any((i) => i.action?.to == to),
+            (n) => n.screenId == from && n.items.any((i) => i.action?.to == to),
           );
       expect(hasAction('s1', 's2'), isTrue);
       expect(hasAction('s2', 's1'), isTrue);
@@ -314,9 +312,7 @@ void main() {
     test('showcase template wires the two-screen chain', () {
       final doc = buildShowcaseTemplate();
       bool hasAction(String from, String to) => doc.nodes.any(
-            (n) =>
-                n.screenId == from &&
-                n.items.any((i) => i.action?.to == to),
+            (n) => n.screenId == from && n.items.any((i) => i.action?.to == to),
           );
       expect(hasAction('s1', 's2'), isTrue);
       expect(hasAction('s2', 's1'), isTrue);

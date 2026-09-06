@@ -628,8 +628,7 @@ void main() {
       );
     });
 
-    test('duplicateNode on a row clones the whole subtree with fresh ids',
-        () {
+    test('duplicateNode on a row clones the whole subtree with fresh ids', () {
       final store = CanvasStore(initial: _nestedFlowDoc());
       final beforeIds = {for (final n in store.doc.nodes) n.id};
       final beforeItemIds = {
@@ -672,8 +671,7 @@ void main() {
           if (n.parentId == newRowId) n,
       ];
       expect(newChildren, hasLength(2));
-      final c1Clone =
-          newChildren.singleWhere((n) => n.isRow == false);
+      final c1Clone = newChildren.singleWhere((n) => n.isRow == false);
       final r2Clone = newChildren.singleWhere((n) => n.isRow == true);
       expect(c1Clone.gap, beforeGap['c1']);
       expect(r2Clone.gap, beforeGap['r2']);
@@ -708,7 +706,10 @@ void main() {
       expect(cloneItemIds.toSet(), hasLength(cloneItemIds.length));
       // Original items survive verbatim.
       expect(
-        {for (final n in store.doc.nodes) for (final i in n.items) i.id},
+        {
+          for (final n in store.doc.nodes)
+            for (final i in n.items) i.id
+        },
         containsAll(['ic1', 'ig1', 'isolo']),
       );
     });

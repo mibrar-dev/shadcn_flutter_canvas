@@ -234,9 +234,8 @@ class DevicePickerEmbed extends StatelessWidget {
             background: i == selectedIndex
                 ? colors.surfaceContainerHigh
                 : Colors.transparent,
-            foreground: i == selectedIndex
-                ? colors.onSurface
-                : colors.onSurfaceVariant,
+            foreground:
+                i == selectedIndex ? colors.onSurface : colors.onSurfaceVariant,
             onPressed: () => onSelect(i),
           ),
         EditorIconButton(
@@ -246,8 +245,7 @@ class DevicePickerEmbed extends StatelessWidget {
               ? 'Landscape on — tap for portrait'
               : 'Rotate to landscape',
           // Desktop presets are frameless fluid: no landscape variant.
-          onPressed:
-              isFramed ? () => onLandscapeChanged(!landscape) : null,
+          onPressed: isFramed ? () => onLandscapeChanged(!landscape) : null,
         ),
       ],
     );

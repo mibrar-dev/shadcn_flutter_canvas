@@ -102,8 +102,7 @@ void main() {
 
     await _pumpPreview(tester, _doc());
 
-    int count(String text) =>
-        tester.widgetList(find.text(text)).length;
+    int count(String text) => tester.widgetList(find.text(text)).length;
     final mobilePay = count('Pay');
     final mobileInfo = count('Info');
     expect(mobilePay, 1);

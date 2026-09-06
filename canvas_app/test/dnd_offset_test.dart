@@ -47,15 +47,13 @@ void main() {
     await tester.pumpAndSettle();
 
     // Aim the POINTER at inner-screen point (50, 60).
-    final box =
-        tester.renderObject<RenderBox>(find.byType(DragTarget<String>));
+    final box = tester.renderObject<RenderBox>(find.byType(DragTarget<String>));
     const want = Offset(50, 60);
     final global = box.localToGlobal(want);
 
     // Grab deliberately off the tile corner so the feedback corner and the
     // pointer differ by a large, assertion-visible margin.
-    final tileTopLeft =
-        tester.getTopLeft(find.byType(Draggable<String>));
+    final tileTopLeft = tester.getTopLeft(find.byType(Draggable<String>));
     const grabInsideTile = Offset(80, 30);
     final grab = tileTopLeft + grabInsideTile;
 

@@ -77,8 +77,7 @@ const double _kInspectorGap = 8.0;
 /// canvas_core's `screen_doc_schema.dart` — also referenced by
 /// `prompt_builder.dart`'s behavior section and `validateRefs`), sorted for
 /// a deterministic dropdown order. Never invent transitions here.
-final List<String> _kActionTransitions =
-    kAiAllowedTransitions.toList()..sort();
+final List<String> _kActionTransitions = kAiAllowedTransitions.toList()..sort();
 
 /// Fixed width of the row-gap stepper readout (fits two digits plus padding;
 /// mirrors the zoom readout role — see [EditorMetrics.zoomLabelWidth]).
@@ -139,8 +138,7 @@ String _screenName(ScreenDoc doc, String screenId) {
 /// the below-fallback, never inside chrome).
 bool _isParentTarget(CanvasNode node) =>
     node.isRow ||
-    (node.items.isNotEmpty &&
-        kContainerKinds.contains(node.items.first.kind));
+    (node.items.isNotEmpty && kContainerKinds.contains(node.items.first.kind));
 
 /// Disabled reason for a picker [target] relative to [node], or null when
 /// the move is legal. Self and descendants stay visible-but-disabled (with
@@ -266,7 +264,8 @@ final Map<String, List<PropDef>> kInspectorSchemas = {
 
 /// Forwards pure-Dart store notifications to Flutter listeners.
 /// Same sanctioned `Listenable` adapter pattern as `design_canvas.dart`.
-class _StoreRelay extends foundation.ChangeNotifier {  _StoreRelay(this._store) {
+class _StoreRelay extends foundation.ChangeNotifier {
+  _StoreRelay(this._store) {
     _store.addListener(_forward);
   }
 
@@ -336,7 +335,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
   }
 
   void _patch(String name, Object? value) {
-    widget.store.patchItem(widget.nodeId!, widget.itemId!, props: {name: value});
+    widget.store
+        .patchItem(widget.nodeId!, widget.itemId!, props: {name: value});
   }
 
   /// Row container matching [InspectorPanel.nodeId], or null. Row nodes carry
@@ -423,7 +423,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
 
   /// One tier toggle: filled while visible, outlined while hidden. Tapping
   /// flips the tier through [_toggleVisibility].
-  Widget _visibilityToggle(CanvasNode node, String tier, bool visible) {    final label = visible ? 'Visible' : 'Hidden';
+  Widget _visibilityToggle(CanvasNode node, String tier, bool visible) {
+    final label = visible ? 'Visible' : 'Hidden';
     if (visible) {
       return shadcn.PrimaryButton(
         key: ValueKey('visibility-$tier'),
@@ -670,8 +671,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             shadcn.OutlineButton(
               key: ValueKey('$prefix-down-$index'),
               size: shadcn.ButtonSize.small,
-              onPressed:
-                  index < steps.length - 1 ? () => move(1) : null,
+              onPressed: index < steps.length - 1 ? () => move(1) : null,
               child: const Text('↓'),
             ),
             const SizedBox(width: _kInspectorGap),
@@ -704,8 +704,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
               ),
             ),
           ],
-          if (step.thenSteps.isNotEmpty)
-            const SizedBox(height: _kInspectorGap),
+          if (step.thenSteps.isNotEmpty) const SizedBox(height: _kInspectorGap),
           _addStepRow(
             (added) => update(
               ActionStep.condition(
@@ -762,8 +761,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
               key: ValueKey('$prefix-$index-target'),
               value: screens.any((s) => s.id == step.to) ? step.to : null,
               placeholder: const Text('Pick screen'),
-              itemBuilder: (context, option) =>
-                  Text(_screenName(doc, option)),
+              itemBuilder: (context, option) => Text(_screenName(doc, option)),
               onChanged: (to) {
                 if (to == null) return;
                 update(
@@ -810,8 +808,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             _varPicker(
               key: ValueKey('$prefix-$index-var'),
               value: step.variable,
-              placeholder:
-                  vars.isEmpty ? 'No state vars' : 'Pick variable',
+              placeholder: vars.isEmpty ? 'No state vars' : 'Pick variable',
               onChanged: (v) => update(
                 ActionStep.setState(variable: v, value: step.value),
               ),
@@ -832,8 +829,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           key: ValueKey('$prefix-$index-message'),
           initial: step.message,
           placeholderLabel: 'message',
-          onChanged: (s) =>
-              update(ActionStep.snackBar(message: s)),
+          onChanged: (s) => update(ActionStep.snackBar(message: s)),
         );
       case 'showDialog':
         return Column(
@@ -865,8 +861,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
             _varPicker(
               key: ValueKey('$prefix-$index-var'),
               value: step.variable,
-              placeholder:
-                  vars.isEmpty ? 'No state vars' : 'Pick variable',
+              placeholder: vars.isEmpty ? 'No state vars' : 'Pick variable',
               onChanged: (v) => update(
                 ActionStep.condition(
                   variable: v,
@@ -914,8 +909,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     ValueChanged<ActionStep> update,
   ) {
     final vars = doc.states;
-    final method =
-        kApiCallMethods.contains(step.method) ? step.method : 'GET';
+    final method = kApiCallMethods.contains(step.method) ? step.method : 'GET';
     final entries = step.headers.entries.toList();
     ActionStep withHeaders(Map<String, String> next) => ActionStep.apiCall(
           url: step.url,
@@ -1061,8 +1055,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         _varPicker(
           key: ValueKey('$prefix-$index-saveTo'),
           value: saveTo,
-          placeholder:
-              vars.isEmpty ? 'No state vars' : 'No save (optional)',
+          placeholder: vars.isEmpty ? 'No state vars' : 'No save (optional)',
           onChanged: (v) => update(
             ActionStep.apiCall(
               url: step.url,
@@ -1149,7 +1142,10 @@ class _InspectorPanelState extends State<InspectorPanel> {
       },
       popup: shadcn.SelectPopup(
         items: shadcn.SelectItemList(
-          children: [for (final name in names) shadcn.SelectItemButton(value: name, child: Text(name))],
+          children: [
+            for (final name in names)
+              shadcn.SelectItemButton(value: name, child: Text(name))
+          ],
         ),
       ).call,
     );
@@ -1239,8 +1235,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     for (var i = 0; i < steps.length; i++) {
       final step = steps[i];
       final label = path.isEmpty ? 'Step ${i + 1}' : '$path.${i + 1}';
-      if (step.kind == 'navigate' &&
-          !doc.screens.any((s) => s.id == step.to)) {
+      if (step.kind == 'navigate' && !doc.screens.any((s) => s.id == step.to)) {
         out.add('$label target screen “${step.to}” is missing.');
       }
       if (step.kind == 'condition') {
@@ -1335,7 +1330,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
       i++;
       name = 'var$i';
     }
-    widget.store.addVar(AppStateVar(name: name, type: 'string', defaultValue: ''));
+    widget.store
+        .addVar(AppStateVar(name: name, type: 'string', defaultValue: ''));
   }
 
   /// Gated rename: only identifier-shaped, non-taken names reach the store
@@ -1396,9 +1392,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
   /// [EditorType.readout]) instead of the old badge + id row. The prop
   /// editors below are unchanged (same specs, same `patchItem` paths).
   Widget _selectedHeader(String kind, String nodeId) {
-    final title = kind.isEmpty
-        ? 'Empty'
-        : '${kind[0].toUpperCase()}${kind.substring(1)}';
+    final title =
+        kind.isEmpty ? 'Empty' : '${kind[0].toUpperCase()}${kind.substring(1)}';
     return Text(
       '$title · $nodeId',
       key: const ValueKey('inspector-selected-header'),
@@ -1433,9 +1428,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
         Expanded(
           child: shadcn.TextButton(
             key: const ValueKey('inspector-delete'),
-            onPressed: widget.onDelete == null
-                ? null
-                : () => widget.onDelete!(nodeId),
+            onPressed:
+                widget.onDelete == null ? null : () => widget.onDelete!(nodeId),
             child: Text(
               'Delete',
               style: EditorType.tileLabel.copyWith(color: colors.danger),
@@ -1476,48 +1470,48 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                shadcn.Card(
-                  padding: const EdgeInsets.all(EditorMetrics.panelInset),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _selectedHeader(item.kind, widget.nodeId!),
-                      const SizedBox(height: _kInspectorGap),
-                      Text(
-                        'No editable properties',
-                        style: EditorType.sectionHeader.copyWith(
-                          color: EditorTheme.of(context).onSurface,
+                  shadcn.Card(
+                    padding: const EdgeInsets.all(EditorMetrics.panelInset),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _selectedHeader(item.kind, widget.nodeId!),
+                        const SizedBox(height: _kInspectorGap),
+                        Text(
+                          'No editable properties',
+                          style: EditorType.sectionHeader.copyWith(
+                            color: EditorTheme.of(context).onSurface,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: _kInspectorGap),
-                      Text(
-                        'Kind “${item.kind}” has no editable props yet.',
-                        style: EditorType.tileLabel.copyWith(
-                          color: EditorTheme.of(context).onSurfaceVariant,
+                        const SizedBox(height: _kInspectorGap),
+                        Text(
+                          'Kind “${item.kind}” has no editable props yet.',
+                          style: EditorType.tileLabel.copyWith(
+                            color: EditorTheme.of(context).onSurfaceVariant,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: _kInspectorGap),
-                      _duplicateDeleteRow(widget.nodeId!),
-                    ],
+                        const SizedBox(height: _kInspectorGap),
+                        _duplicateDeleteRow(widget.nodeId!),
+                      ],
+                    ),
                   ),
-                ),
-                if (node != null) ...[
-                  const SizedBox(height: EditorMetrics.panelInset),
-                  _sizeCard(node),
-                  const SizedBox(height: EditorMetrics.panelInset),
-                  _actionCard(item),
-                  const SizedBox(height: EditorMetrics.panelInset),
-                  _stateCard(widget.store.doc),
-                  const SizedBox(height: EditorMetrics.panelInset),
-                  _visibilityCard(node),
-                  const SizedBox(height: EditorMetrics.panelInset),
-                  _nestingCard(node),
-                  ..._nodeSlotLockCards(node),
+                  if (node != null) ...[
+                    const SizedBox(height: EditorMetrics.panelInset),
+                    _sizeCard(node),
+                    const SizedBox(height: EditorMetrics.panelInset),
+                    _actionCard(item),
+                    const SizedBox(height: EditorMetrics.panelInset),
+                    _stateCard(widget.store.doc),
+                    const SizedBox(height: EditorMetrics.panelInset),
+                    _visibilityCard(node),
+                    const SizedBox(height: EditorMetrics.panelInset),
+                    _nestingCard(node),
+                    ..._nodeSlotLockCards(node),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-        );
+          );
         }
         final kindDefaults = findEntry(item.kind)?.defaults;
         final node = _selectedNode(widget.store.doc);
@@ -1536,15 +1530,15 @@ class _InspectorPanelState extends State<InspectorPanel> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-              // NOTE: eager layout (not a lazy ListView): the Track R1
-              // state/action cards lengthen this panel past the sliver
-              // cache, so deep scrolls would unmount scrolled-away editors
-              // and drop their in-flight state (see `responsive_inspector_
-              // test.dart`, which asserts the leaf Switch after revealing
-              // `On tap`). The panel holds a handful of cards, so eager
-              // building costs nothing; the host (`right_aside.dart`)
-              // bounds the height, so the scroll view never overflows.
-              shadcn.Card(
+                // NOTE: eager layout (not a lazy ListView): the Track R1
+                // state/action cards lengthen this panel past the sliver
+                // cache, so deep scrolls would unmount scrolled-away editors
+                // and drop their in-flight state (see `responsive_inspector_
+                // test.dart`, which asserts the leaf Switch after revealing
+                // `On tap`). The panel holds a handful of cards, so eager
+                // building costs nothing; the host (`right_aside.dart`)
+                // bounds the height, so the scroll view never overflows.
+                shadcn.Card(
                   padding: const EdgeInsets.all(EditorMetrics.panelInset),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1565,23 +1559,23 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     ],
                   ),
                 ),
-              const SizedBox(height: EditorMetrics.panelInset),
-              _actionCard(item),
-              const SizedBox(height: EditorMetrics.panelInset),
-              // App-state card rides BELOW the action card, preserving the
-              // legacy card order (props → action → visibility → nesting).
-              _stateCard(widget.store.doc),
-              if (node != null) ...[
                 const SizedBox(height: EditorMetrics.panelInset),
-                _sizeCard(node),
+                _actionCard(item),
                 const SizedBox(height: EditorMetrics.panelInset),
-                _visibilityCard(node),
-                const SizedBox(height: EditorMetrics.panelInset),
-                _nestingCard(node),
-                ..._nodeSlotLockCards(node),
+                // App-state card rides BELOW the action card, preserving the
+                // legacy card order (props → action → visibility → nesting).
+                _stateCard(widget.store.doc),
+                if (node != null) ...[
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _sizeCard(node),
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _visibilityCard(node),
+                  const SizedBox(height: EditorMetrics.panelInset),
+                  _nestingCard(node),
+                  ..._nodeSlotLockCards(node),
+                ],
               ],
-            ],
-          ),
+            ),
           ),
         );
       },
@@ -1603,8 +1597,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     }
     if (screen == null) return null;
     final deviceId = screen.device;
-    if (deviceId != null &&
-        !kPreviewDevices.any((d) => d.id == deviceId)) {
+    if (deviceId != null && !kPreviewDevices.any((d) => d.id == deviceId)) {
       return null;
     }
     return specForScreenDevice(deviceId).width;
@@ -1617,8 +1610,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
     for (final s in widget.store.doc.screens) {
       if (s.id == node.screenId) {
         final deviceId = s.device;
-        if (deviceId != null &&
-            !kPreviewDevices.any((d) => d.id == deviceId)) {
+        if (deviceId != null && !kPreviewDevices.any((d) => d.id == deviceId)) {
           return 'Unknown device "$deviceId" — presets unavailable';
         }
         return null;
@@ -1694,8 +1686,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
   /// * else → `hug` (intrinsic).
   String _sizeModeOf(CanvasNode node) {
     if (node.widthMode == SizeMode.expand) return 'expand';
-    if (node.widthMode == SizeMode.fixed ||
-        node.heightMode == SizeMode.fixed) {
+    if (node.widthMode == SizeMode.fixed || node.heightMode == SizeMode.fixed) {
       return 'fixed';
     }
     return 'hug';
@@ -1980,16 +1971,14 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 name: 'mainAxis',
                 value: node.mainAxis,
                 placeholderLabel: 'Default (start)',
-                onChanged: (v) =>
-                    widget.store.patchNode(node.id, mainAxis: v),
+                onChanged: (v) => widget.store.patchNode(node.id, mainAxis: v),
               ),
               const SizedBox(height: _kInspectorGap),
               _containerSelect(
                 name: 'crossAxis',
                 value: node.crossAxis,
                 placeholderLabel: 'Default (center)',
-                onChanged: (v) =>
-                    widget.store.patchNode(node.id, crossAxis: v),
+                onChanged: (v) => widget.store.patchNode(node.id, crossAxis: v),
               ),
               const SizedBox(height: _kInspectorGap),
               // Track F4: sizing-mode selector above the Width row (same
@@ -2129,8 +2118,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           _parentOption(
             label: 'Screen root',
             optionKey: const ValueKey('nesting-move-root'),
-            disabledReason:
-                node.parentId == null ? 'already at root' : null,
+            disabledReason: node.parentId == null ? 'already at root' : null,
             onMove: () => widget.store.reparentNode(node.id, null),
           ),
           for (final target in targets)
@@ -2270,7 +2258,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
                     if (target == null) return;
                     // Belt-and-braces: disabled items cannot fire, but a
                     // stale tap must never reach the throwing store path.
-                    if (_slotDisabledReason(node, slot, target, descendantIds) !=
+                    if (_slotDisabledReason(
+                            node, slot, target, descendantIds) !=
                         null) {
                       return;
                     }
@@ -2358,8 +2347,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 shadcn.PrimaryButton(
                   key: const ValueKey('node-lock'),
                   size: shadcn.ButtonSize.small,
-                  onPressed: () =>
-                      widget.store.setNodeLocked(node.id, false),
+                  onPressed: () => widget.store.setNodeLocked(node.id, false),
                   child: const Text('Unlock'),
                 )
               else
@@ -2421,8 +2409,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
           min: 0,
           step: 1,
           isInt: true,
-          onChanged: (v) =>
-              widget.store.patchNode(child.id, flex: v.toInt()),
+          onChanged: (v) => widget.store.patchNode(child.id, flex: v.toInt()),
         ),
       ],
     );
@@ -2478,7 +2465,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
     PropSpec spec,
     Map<String, dynamic>? kindDefaults,
   ) {
-    final resolved = resolveProp(item.kind, spec.name, item.props, kindDefaults);
+    final resolved =
+        resolveProp(item.kind, spec.name, item.props, kindDefaults);
     final overridden = isPropOverridden(
       item.kind,
       spec.name,
@@ -2504,7 +2492,8 @@ class _InspectorPanelState extends State<InspectorPanel> {
           initial: (resolved as String?) ?? '',
           placeholderLabel: spec.name,
           onChanged: (v) => _patch(spec.name, v),
-        );      case 'bool':
+        );
+      case 'bool':
         editor = PropSwitchEditor(
           value: (resolved as bool?) ?? false,
           onChanged: (v) => _patch(spec.name, v),
@@ -2512,8 +2501,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
       case 'enum':
         final value = resolved as String?;
         // Segmented control when the research rule fires (<= 3 options).
-        final useSegmented =
-            spec.control == 'segmented' ||
+        final useSegmented = spec.control == 'segmented' ||
             (spec.control == 'select' && spec.options.length <= 3);
         editor = useSegmented
             ? PropSegmentedEditor(
@@ -2530,8 +2518,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
                 },
               );
       case 'number':
-        final current =
-            (resolved as num?)?.toDouble() ??
+        final current = (resolved as num?)?.toDouble() ??
             (spec.defaultValue as num?)?.toDouble() ??
             0.0;
         editor = PropNumberEditor(
@@ -2666,8 +2653,7 @@ class _InspectorPanelState extends State<InspectorPanel> {
         ),
       );
     }
-    final scope =
-        StateScope.maybeOf(context) ?? StateScope.defaultsFor(vars);
+    final scope = StateScope.maybeOf(context) ?? StateScope.defaultsFor(vars);
     final resolved = resolveBoundProp(item.kind, spec.name, raw, scope);
     final known = vars.any((v) => v.name == name);
     return Padding(

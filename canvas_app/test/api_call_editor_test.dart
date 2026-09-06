@@ -29,11 +29,11 @@ import 'package:flutter_test/flutter_test.dart';
   return (store, nodeId, 'i1');
 }
 
-CanvasItem _item(CanvasStore store, String nodeId, String itemId) => store.doc
-    .nodes
-    .singleWhere((n) => n.id == nodeId)
-    .items
-    .singleWhere((i) => i.id == itemId);
+CanvasItem _item(CanvasStore store, String nodeId, String itemId) =>
+    store.doc.nodes
+        .singleWhere((n) => n.id == nodeId)
+        .items
+        .singleWhere((i) => i.id == itemId);
 
 Future<void> _pumpInspector(
   WidgetTester tester,

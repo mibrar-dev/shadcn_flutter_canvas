@@ -169,9 +169,8 @@ void main() {
         ],
       );
       final issues = auditDoc(doc, catalogKinds: const {'button'});
-      final mentioning = issues
-          .where((i) => i.message.contains('deleted'))
-          .toList();
+      final mentioning =
+          issues.where((i) => i.message.contains('deleted')).toList();
       expect(mentioning, hasLength(1));
       expect(mentioning.single.code, 'dangling-action');
     });
@@ -182,10 +181,9 @@ void main() {
           _node('n1', items: [_item('i1', 'frobnicate')]),
         ],
       );
-      final flagged =
-          auditDoc(doc, catalogKinds: const {'button'})
-              .where((i) => i.code == 'unknown-kind')
-              .toList();
+      final flagged = auditDoc(doc, catalogKinds: const {'button'})
+          .where((i) => i.code == 'unknown-kind')
+          .toList();
       expect(flagged, hasLength(1));
       expect(flagged.single.severity, AuditSeverity.warning);
       expect(flagged.single.nodeId, 'n1');
@@ -246,8 +244,7 @@ void main() {
     test('empty screens flag with their screen id', () {
       // Base doc: s1 with no nodes.
       final issues = auditDoc(_base());
-      final empty =
-          issues.where((i) => i.code == 'empty-screen').toList();
+      final empty = issues.where((i) => i.code == 'empty-screen').toList();
       expect(empty, hasLength(1));
       expect(empty.single.severity, AuditSeverity.warning);
       expect(empty.single.screenId, 's1');
@@ -371,8 +368,7 @@ void main() {
         ],
       );
       final issues = auditDoc(doc, catalogKinds: const {'button'});
-      final coverage =
-          issues.where((i) => i.code == 'tap-coverage').toList();
+      final coverage = issues.where((i) => i.code == 'tap-coverage').toList();
       expect(coverage, hasLength(1));
       expect(coverage.single.severity, AuditSeverity.info);
       expect(
@@ -381,9 +377,8 @@ void main() {
       );
       expect(issues.last.code, 'tap-coverage');
 
-      final none = auditDoc(_base())
-          .where((i) => i.code == 'tap-coverage')
-          .toList();
+      final none =
+          auditDoc(_base()).where((i) => i.code == 'tap-coverage').toList();
       expect(none, hasLength(1));
       expect(none.single.message, 'Tap coverage: no items yet (0/0).');
     });

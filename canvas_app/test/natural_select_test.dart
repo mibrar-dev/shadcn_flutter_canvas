@@ -173,7 +173,6 @@ void _useReferenceViewport(WidgetTester tester) {
 }
 
 void main() {
-
   group('natural fill', () {
     testWidgets('auto card fills width and keeps intrinsic height', (
       tester,
@@ -238,8 +237,7 @@ void main() {
     ) async {
       _useReferenceViewport(tester);
       await _pumpSurface(tester, [
-        for (var i = 0; i < 3; i++)
-          _node(id: 't$i', kind: 'card', h: 350),
+        for (var i = 0; i < 3; i++) _node(id: 't$i', kind: 'card', h: 350),
       ]);
       // Settles with no overflow errors (the post-test error check fails the
       // test on any reported overflow): every pinned box is exactly 350 tall
@@ -299,9 +297,11 @@ void main() {
       );
       expect(avatarBox.size.width, lessThan(100));
       expect(avatarBox.size.width, greaterThan(20));
-      final flowLeft = tester.getTopLeft(
-            find.byType(SingleChildScrollView).first,
-          ).dx +
+      final flowLeft = tester
+              .getTopLeft(
+                find.byType(SingleChildScrollView).first,
+              )
+              .dx +
           kFlowScreenPadding +
           4.0;
       expect(
@@ -518,15 +518,18 @@ void main() {
     ) async {
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
-        _node(
-          id: 'av',
-          kind: 'avatar',
-          props: {'initials': 'WD'},
-          parentId: 'host',
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
+            _node(
+              id: 'av',
+              kind: 'avatar',
+              props: {'initials': 'WD'},
+              parentId: 'host',
+            ),
+          ],
+          calls);
       await tester.tap(find.byType(shadcn.Avatar));
       await tester.pump();
       expect(calls, ['av']);
@@ -537,15 +540,18 @@ void main() {
     ) async {
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
-        _node(
-          id: 'av',
-          kind: 'avatar',
-          props: {'initials': 'WD'},
-          parentId: 'host',
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
+            _node(
+              id: 'av',
+              kind: 'avatar',
+              props: {'initials': 'WD'},
+              parentId: 'host',
+            ),
+          ],
+          calls);
       await tester.tap(find.byType(shadcn.Avatar));
       await tester.pump();
       await tester.tap(find.byType(shadcn.Avatar));
@@ -556,21 +562,24 @@ void main() {
     testWidgets('deep select works three levels deep', (tester) async {
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(id: 'l1', kind: 'card', props: {'title': 'L1'}),
-        _node(
-          id: 'l2',
-          kind: 'outlined_container',
-          props: {'label': 'L2'},
-          parentId: 'l1',
-        ),
-        _node(
-          id: 'l3',
-          kind: 'avatar',
-          props: {'initials': 'WD'},
-          parentId: 'l2',
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(id: 'l1', kind: 'card', props: {'title': 'L1'}),
+            _node(
+              id: 'l2',
+              kind: 'outlined_container',
+              props: {'label': 'L2'},
+              parentId: 'l1',
+            ),
+            _node(
+              id: 'l3',
+              kind: 'avatar',
+              props: {'initials': 'WD'},
+              parentId: 'l2',
+            ),
+          ],
+          calls);
       await tester.tap(find.byType(shadcn.Avatar));
       await tester.pump();
       expect(calls, ['l3']);
@@ -588,20 +597,23 @@ void main() {
       // so the first click lands on the avatar and the second drills out.
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(
-          id: 'host',
-          kind: 'scaffold',
-          props: {'title': 'App', 'body': 'Welcome'},
-          slotNodes: const {'body': 'av'},
-        ),
-        _node(
-          id: 'av',
-          kind: 'avatar',
-          props: {'initials': 'WD'},
-          parentId: 'host',
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(
+              id: 'host',
+              kind: 'scaffold',
+              props: {'title': 'App', 'body': 'Welcome'},
+              slotNodes: const {'body': 'av'},
+            ),
+            _node(
+              id: 'av',
+              kind: 'avatar',
+              props: {'initials': 'WD'},
+              parentId: 'host',
+            ),
+          ],
+          calls);
       await tester.tap(find.byType(shadcn.Avatar));
       await tester.pump();
       expect(calls, ['av']);
@@ -617,16 +629,19 @@ void main() {
     ) async {
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
-        _node(
-          id: 'av',
-          kind: 'avatar',
-          props: {'initials': 'WD'},
-          parentId: 'host',
-          locked: true,
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(id: 'host', kind: 'card', props: {'title': 'Host'}),
+            _node(
+              id: 'av',
+              kind: 'avatar',
+              props: {'initials': 'WD'},
+              parentId: 'host',
+              locked: true,
+            ),
+          ],
+          calls);
       await tester.tap(find.byType(shadcn.Avatar));
       await tester.pump();
       expect(calls, ['host']);
@@ -636,14 +651,17 @@ void main() {
     testWidgets('locked root tap selects nothing', (tester) async {
       _useReferenceViewport(tester);
       final calls = <String>[];
-      await _pumpHarness(tester, [
-        _node(
-          id: 'btn',
-          kind: 'button',
-          props: {'label': 'Locked'},
-          locked: true,
-        ),
-      ], calls);
+      await _pumpHarness(
+          tester,
+          [
+            _node(
+              id: 'btn',
+              kind: 'button',
+              props: {'label': 'Locked'},
+              locked: true,
+            ),
+          ],
+          calls);
       await tester.tap(find.text('Locked'));
       await tester.pump();
       expect(calls, isEmpty);

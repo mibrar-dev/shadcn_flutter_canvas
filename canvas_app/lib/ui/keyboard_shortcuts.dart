@@ -190,40 +190,40 @@ class EditorShortcuts extends StatelessWidget {
     // sits on any descendant (e.g. a button or text part on the canvas).
     return CallbackShortcuts(
       bindings: <ShortcutActivator, VoidCallback>{
-          // Undo: Ctrl+Z and Cmd+Z.
-          const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
-          const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
-          // Redo: Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y.
-          const SingleActivator(
-            LogicalKeyboardKey.keyZ,
-            control: true,
-            shift: true,
-          ): _redo,
-          const SingleActivator(
-            LogicalKeyboardKey.keyZ,
-            meta: true,
-            shift: true,
-          ): _redo,
-          const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
-          const SingleActivator(LogicalKeyboardKey.keyY, meta: true): _redo,
-          // Delete/Backspace are handled in [_handleDeleteKey], not here —
-          // see its doc comment for why a CallbackShortcuts binding would
-          // steal Backspace from focused text fields.
-          // Duplicate selection.
-          const SingleActivator(LogicalKeyboardKey.keyD, control: true):
-              _duplicateSelected,
-          const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
-              _duplicateSelected,
-          // Preview.
-          const SingleActivator(LogicalKeyboardKey.keyP, control: true):
-              onPreview,
-          const SingleActivator(LogicalKeyboardKey.keyP, meta: true): onPreview,
-        },
-        child: Focus(
-          autofocus: true,
-          onKeyEvent: _handleDeleteKey,
-          child: child,
-        ),
+        // Undo: Ctrl+Z and Cmd+Z.
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): _undo,
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): _undo,
+        // Redo: Ctrl/Cmd+Shift+Z and Ctrl/Cmd+Y.
+        const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          control: true,
+          shift: true,
+        ): _redo,
+        const SingleActivator(
+          LogicalKeyboardKey.keyZ,
+          meta: true,
+          shift: true,
+        ): _redo,
+        const SingleActivator(LogicalKeyboardKey.keyY, control: true): _redo,
+        const SingleActivator(LogicalKeyboardKey.keyY, meta: true): _redo,
+        // Delete/Backspace are handled in [_handleDeleteKey], not here —
+        // see its doc comment for why a CallbackShortcuts binding would
+        // steal Backspace from focused text fields.
+        // Duplicate selection.
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true):
+            _duplicateSelected,
+        const SingleActivator(LogicalKeyboardKey.keyD, meta: true):
+            _duplicateSelected,
+        // Preview.
+        const SingleActivator(LogicalKeyboardKey.keyP, control: true):
+            onPreview,
+        const SingleActivator(LogicalKeyboardKey.keyP, meta: true): onPreview,
+      },
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: _handleDeleteKey,
+        child: child,
+      ),
     );
   }
 }

@@ -104,8 +104,7 @@ bool registryMatchesQuery(RegistryEntry entry, String query) {
 List<RegistryEntry> registrySectionEntries(String section) {
   return [
     for (final entry in kRegistry)
-      if (entry.section == section &&
-          !kHiddenUtilityKinds.contains(entry.kind))
+      if (entry.section == section && !kHiddenUtilityKinds.contains(entry.kind))
         entry,
   ];
 }
@@ -186,6 +185,7 @@ class _DashPainter extends CustomPainter {
   bool shouldRepaint(covariant _DashPainter oldDelegate) =>
       oldDelegate.color != color;
 }
+
 const kAlertEntryDefaults = <String, dynamic>{
   'title': 'Alert',
   'content': 'Something happened.',
@@ -373,7 +373,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "container",
-    label: "Raw container with padding, color, radius, border, gradient, and shadow.",
+    label:
+        "Raw container with padding, color, radius, border, gradient, and shadow.",
     section: 'Layout Primitives',
     icon: Icons.check_box_outline_blank,
     build: (context) => catalog.buildCatalogWithDefaults("container"),
@@ -441,7 +442,9 @@ final List<RegistryEntry> kRegistry = [
     label: "App wrapper with shadcn theme and overlay handling.",
     section: "Layout & Structure",
     icon: Icons.apps,
-    build: (context) => RegistryPlaceholder(kind: "app", label: "App wrapper with shadcn theme and overlay handling."),
+    build: (context) => RegistryPlaceholder(
+        kind: "app",
+        label: "App wrapper with shadcn theme and overlay handling."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -486,7 +489,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "filter_bar",
-    label: "Controlled filter toolbar for list/table pages with search, sort, chips, date range, and clear-all.",
+    label:
+        "Controlled filter toolbar for list/table pages with search, sort, chips, date range, and clear-all.",
     section: "Layout & Structure",
     icon: Icons.filter_list,
     build: (context) => catalog.buildCatalogWithDefaults("filter_bar"),
@@ -497,7 +501,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Flex component for the registry.",
     section: "Layout & Structure",
     icon: Icons.view_stream,
-    build: (context) => RegistryPlaceholder(kind: "flex", label: "Flex component for the registry."),
+    build: (context) => RegistryPlaceholder(
+        kind: "flex", label: "Flex component for the registry."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -505,7 +510,10 @@ final List<RegistryEntry> kRegistry = [
     label: "Absolute-position layout surface with explicit offsets and sizes.",
     section: "Layout & Structure",
     icon: Icons.group,
-    build: (context) => RegistryPlaceholder(kind: "group", label: "Absolute-position layout surface with explicit offsets and sizes."),
+    build: (context) => RegistryPlaceholder(
+        kind: "group",
+        label:
+            "Absolute-position layout surface with explicit offsets and sizes."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -518,7 +526,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "media_query",
-    label: "Responsive helper that shows primary or alternate content based on width constraints.",
+    label:
+        "Responsive helper that shows primary or alternate content based on width constraints.",
     section: "Layout & Structure",
     icon: Icons.devices,
     build: (context) => catalog.buildCatalogWithDefaults("media_query"),
@@ -534,7 +543,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "overflow_marquee",
-    label: "Smooth marquee for overflowing content with fade edges and looped timing controls.",
+    label:
+        "Smooth marquee for overflowing content with fade edges and looped timing controls.",
     section: "Layout & Structure",
     icon: Icons.wrap_text,
     build: (context) => catalog.buildCatalogWithDefaults("overflow_marquee"),
@@ -566,10 +576,14 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "scrollable_client",
-    label: "Two-dimensional scroll surface with builder callbacks for viewport-aware layouts.",
+    label:
+        "Two-dimensional scroll surface with builder callbacks for viewport-aware layouts.",
     section: "Layout & Structure",
     icon: Icons.zoom_out_map,
-    build: (context) => RegistryPlaceholder(kind: "scrollable_client", label: "Two-dimensional scroll surface with builder callbacks for viewport-aware layouts."),
+    build: (context) => RegistryPlaceholder(
+        kind: "scrollable_client",
+        label:
+            "Two-dimensional scroll surface with builder callbacks for viewport-aware layouts."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -577,7 +591,10 @@ final List<RegistryEntry> kRegistry = [
     label: "Drag-and-drop sorting primitives with drop zones and scrolling.",
     section: "Layout & Structure",
     icon: Icons.sort,
-    build: (context) => RegistryPlaceholder(kind: "sortable", label: "Drag-and-drop sorting primitives with drop zones and scrolling."),
+    build: (context) => RegistryPlaceholder(
+        kind: "sortable",
+        label:
+            "Drag-and-drop sorting primitives with drop zones and scrolling."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -617,7 +634,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Desktop-style window system with drag, resize, and snapping.",
     section: "Layout & Structure",
     icon: Icons.web,
-    build: (context) => RegistryPlaceholder(kind: "window", label: "Desktop-style window system with drag, resize, and snapping."),
+    build: (context) => RegistryPlaceholder(
+        kind: "window",
+        label: "Desktop-style window system with drag, resize, and snapping."),
     canvasReady: false,
   ),
   // Display.
@@ -639,7 +658,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "border_loading",
-    label: "Animated border loader wrapper (sweep/linear/radial gradients + tracer mode + circle/custom shapes).",
+    label:
+        "Animated border loader wrapper (sweep/linear/radial gradients + tracer mode + circle/custom shapes).",
     section: "Display",
     icon: Icons.blur_circular,
     build: (context) => catalog.buildCatalogWithDefaults("border_loading"),
@@ -647,7 +667,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "calendar",
-    label: "Date picker and calendar widgets for single, range, and multi selection.",
+    label:
+        "Date picker and calendar widgets for single, range, and multi selection.",
     section: "Display",
     icon: Icons.calendar_month,
     build: (context) => catalog.buildCatalogWithDefaults("calendar"),
@@ -655,7 +676,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "carousel",
-    label: "Interactive carousel with sliding/fading transitions and autoplay controls.",
+    label:
+        "Interactive carousel with sliding/fading transitions and autoplay controls.",
     section: "Display",
     icon: Icons.slideshow,
     build: (context) => catalog.buildCatalogWithDefaults("carousel"),
@@ -679,10 +701,12 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "circular_progress_indicator",
-    label: "Determinate/indeterminate spinner with theme overrides and optional animation.",
+    label:
+        "Determinate/indeterminate spinner with theme overrides and optional animation.",
     section: "Display",
     icon: Icons.autorenew,
-    build: (context) => buildCircularProgressEntry(kCircularProgressEntryDefaults),
+    build: (context) =>
+        buildCircularProgressEntry(kCircularProgressEntryDefaults),
     canvasReady: true,
   ),
   RegistryEntry(
@@ -703,7 +727,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "dot_indicator",
-    label: "Animated dot indicator for carousels/steppers with optional tap behavior.",
+    label:
+        "Animated dot indicator for carousels/steppers with optional tap behavior.",
     section: "Display",
     icon: Icons.fiber_manual_record,
     build: (context) => buildDotIndicatorEntry(kDotIndicatorEntryDefaults),
@@ -719,7 +744,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "feature_carousel",
-    label: "Animated feature card carousel with autoplay, swipe, and CTA support. (WIP)",
+    label:
+        "Animated feature card carousel with autoplay, swipe, and CTA support. (WIP)",
     section: "Display",
     icon: Icons.view_carousel,
     build: (context) => catalog.buildCatalogWithDefaults("feature_carousel"),
@@ -730,7 +756,10 @@ final List<RegistryEntry> kRegistry = [
     label: "A comprehensive file diff viewer with unified and split layouts.",
     section: "Display",
     icon: Icons.compare,
-    build: (context) => RegistryPlaceholder(kind: "file_diff_viewer", label: "A comprehensive file diff viewer with unified and split layouts."),
+    build: (context) => RegistryPlaceholder(
+        kind: "file_diff_viewer",
+        label:
+            "A comprehensive file diff viewer with unified and split layouts."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -751,7 +780,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "linear_progress_indicator",
-    label: "Determinate/indeterminate progress bar with optional spark effects and theming.",
+    label:
+        "Determinate/indeterminate progress bar with optional spark effects and theming.",
     section: "Display",
     icon: Icons.bar_chart,
     build: (context) => buildLinearProgressEntry(kLinearProgressEntryDefaults),
@@ -759,7 +789,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "markdown",
-    label: "Advanced markdown renderer with asset/file sources and optional streaming support.",
+    label:
+        "Advanced markdown renderer with asset/file sources and optional streaming support.",
     section: "Display",
     icon: Icons.article,
     build: (context) => catalog.buildCatalogWithDefaults("markdown"),
@@ -802,7 +833,10 @@ final List<RegistryEntry> kRegistry = [
     label: "Base spinner helpers for resolving color and size with theming.",
     section: "Display",
     icon: Icons.refresh,
-    build: (context) => RegistryPlaceholder(kind: "spinner", label: "Base spinner helpers for resolving color and size with theming."),
+    build: (context) => RegistryPlaceholder(
+        kind: "spinner",
+        label:
+            "Base spinner helpers for resolving color and size with theming."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -848,7 +882,8 @@ final List<RegistryEntry> kRegistry = [
   // Forms & Inputs.
   RegistryEntry(
     kind: "autocomplete",
-    label: "Autocomplete overlay for text inputs with keyboard navigation and theming.",
+    label:
+        "Autocomplete overlay for text inputs with keyboard navigation and theming.",
     section: "Forms & Inputs",
     icon: Icons.auto_awesome,
     build: (context) => catalog.buildCatalogWithDefaults("autocomplete"),
@@ -864,7 +899,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "chip_input",
-    label: "Inline text input that converts typed tokens into chip widgets with removable buttons and autocomplete hooks.",
+    label:
+        "Inline text input that converts typed tokens into chip widgets with removable buttons and autocomplete hooks.",
     section: "Forms & Inputs",
     icon: Icons.new_label,
     build: (context) => catalog.buildCatalogWithDefaults("chip_input"),
@@ -872,7 +908,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "color_input",
-    label: "Popover/dialog color selector that integrates the picker, history, and eye-dropper tools.",
+    label:
+        "Popover/dialog color selector that integrates the picker, history, and eye-dropper tools.",
     section: "Forms & Inputs",
     icon: Icons.colorize,
     build: (context) => catalog.buildCatalogWithDefaults("color_input"),
@@ -880,7 +917,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "color_picker",
-    label: "HSV/HSL/HEX color picker with popovers, eye dropper, and history controls.",
+    label:
+        "HSV/HSL/HEX color picker with popovers, eye dropper, and history controls.",
     section: "Forms & Inputs",
     icon: Icons.palette,
     build: (context) => catalog.buildCatalogWithDefaults("color_picker"),
@@ -891,7 +929,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Controller mixins and helpers for form components.",
     section: "Forms & Inputs",
     icon: Icons.handyman,
-    build: (context) => RegistryPlaceholder(kind: "control", label: "Controller mixins and helpers for form components."),
+    build: (context) => RegistryPlaceholder(
+        kind: "control",
+        label: "Controller mixins and helpers for form components."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -915,15 +955,21 @@ final List<RegistryEntry> kRegistry = [
     label: "Utilities for mapping file extensions to icon widgets.",
     section: "Forms & Inputs",
     icon: Icons.attach_file,
-    build: (context) => RegistryPlaceholder(kind: "file_input", label: "Utilities for mapping file extensions to icon widgets."),
+    build: (context) => RegistryPlaceholder(
+        kind: "file_input",
+        label: "Utilities for mapping file extensions to icon widgets."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "file_picker",
-    label: "UI-only drag-drop, tile, and mobile file picker surfaces with upload list management.",
+    label:
+        "UI-only drag-drop, tile, and mobile file picker surfaces with upload list management.",
     section: "Forms & Inputs",
     icon: Icons.folder_open,
-    build: (context) => RegistryPlaceholder(kind: "file_picker", label: "UI-only drag-drop, tile, and mobile file picker surfaces with upload list management."),
+    build: (context) => RegistryPlaceholder(
+        kind: "file_picker",
+        label:
+            "UI-only drag-drop, tile, and mobile file picker surfaces with upload list management."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -944,7 +990,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "formatted_input",
-    label: "Low-level formatted-field helpers that sync multiple InputPart segments.",
+    label:
+        "Low-level formatted-field helpers that sync multiple InputPart segments.",
     section: "Forms & Inputs",
     icon: Icons.text_snippet,
     build: (context) => catalog.buildCatalogWithDefaults("formatted_input"),
@@ -952,10 +999,14 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "formatter",
-    label: "Reusable text input formatters (uppercase/lowercase, numeric, math, HEX, etc.) and helpers for selection clipping.",
+    label:
+        "Reusable text input formatters (uppercase/lowercase, numeric, math, HEX, etc.) and helpers for selection clipping.",
     section: "Forms & Inputs",
     icon: Icons.format_bold,
-    build: (context) => RegistryPlaceholder(kind: "formatter", label: "Reusable text input formatters (uppercase/lowercase, numeric, math, HEX, etc.) and helpers for selection clipping."),
+    build: (context) => RegistryPlaceholder(
+        kind: "formatter",
+        label:
+            "Reusable text input formatters (uppercase/lowercase, numeric, math, HEX, etc.) and helpers for selection clipping."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -968,7 +1019,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "hsl",
-    label: "Gradient slider that controls hue, saturation, lightness, or alpha for HSL colors.",
+    label:
+        "Gradient slider that controls hue, saturation, lightness, or alpha for HSL colors.",
     section: "Forms & Inputs",
     icon: Icons.gradient,
     build: (context) => catalog.buildCatalogWithDefaults("hsl"),
@@ -976,7 +1028,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "hsv",
-    label: "Gradient slider for HSV color component control (hue, saturation, value, alpha).",
+    label:
+        "Gradient slider for HSV color component control (hue, saturation, value, alpha).",
     section: "Forms & Inputs",
     icon: Icons.color_lens,
     build: (context) => catalog.buildCatalogWithDefaults("hsv"),
@@ -984,7 +1037,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "input",
-    label: "Single-line text input with feature hooks, popovers, and controller integration.",
+    label:
+        "Single-line text input with feature hooks, popovers, and controller integration.",
     section: "Forms & Inputs",
     icon: Icons.text_fields,
     build: (context) => catalog.buildCatalogWithDefaults("input"),
@@ -992,7 +1046,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "input_otp",
-    label: "Fixed-length OTP input field with clipboard integration, paste handling, and focus management.",
+    label:
+        "Fixed-length OTP input field with clipboard integration, paste handling, and focus management.",
     section: "Forms & Inputs",
     icon: Icons.dialpad,
     build: (context) => catalog.buildCatalogWithDefaults("input_otp"),
@@ -1000,7 +1055,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "item_picker",
-    label: "Grid/list picker with selection chips, search, and in-place actions.",
+    label:
+        "Grid/list picker with selection chips, search, and in-place actions.",
     section: "Forms & Inputs",
     icon: Icons.checklist,
     build: (context) => catalog.buildCatalogWithDefaults("item_picker"),
@@ -1008,7 +1064,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "multiple_choice",
-    label: "Choice widgets with single or multiple selection and form integration.",
+    label:
+        "Choice widgets with single or multiple selection and form integration.",
     section: "Forms & Inputs",
     icon: Icons.ballot,
     build: (context) => catalog.buildCatalogWithDefaults("multiple_choice"),
@@ -1016,7 +1073,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "object_input",
-    label: "Date, time, and duration inputs powered by formatted editors and pickers.",
+    label:
+        "Date, time, and duration inputs powered by formatted editors and pickers.",
     section: "Forms & Inputs",
     icon: Icons.event,
     build: (context) => catalog.buildCatalogWithDefaults("object_input"),
@@ -1024,7 +1082,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "phone_input",
-    label: "International phone number input with country selector and formatting helpers.",
+    label:
+        "International phone number input with country selector and formatting helpers.",
     section: "Forms & Inputs",
     icon: Icons.phone,
     build: (context) => catalog.buildCatalogWithDefaults("phone_input"),
@@ -1040,7 +1099,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "select",
-    label: "Dropdown/select control with popup menus, grouped items, and keyboard navigation.",
+    label:
+        "Dropdown/select control with popup menus, grouped items, and keyboard navigation.",
     section: "Forms & Inputs",
     icon: Icons.arrow_drop_down_circle,
     build: (context) => catalog.buildCatalogWithDefaults("select"),
@@ -1048,7 +1108,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "slider",
-    label: "General-purpose single and range slider engine with snapping and pluggable builders.",
+    label:
+        "General-purpose single and range slider engine with snapping and pluggable builders.",
     section: "Forms & Inputs",
     icon: Icons.tune,
     build: (context) => catalog.buildCatalogWithDefaults("slider"),
@@ -1121,7 +1182,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "command",
-    label: "Command palette with search, keyboard navigation, and customizable result builders.",
+    label:
+        "Command palette with search, keyboard navigation, and customizable result builders.",
     section: "Controls",
     icon: Icons.terminal,
     build: (context) => catalog.buildCatalogWithDefaults("command"),
@@ -1162,7 +1224,8 @@ final List<RegistryEntry> kRegistry = [
   // Navigation.
   RegistryEntry(
     kind: "breadcrumb",
-    label: "Horizontal breadcrumb trail with arrow/slash separators and overflow handling.",
+    label:
+        "Horizontal breadcrumb trail with arrow/slash separators and overflow handling.",
     section: "Navigation",
     icon: Icons.chevron_right,
     build: (context) => catalog.buildCatalogWithDefaults("breadcrumb"),
@@ -1170,7 +1233,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "navigation_bar",
-    label: "Themed navigation bar supporting destinations, overflow, and responsive layout.",
+    label:
+        "Themed navigation bar supporting destinations, overflow, and responsive layout.",
     section: "Navigation",
     icon: Icons.navigation,
     build: (context) => catalog.buildCatalogWithDefaults("navigation_bar"),
@@ -1178,7 +1242,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "navigation_menu",
-    label: "Dropdown-style navigation menu with popovers, groups, and keyboard navigation.",
+    label:
+        "Dropdown-style navigation menu with popovers, groups, and keyboard navigation.",
     section: "Navigation",
     icon: Icons.menu,
     build: (context) => catalog.buildCatalogWithDefaults("navigation_menu"),
@@ -1186,7 +1251,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "pagination",
-    label: "Page navigation controls with skip, previous/next, and ellipsis handling.",
+    label:
+        "Page navigation controls with skip, previous/next, and ellipsis handling.",
     section: "Navigation",
     icon: Icons.last_page,
     build: (context) => catalog.buildCatalogWithDefaults("pagination"),
@@ -1259,7 +1325,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "context_menu",
-    label: "Desktop-style context menu overlay for editable text and custom actions.",
+    label:
+        "Desktop-style context menu overlay for editable text and custom actions.",
     section: "Overlays",
     icon: Icons.more_vert,
     build: (context) => catalog.buildCatalogWithDefaults("context_menu"),
@@ -1291,18 +1358,26 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "eye_dropper",
-    label: "Layer that lets users sample colors from the screen with preview adornments.",
+    label:
+        "Layer that lets users sample colors from the screen with preview adornments.",
     section: "Overlays",
     icon: Icons.brush,
-    build: (context) => RegistryPlaceholder(kind: "eye_dropper", label: "Layer that lets users sample colors from the screen with preview adornments."),
+    build: (context) => RegistryPlaceholder(
+        kind: "eye_dropper",
+        label:
+            "Layer that lets users sample colors from the screen with preview adornments."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "gooey_toast",
-    label: "Animated gooey-style toast built on existing overlay toast infrastructure.",
+    label:
+        "Animated gooey-style toast built on existing overlay toast infrastructure.",
     section: "Overlays",
     icon: Icons.notification_add,
-    build: (context) => RegistryPlaceholder(kind: "gooey_toast", label: "Animated gooey-style toast built on existing overlay toast infrastructure."),
+    build: (context) => RegistryPlaceholder(
+        kind: "gooey_toast",
+        label:
+            "Animated gooey-style toast built on existing overlay toast infrastructure."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1323,7 +1398,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "menubar",
-    label: "Horizontal desktop-style menubar with dropdown menus and keyboard navigation.",
+    label:
+        "Horizontal desktop-style menubar with dropdown menus and keyboard navigation.",
     section: "Overlays",
     icon: Icons.view_headline,
     build: (context) => catalog.buildCatalogWithDefaults("menubar"),
@@ -1334,7 +1410,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Shared overlay handler/manager utilities and helpers.",
     section: "Overlays",
     icon: Icons.layers,
-    build: (context) => RegistryPlaceholder(kind: "overlay", label: "Shared overlay handler/manager utilities and helpers."),
+    build: (context) => RegistryPlaceholder(
+        kind: "overlay",
+        label: "Shared overlay handler/manager utilities and helpers."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1355,7 +1433,8 @@ final List<RegistryEntry> kRegistry = [
   ),
   RegistryEntry(
     kind: "refresh_trigger",
-    label: "Pull-to-refresh wrapper with customizable indicator, extents, and completion animations.",
+    label:
+        "Pull-to-refresh wrapper with customizable indicator, extents, and completion animations.",
     section: "Overlays",
     icon: Icons.refresh,
     build: (context) => catalog.buildCatalogWithDefaults("refresh_trigger"),
@@ -1391,23 +1470,33 @@ final List<RegistryEntry> kRegistry = [
     label: "Checkerboard painter for transparency indicators.",
     section: "Utilities",
     icon: Icons.grid_on,
-    build: (context) => RegistryPlaceholder(kind: "alpha", label: "Checkerboard painter for transparency indicators."),
+    build: (context) => RegistryPlaceholder(
+        kind: "alpha",
+        label: "Checkerboard painter for transparency indicators."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "async",
-    label: "Utility for widgets that work with both synchronous and asynchronous values.",
+    label:
+        "Utility for widgets that work with both synchronous and asynchronous values.",
     section: "Utilities",
     icon: Icons.sync,
-    build: (context) => RegistryPlaceholder(kind: "async", label: "Utility for widgets that work with both synchronous and asynchronous values."),
+    build: (context) => RegistryPlaceholder(
+        kind: "async",
+        label:
+            "Utility for widgets that work with both synchronous and asynchronous values."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "color",
-    label: "Helper utilities for converting and transforming colors across RGB/HSV/HSL spaces.",
+    label:
+        "Helper utilities for converting and transforming colors across RGB/HSV/HSL spaces.",
     section: "Utilities",
     icon: Icons.format_color_fill,
-    build: (context) => RegistryPlaceholder(kind: "color", label: "Helper utilities for converting and transforming colors across RGB/HSV/HSL spaces."),
+    build: (context) => RegistryPlaceholder(
+        kind: "color",
+        label:
+            "Helper utilities for converting and transforming colors across RGB/HSV/HSL spaces."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1415,15 +1504,21 @@ final List<RegistryEntry> kRegistry = [
     label: "Debug overlays and container helpers for layout inspection.",
     section: "Utilities",
     icon: Icons.bug_report,
-    build: (context) => RegistryPlaceholder(kind: "debug", label: "Debug overlays and container helpers for layout inspection."),
+    build: (context) => RegistryPlaceholder(
+        kind: "debug",
+        label: "Debug overlays and container helpers for layout inspection."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "error_system",
-    label: "Production-ready error handling system with UI components and repository mapping.",
+    label:
+        "Production-ready error handling system with UI components and repository mapping.",
     section: "Utilities",
     icon: Icons.error,
-    build: (context) => RegistryPlaceholder(kind: "error_system", label: "Production-ready error handling system with UI components and repository mapping."),
+    build: (context) => RegistryPlaceholder(
+        kind: "error_system",
+        label:
+            "Production-ready error handling system with UI components and repository mapping."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1439,7 +1534,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Placeholder entry preserving legacy image collection support.",
     section: "Utilities",
     icon: Icons.photo_library,
-    build: (context) => RegistryPlaceholder(kind: "image", label: "Placeholder entry preserving legacy image collection support."),
+    build: (context) => RegistryPlaceholder(
+        kind: "image",
+        label: "Placeholder entry preserving legacy image collection support."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1447,7 +1544,10 @@ final List<RegistryEntry> kRegistry = [
     label: "Date/time/duration unit helpers and file size formatting locales.",
     section: "Utilities",
     icon: Icons.language,
-    build: (context) => RegistryPlaceholder(kind: "locale_utils", label: "Date/time/duration unit helpers and file size formatting locales."),
+    build: (context) => RegistryPlaceholder(
+        kind: "locale_utils",
+        label:
+            "Date/time/duration unit helpers and file size formatting locales."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1455,7 +1555,8 @@ final List<RegistryEntry> kRegistry = [
     label: "Looping animation builder with interpolated values.",
     section: "Utilities",
     icon: Icons.loop,
-    build: (context) => catalog.buildCatalogWithDefaults("repeated_animation_builder"),
+    build: (context) =>
+        catalog.buildCatalogWithDefaults("repeated_animation_builder"),
     canvasReady: true,
   ),
   RegistryEntry(
@@ -1463,7 +1564,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Full localization delegate and base translations.",
     section: "Utilities",
     icon: Icons.translate,
-    build: (context) => RegistryPlaceholder(kind: "shadcn_localizations", label: "Full localization delegate and base translations."),
+    build: (context) => RegistryPlaceholder(
+        kind: "shadcn_localizations",
+        label: "Full localization delegate and base translations."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1471,15 +1574,21 @@ final List<RegistryEntry> kRegistry = [
     label: "English translation bundle for ShadcnLocalizations.",
     section: "Utilities",
     icon: Icons.abc,
-    build: (context) => RegistryPlaceholder(kind: "shadcn_localizations_en", label: "English translation bundle for ShadcnLocalizations."),
+    build: (context) => RegistryPlaceholder(
+        kind: "shadcn_localizations_en",
+        label: "English translation bundle for ShadcnLocalizations."),
     canvasReady: false,
   ),
   RegistryEntry(
     kind: "shadcn_localizations_extensions",
-    label: "Formatting helpers for localized dates, times, durations, and picker labels.",
+    label:
+        "Formatting helpers for localized dates, times, durations, and picker labels.",
     section: "Utilities",
     icon: Icons.g_translate,
-    build: (context) => RegistryPlaceholder(kind: "shadcn_localizations_extensions", label: "Formatting helpers for localized dates, times, durations, and picker labels."),
+    build: (context) => RegistryPlaceholder(
+        kind: "shadcn_localizations_extensions",
+        label:
+            "Formatting helpers for localized dates, times, durations, and picker labels."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1487,7 +1596,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Keyframe-based animation timeline utilities.",
     section: "Utilities",
     icon: Icons.movie,
-    build: (context) => RegistryPlaceholder(kind: "timeline_animation", label: "Keyframe-based animation timeline utilities."),
+    build: (context) => RegistryPlaceholder(
+        kind: "timeline_animation",
+        label: "Keyframe-based animation timeline utilities."),
     canvasReady: false,
   ),
   RegistryEntry(
@@ -1495,7 +1606,9 @@ final List<RegistryEntry> kRegistry = [
     label: "Conditional wrapper for preserving widget structure.",
     section: "Utilities",
     icon: Icons.widgets,
-    build: (context) => RegistryPlaceholder(kind: "wrapper", label: "Conditional wrapper for preserving widget structure."),
+    build: (context) => RegistryPlaceholder(
+        kind: "wrapper",
+        label: "Conditional wrapper for preserving widget structure."),
     canvasReady: false,
   ),
 ];

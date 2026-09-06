@@ -74,8 +74,7 @@ Color _materialColor(ui.Color color) => Color(color.toARGB32());
 /// editor chrome that must stay Material (`Scaffold`, `AppBar`) renders in
 /// the selected palette instead of the default M3 baseline (whose lavender
 /// surface tint leaked through everywhere).
-ColorScheme _materialScheme(
-    shadcn.ColorScheme scheme, CanvasTheme theme) {
+ColorScheme _materialScheme(shadcn.ColorScheme scheme, CanvasTheme theme) {
   return ColorScheme(
     brightness: theme.dark ? Brightness.dark : Brightness.light,
     primary: _materialColor(scheme.primary),

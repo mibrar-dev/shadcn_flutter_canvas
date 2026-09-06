@@ -109,15 +109,12 @@ void main() {
       expect(find.text('Slots'), findsOneWidget);
       // The lock card renders (header 'Lock' + the keyed toggle button).
       expect(find.byKey(const ValueKey('node-lock')), findsOneWidget);
-      final picker =
-          find.byKey(const ValueKey('slot-content'));
+      final picker = find.byKey(const ValueKey('slot-content'));
       expect(picker, findsOneWidget);
       expect(find.byKey(const ValueKey('slot-clear-content')), findsOneWidget);
 
       // Assign through the Select exactly like the action-target tests do.
-      tester
-          .widget<shadcn.Select<String>>(picker)
-          .onChanged!('c');
+      tester.widget<shadcn.Select<String>>(picker).onChanged!('c');
       await tester.pump();
       expect(_node(store, 'h').slotNodes, {'content': 'c'});
 
@@ -182,8 +179,7 @@ void main() {
 
       expect(find.text('Slots'), findsOneWidget);
       expect(find.text('Unlock to edit slots.'), findsOneWidget);
-      final select =
-          tester.widget<shadcn.Select<String>>(
+      final select = tester.widget<shadcn.Select<String>>(
         find.byKey(const ValueKey('slot-content')),
       );
       expect(select.enabled, isFalse);

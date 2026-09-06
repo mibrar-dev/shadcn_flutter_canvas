@@ -646,16 +646,22 @@ void main(List<String> args) {
     ..writeln()
     ..writeln("import 'package:flutter/material.dart';")
     ..writeln()
-    ..writeln("import 'package:canvas_app/canvas/component_catalog.dart' as catalog;")
+    ..writeln(
+        "import 'package:canvas_app/canvas/component_catalog.dart' as catalog;")
     ..writeln("import 'package:canvas_app/shadcn_ui.dart' as shadcn;")
     ..writeln()
     ..writeln('/// One palette/canvas registry entry.')
     ..writeln('///')
-    ..writeln('/// [kind] is the kit component id (or a Track F layout primitive).')
-    ..writeln('/// [label] mirrors the manifest description (the palette tile shows')
-    ..writeln('/// the humanized kind; the label is the tooltip + search text).')
-    ..writeln('/// [section] is one of [kRegistrySectionOrder]. [build] constructs')
-    ..writeln('/// the canvas widget with entry defaults (bridged kinds delegate to')
+    ..writeln(
+        '/// [kind] is the kit component id (or a Track F layout primitive).')
+    ..writeln(
+        '/// [label] mirrors the manifest description (the palette tile shows')
+    ..writeln(
+        '/// the humanized kind; the label is the tooltip + search text).')
+    ..writeln(
+        '/// [section] is one of [kRegistrySectionOrder]. [build] constructs')
+    ..writeln(
+        '/// the canvas widget with entry defaults (bridged kinds delegate to')
     ..writeln('/// the catalog, so drop/drop-target behavior is unchanged).')
     ..writeln('/// [canvasReady] is true only for real bare-widget builders.')
     ..writeln('class RegistryEntry {')
@@ -685,7 +691,8 @@ void main(List<String> args) {
     ..writeln('];')
     ..writeln()
     ..writeln('/// Utility ids with no visual canvas footprint. Present in')
-    ..writeln('/// [kRegistry] (coverage) but hidden from the Utilities palette')
+    ..writeln(
+        '/// [kRegistry] (coverage) but hidden from the Utilities palette')
     ..writeln('/// section by [registrySectionEntries].')
     ..writeln('const kHiddenUtilityKinds = <String>{');
   for (final kind in _hiddenUtilities.toList()..sort()) {
@@ -710,9 +717,12 @@ void main(List<String> args) {
     ..writeln('};')
     ..writeln()
     ..writeln('/// Word-start matcher shared by the palette and its regression')
-    ..writeln('/// tests: every whitespace-separated query token must prefix-match')
-    ..writeln('/// a word start in the entry kind id or label. Substring hits like')
-    ..writeln("/// 'row' in Breadcrumb's 'arrow' separator text no longer match.")
+    ..writeln(
+        '/// tests: every whitespace-separated query token must prefix-match')
+    ..writeln(
+        '/// a word start in the entry kind id or label. Substring hits like')
+    ..writeln(
+        "/// 'row' in Breadcrumb's 'arrow' separator text no longer match.")
     ..writeln('bool registryMatchesQuery(RegistryEntry entry, String query) {')
     ..writeln('  final tokens = query')
     ..writeln('      .trim()')
@@ -727,18 +737,19 @@ void main(List<String> args) {
     ..writeln('      .where((w) => w.isNotEmpty)')
     ..writeln('      .toList();')
     ..writeln(
-      '  // Tile labels are prettified kind ids ([_tileLabel] in the palette), so')
+        '  // Tile labels are prettified kind ids ([_tileLabel] in the palette), so')
     ..writeln(
-      '  // matching kind-id words is exactly what the user sees. Descriptions are')
+        '  // matching kind-id words is exactly what the user sees. Descriptions are')
     ..writeln(
-      "  // deliberately NOT matched — 'chips' in a Filter Bar blurb must not make")
+        "  // deliberately NOT matched — 'chips' in a Filter Bar blurb must not make")
     ..writeln("  // it match 'chip'.")
     ..writeln(
-      '  return tokens.every((t) => words.any((w) => w.startsWith(t)));')
+        '  return tokens.every((t) => words.any((w) => w.startsWith(t)));')
     ..writeln('}')
     ..writeln()
     ..writeln('/// Visible entries for [section] in registry order (hidden')
-    ..writeln('/// utilities excluded — the palette renders sections from this).')
+    ..writeln(
+        '/// utilities excluded — the palette renders sections from this).')
     ..writeln('List<RegistryEntry> registrySectionEntries(String section) {')
     ..writeln('  return [')
     ..writeln('    for (final entry in kRegistry)')
@@ -756,7 +767,8 @@ void main(List<String> args) {
     ..writeln('  return null;')
     ..writeln('}')
     ..writeln()
-    ..writeln('/// Honest placeholder for kinds with no bare-widget builder yet:')
+    ..writeln(
+        '/// Honest placeholder for kinds with no bare-widget builder yet:')
     ..writeln('/// dashed-border card with the component label plus the')
     ..writeln("// 'canvas-ready coming soon' note.")
     ..writeln('class RegistryPlaceholder extends StatelessWidget {')
@@ -811,13 +823,14 @@ void main(List<String> args) {
     ..writeln('    final rect = Offset.zero & size;')
     ..writeln('    final path = Path()')
     ..writeln(
-      '      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(_radius)));')
+        '      ..addRRect(RRect.fromRectAndRadius(rect, const Radius.circular(_radius)));')
     ..writeln('    final metrics = path.computeMetrics().single;')
     ..writeln('    var distance = 0.0;')
     ..writeln('    while (distance < metrics.length) {')
-    ..writeln('      final end = (distance + _dash).clamp(0.0, metrics.length);')
     ..writeln(
-      '      canvas.drawPath(metrics.extractPath(distance, end), paint);')
+        '      final end = (distance + _dash).clamp(0.0, metrics.length);')
+    ..writeln(
+        '      canvas.drawPath(metrics.extractPath(distance, end), paint);')
     ..writeln('      distance += _dash + _gap;')
     ..writeln('    }')
     ..writeln('  }')
@@ -833,7 +846,8 @@ void main(List<String> args) {
 
   out
     ..writeln('/// Full registry: every kit component id plus the ten Track F')
-    ..writeln('/// layout primitives, grouped by [kRegistrySectionOrder] (kinds')
+    ..writeln(
+        '/// layout primitives, grouped by [kRegistrySectionOrder] (kinds')
     ..writeln('/// alphabetical within a section).')
     ..writeln('final List<RegistryEntry> kRegistry = [');
 
@@ -871,7 +885,8 @@ void main(List<String> args) {
           : _readyKinds.containsKey(kind)
               ? '(context) => ${_readyKinds[kind]!}(${_defaultsRef(kind)})'
               : '(context) => RegistryPlaceholder(kind: ${_dartStr(kind)}, label: ${_dartStr(label)})';
-      final ready = _bridgeKinds.contains(kind) || _readyKinds.containsKey(kind);
+      final ready =
+          _bridgeKinds.contains(kind) || _readyKinds.containsKey(kind);
       out
         ..writeln('  RegistryEntry(')
         ..writeln('    kind: ${_dartStr(kind)},')

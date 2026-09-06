@@ -11,7 +11,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// The §7.5 tree built exactly as the renderers build it: already-built
 /// children spliced into each container builder (see `NodeBuilder`).
 Widget _sectionTree() {
-  final nameCol = buildCatalogItem('column', {'gap': 4}, const [
+  final nameCol = buildCatalogItem('column', {
+    'gap': 4
+  }, const [
     Text('Ada K'),
     Text('Engineer'),
   ]);
@@ -47,8 +49,12 @@ Widget _sectionTree() {
         {'kind': 'token', 'token': 'secondary'},
       ],
     },
-  }, [heroRow]);
-  final cards = buildCatalogItem('column', {'gap': 12}, [
+  }, [
+    heroRow
+  ]);
+  final cards = buildCatalogItem('column', {
+    'gap': 12
+  }, [
     buildCatalogItem('card', {
       'title': 'Card 1',
       'description': 'First',

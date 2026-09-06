@@ -180,7 +180,8 @@ void main() {
       expect(kPropSchemas.length, _expectedKinds.length);
     });
 
-    test('schema covers catalog defaults; extras resolve via spec defaults', () {
+    test('schema covers catalog defaults; extras resolve via spec defaults',
+        () {
       for (final entry in kCatalog) {
         final specs = kPropSchemas[entry.kind]!;
         final byName = {for (final s in specs) s.name: s};

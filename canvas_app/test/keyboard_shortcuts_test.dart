@@ -134,7 +134,8 @@ void main() {
     }
   });
 
-  testWidgets('Delete with no selection is a no-op', (tester) async {    var calls = 0;
+  testWidgets('Delete with no selection is a no-op', (tester) async {
+    var calls = 0;
     await _pumpShortcuts(
       tester,
       store: CanvasStore(),
@@ -215,5 +216,4 @@ void main() {
     await _press(tester, LogicalKeyboardKey.keyP, meta: true);
     expect(calls, 2);
   });
-
 }

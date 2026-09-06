@@ -83,10 +83,10 @@ void main() {
 
       // Baseline: all-light chrome follows the light components theme.
       expect(_scaffoldBg(tester), EditorColors.light.surface);
-      expect(shandcnThemeData(tester, 0).colorScheme.brightness,
-          Brightness.light);
-      expect(shandcnThemeData(tester, 1).colorScheme.brightness,
-          Brightness.light);
+      expect(
+          shandcnThemeData(tester, 0).colorScheme.brightness, Brightness.light);
+      expect(
+          shandcnThemeData(tester, 1).colorScheme.brightness, Brightness.light);
 
       // The reported repro: flip ONLY the chrome (App chrome → Dark).
       store.setTheme(
@@ -209,10 +209,10 @@ void main() {
       // Each build captured its own preset synchronously at build time.
       expect(datas[0].colorScheme.brightness, Brightness.light);
       expect(datas[1].colorScheme.brightness, Brightness.dark);
-      final chromePreset = shadcn.registryThemePresets
-          .firstWhere((p) => p.id == 'clean-slate');
-      final compPreset = shadcn.registryThemePresets
-          .firstWhere((p) => p.id == 'supabase');
+      final chromePreset =
+          shadcn.registryThemePresets.firstWhere((p) => p.id == 'clean-slate');
+      final compPreset =
+          shadcn.registryThemePresets.firstWhere((p) => p.id == 'supabase');
       expect(datas[0].colorScheme.primary, chromePreset.light.primary);
       expect(datas[1].colorScheme.primary, compPreset.dark.primary);
       // The global ends on the inner (components) preset — last writer wins —

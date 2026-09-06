@@ -198,11 +198,9 @@ class _CodePeekState extends State<CodePeek> {
                     style: TextStyle(
                       fontSize: _bodyFontSize,
                       height: _bodyHeight,
-                      color: _isError
-                          ? colors.onSurface
-                          : colors.onSurfaceVariant,
-                      fontStyle:
-                          _isError ? FontStyle.italic : FontStyle.normal,
+                      color:
+                          _isError ? colors.onSurface : colors.onSurfaceVariant,
+                      fontStyle: _isError ? FontStyle.italic : FontStyle.normal,
                       fontFamily: 'monospace',
                     ),
                   ),

@@ -118,7 +118,14 @@ const kPropSchemas = <String, List<PropSpec>>{
       type: 'enum',
       control: 'select',
       group: 'style',
-      options: ['primary', 'secondary', 'outline', 'ghost', 'destructive', 'link'],
+      options: [
+        'primary',
+        'secondary',
+        'outline',
+        'ghost',
+        'destructive',
+        'link'
+      ],
       defaultValue: 'primary',
     ),
     PropSpec(

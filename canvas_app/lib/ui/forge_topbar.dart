@@ -185,8 +185,7 @@ class ForgeTopbar extends StatefulWidget {
 class _ForgeTopbarState extends State<ForgeTopbar> {
   /// Tab id currently in inline-rename mode (null when none).
   String? _editingId;
-  late final TextEditingController _renameController =
-      TextEditingController();
+  late final TextEditingController _renameController = TextEditingController();
 
   @override
   void dispose() {
@@ -290,9 +289,7 @@ class _ForgeTopbarState extends State<ForgeTopbar> {
           const SizedBox(width: _kTopbarGroupGap),
           Flexible(child: _projectPill(colors)),
           const SizedBox(width: _kTopbarGroupGap),
-          editingTab == null
-              ? _pageSelector(colors)
-              : _renameEditor(colors),
+          editingTab == null ? _pageSelector(colors) : _renameEditor(colors),
           const SizedBox(width: _kTopbarGroupGap),
           EditorIconButton(
             icon: Icons.undo,
@@ -399,9 +396,8 @@ class _ForgeTopbarState extends State<ForgeTopbar> {
               widget.projectTitle,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style:
-                  const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)
-                      .copyWith(color: colors.onSurface),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)
+                  .copyWith(color: colors.onSurface),
             ),
           ),
         ],

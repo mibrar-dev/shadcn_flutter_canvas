@@ -199,7 +199,8 @@ void main() {
   });
 
   group('node w/h sizing (Track U2 follow-up)', () {
-    testWidgets('sized node renders at pinned width in preview', (tester) async {
+    testWidgets('sized node renders at pinned width in preview',
+        (tester) async {
       await _pumpPreview(
         tester,
         _doc([
@@ -216,12 +217,14 @@ void main() {
         ]),
       );
       final box = tester.widget<SizedBox>(
-        find.ancestor(
-          of: find.text('Pinned'),
-          matching: find.byWidgetPredicate(
-            (w) => w is SizedBox && w.width == 200.0,
-          ),
-        ).first,
+        find
+            .ancestor(
+              of: find.text('Pinned'),
+              matching: find.byWidgetPredicate(
+                (w) => w is SizedBox && w.width == 200.0,
+              ),
+            )
+            .first,
       );
       expect(box.width, 200.0);
     });

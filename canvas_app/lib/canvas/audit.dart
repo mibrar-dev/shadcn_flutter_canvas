@@ -162,8 +162,7 @@ List<AuditIssue> _hiddenEverywhereIssues(ScreenDoc doc) {
         AuditIssue(
           severity: AuditSeverity.warning,
           code: 'hidden-everywhere',
-          message:
-              'Node ${node.id} is hidden on all tiers '
+          message: 'Node ${node.id} is hidden on all tiers '
               '(${(node.hiddenOn.toList()..sort()).join(', ')}) '
               'and never renders.',
           nodeId: node.id,
@@ -177,12 +176,14 @@ List<AuditIssue> _hiddenEverywhereIssues(ScreenDoc doc) {
 List<AuditIssue> _hiddenOverrideIssues(ScreenDoc doc) {
   return [
     for (final node in doc.nodes)
-      if (node.breakpointValues.keys.toSet().intersection(node.hiddenOn).isNotEmpty)
+      if (node.breakpointValues.keys
+          .toSet()
+          .intersection(node.hiddenOn)
+          .isNotEmpty)
         AuditIssue(
           severity: AuditSeverity.warning,
           code: 'hidden-override',
-          message:
-              'Node ${node.id} hides tier(s) '
+          message: 'Node ${node.id} hides tier(s) '
               '${((node.breakpointValues.keys.toSet().intersection(node.hiddenOn)).toList()..sort()).join(', ')} '
               'but still carries breakpoint overrides for them; '
               'the overrides never render.',
@@ -221,8 +222,7 @@ List<AuditIssue> _emptyScreenIssues(ScreenDoc doc) {
         AuditIssue(
           severity: AuditSeverity.warning,
           code: 'empty-screen',
-          message:
-              'Screen "${screen.name}" (${screen.id}) has no nodes.',
+          message: 'Screen "${screen.name}" (${screen.id}) has no nodes.',
           screenId: screen.id,
         ),
   ];
@@ -254,8 +254,7 @@ List<AuditIssue> _oversizedDocIssues(ScreenDoc doc) {
       AuditIssue(
         severity: AuditSeverity.error,
         code: 'oversized-doc',
-        message:
-            'Doc has $count nodes (over $kAuditHugeDocNodes): preview '
+        message: 'Doc has $count nodes (over $kAuditHugeDocNodes): preview '
             'rebuilds and exports get slow and hard to review; '
             'consider splitting screens.',
       ),
@@ -266,8 +265,7 @@ List<AuditIssue> _oversizedDocIssues(ScreenDoc doc) {
       AuditIssue(
         severity: AuditSeverity.warning,
         code: 'oversized-doc',
-        message:
-            'Doc has $count nodes (over $kAuditLargeDocNodes): canvas '
+        message: 'Doc has $count nodes (over $kAuditLargeDocNodes): canvas '
             'interactions and preview rebuilds slow down; '
             'consider splitting screens.',
       ),

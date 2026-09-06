@@ -133,8 +133,10 @@ Color _surfaceBehind(WidgetTester tester, String text) {
 }
 
 /// Innermost (components) kit scheme installed by [_pumpNode].
-shadcn.ColorScheme _componentsScheme(WidgetTester tester) =>
-    tester.widget<shadcn.Theme>(find.byType(shadcn.Theme).last).data.colorScheme;
+shadcn.ColorScheme _componentsScheme(WidgetTester tester) => tester
+    .widget<shadcn.Theme>(find.byType(shadcn.Theme).last)
+    .data
+    .colorScheme;
 
 void main() {
   // resolveCanvasThemeData mutates the global InstalledThemePreset.current;
@@ -202,14 +204,16 @@ void main() {
         _effectiveTextColor(tester, 'Login'),
         _surfaceBehind(tester, 'Login'),
       );
-      debugPrint('K2 dark title contrast = ${titleContrast.toStringAsFixed(2)}:1');
+      debugPrint(
+          'K2 dark title contrast = ${titleContrast.toStringAsFixed(2)}:1');
       expect(titleContrast, greaterThanOrEqualTo(_kMinContrast));
 
       final bodyContrast = _contrastRatio(
         _effectiveTextColor(tester, 'Welcome back'),
         _surfaceBehind(tester, 'Welcome back'),
       );
-      debugPrint('K2 dark body contrast = ${bodyContrast.toStringAsFixed(2)}:1');
+      debugPrint(
+          'K2 dark body contrast = ${bodyContrast.toStringAsFixed(2)}:1');
       expect(bodyContrast, greaterThanOrEqualTo(_kMinContrast));
     });
 
@@ -266,7 +270,8 @@ void main() {
       expect(
         scaffold.backgroundColor,
         scheme.background,
-        reason: 'Scaffold must bind the kit background role, not a null default',
+        reason:
+            'Scaffold must bind the kit background role, not a null default',
       );
       // Foregrounds ride the matching on-roles (no hardcoded colors).
       expect(
@@ -358,13 +363,15 @@ void main() {
         titleFg,
         _surfaceBehind(tester, 'CardT'),
       );
-      debugPrint('K2 card "CardT" contrast = ${titleRatio.toStringAsFixed(2)}:1');
+      debugPrint(
+          'K2 card "CardT" contrast = ${titleRatio.toStringAsFixed(2)}:1');
       expect(titleFg, scheme.cardForeground);
       expect(titleRatio, greaterThanOrEqualTo(_kMinContrast));
 
       final descFg = _effectiveTextColor(tester, 'CardD');
       final descRatio = _contrastRatio(descFg, _surfaceBehind(tester, 'CardD'));
-      debugPrint('K2 card "CardD" contrast = ${descRatio.toStringAsFixed(2)}:1');
+      debugPrint(
+          'K2 card "CardD" contrast = ${descRatio.toStringAsFixed(2)}:1');
       expect(descFg, scheme.mutedForeground);
       expect(descRatio, greaterThanOrEqualTo(_kMinContrast));
     });

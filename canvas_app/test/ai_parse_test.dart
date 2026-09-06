@@ -59,8 +59,7 @@ void main() {
   });
 
   test('dangling action ref throws and never returns a partial doc', () {
-    final dangling = _validJson.replaceFirst(
-        '"variant": "primary"',
+    final dangling = _validJson.replaceFirst('"variant": "primary"',
         '"variant": "primary", "action": {"to": "s9", "transition": "slide"}');
     // throwsA proves no ScreenDoc escapes: parse either returns valid or throws.
     expect(

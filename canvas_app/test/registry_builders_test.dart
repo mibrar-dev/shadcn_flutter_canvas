@@ -191,9 +191,11 @@ void main() {
       for (final kind in _kNewKinds) {
         await _pump(
           tester,
-          buildCatalogItem(kind, Map<String, dynamic>.of(
-            findEntry(kind)!.defaults,
-          )),
+          buildCatalogItem(
+              kind,
+              Map<String, dynamic>.of(
+                findEntry(kind)!.defaults,
+              )),
         );
       }
       for (final kind in _kNewKinds) {
@@ -771,9 +773,11 @@ void main() {
       for (final kind in _kTrackMKinds) {
         await _pump(
           tester,
-          buildCatalogItem(kind, Map<String, dynamic>.of(
-            findEntry(kind)!.defaults,
-          )),
+          buildCatalogItem(
+              kind,
+              Map<String, dynamic>.of(
+                findEntry(kind)!.defaults,
+              )),
         );
       }
       for (final kind in _kTrackMKinds) {
@@ -1278,9 +1282,11 @@ void main() {
       for (final kind in _kTrackPKinds) {
         await _pump(
           tester,
-          buildCatalogItem(kind, Map<String, dynamic>.of(
-            findEntry(kind)!.defaults,
-          )),
+          buildCatalogItem(
+              kind,
+              Map<String, dynamic>.of(
+                findEntry(kind)!.defaults,
+              )),
         );
       }
       for (final kind in _kTrackPKinds) {
@@ -2020,7 +2026,8 @@ void main() {
       );
     });
 
-    testWidgets('scaffold + card_image pump inside an unbounded canvas column', (
+    testWidgets('scaffold + card_image pump inside an unbounded canvas column',
+        (
       tester,
     ) async {
       // Mirrors phone_frame.dart root columns (mainAxisSize.min, unbounded
@@ -2096,10 +2103,10 @@ void main() {
     /// still strict (descendant of the chrome), which is what placement
     /// proves.
     Finder kidIn(String kind, String kid) => find.descendant(
-      of: chromeOf(kind),
-      matching: find.text(kid, skipOffstage: false),
-      skipOffstage: false,
-    );
+          of: chromeOf(kind),
+          matching: find.text(kid, skipOffstage: false),
+          skipOffstage: false,
+        );
 
     for (final kind in _kTrackD1Kinds) {
       group(kind, () {
@@ -2163,7 +2170,8 @@ void main() {
         // No catalog entry BY DESIGN: the U1 fallback bridges the registry,
         // so these kinds need no CatalogEntry and kCatalog stays at 68
         // (renderability no longer equals catalog membership).
-        expect(findEntry(kind), isNull, reason: 'U1 keeps $kind out of kCatalog');
+        expect(findEntry(kind), isNull,
+            reason: 'U1 keeps $kind out of kCatalog');
         final reg = findRegistryEntry(kind);
         expect(reg, isNotNull, reason: 'no registry entry $kind');
         expect(reg!.canvasReady, isTrue, reason: kind);
@@ -2597,7 +2605,9 @@ void main() {
         tester,
         buildCatalogItem('chip', {
           'label': '=nick',
-        }, const [], {'nick': 'Ada'}),
+        }, const [], {
+          'nick': 'Ada'
+        }),
       );
       expect(find.byType(shadcn.Chip), findsOneWidget);
       expect(find.text('=nick'), findsOneWidget);
@@ -2675,7 +2685,9 @@ void main() {
           tester,
           buildCatalogItem(kind, {
             'content': const Text('BB slot'),
-          }, const [Text('BB kid')]),
+          }, const [
+            Text('BB kid')
+          ]),
         );
         // The refresh_trigger splice lands in the 140px scroll shell, so
         // rows past the viewport are built but offstage (same idiom as the
@@ -2764,7 +2776,9 @@ void main() {
             tester,
             buildCatalogItem('scaffold', {
               'body': const Text('BB body'),
-            }, const [Text('BB kid')]),
+            }, const [
+              Text('BB kid')
+            ]),
             dark: dark,
           );
           expect(find.text('BB body'), findsOneWidget);
@@ -2905,19 +2919,19 @@ void main() {
     });
   });
 
-/// FF2 loop pump: [_pump] plus a markdown settle. Markdown parses in an
-/// isolate behind a progressive-chunk `Timer.periodic`, so a plain pump
-/// leaves a pending timer that trips the test binding's teardown invariant —
-/// settling drains it (every other FF2 builder is timer-clean on plain
-/// pumps, pinned by the per-kind tests below).
-Future<void> _pumpFF2(
-  WidgetTester tester,
-  String kind,
-  Map<String, dynamic> props,
-) async {
-  await _pump(tester, buildCatalogItem(kind, props));
-  if (kind == 'markdown') await tester.pumpAndSettle();
-}
+  /// FF2 loop pump: [_pump] plus a markdown settle. Markdown parses in an
+  /// isolate behind a progressive-chunk `Timer.periodic`, so a plain pump
+  /// leaves a pending timer that trips the test binding's teardown invariant —
+  /// settling drains it (every other FF2 builder is timer-clean on plain
+  /// pumps, pinned by the per-kind tests below).
+  Future<void> _pumpFF2(
+    WidgetTester tester,
+    String kind,
+    Map<String, dynamic> props,
+  ) async {
+    await _pump(tester, buildCatalogItem(kind, props));
+    if (kind == 'markdown') await tester.pumpAndSettle();
+  }
 
   group('track FF2 wiring', () {
     test('all new kinds are catalog entries bridged by the registry', () {

@@ -54,7 +54,8 @@ void main() {
     });
 
     test('text/background pairs meet WCAG AA (>= 4.5)', () {
-      expect(_contrast(light.onSurface, light.surface), greaterThanOrEqualTo(4.5));
+      expect(
+          _contrast(light.onSurface, light.surface), greaterThanOrEqualTo(4.5));
       expect(
         _contrast(light.onSurfaceVariant, light.surface),
         greaterThanOrEqualTo(4.5),

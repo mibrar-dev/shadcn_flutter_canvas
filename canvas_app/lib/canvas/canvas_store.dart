@@ -116,7 +116,7 @@ class ChangeNotifier {
 /// Track R1 (app state): the doc's [ScreenDoc.states] flow through every
 /// mutation below (each new [ScreenDoc] copies them — dropping them would
 /// wipe all vars on the next edit). Var CRUD ([addVar]/[renameVar]/
-  /// [deleteVar]) is undoable like every doc mutation; session values
+/// [deleteVar]) is undoable like every doc mutation; session values
 /// ([setStateValue]) are preview-runtime only: they [notifyListeners] but
 /// never commit, never touch history, and never persist (see [_saveNow] —
 /// only [_doc] serializes).
@@ -410,7 +410,10 @@ class CanvasStore extends ChangeNotifier {
       nodes: [for (final n in _doc.nodes) _clearNodeRefs(n, name)],
       theme: _doc.theme,
       meta: _doc.meta,
-      states: [for (final v in _doc.states) if (v.name != name) v],
+      states: [
+        for (final v in _doc.states)
+          if (v.name != name) v
+      ],
     ));
   }
 
@@ -446,8 +449,7 @@ class CanvasStore extends ChangeNotifier {
 
   /// Rebuilds [node] with [items] (deep-copy precedent: responsive fields
   /// are copied, never aliased — mirrors [patchItem]).
-  CanvasNode _nodeWithItems(CanvasNode n, List<CanvasItem> items) =>
-      CanvasNode(
+  CanvasNode _nodeWithItems(CanvasNode n, List<CanvasItem> items) => CanvasNode(
         id: n.id,
         screenId: n.screenId,
         x: n.x,
@@ -541,7 +543,8 @@ class CanvasStore extends ChangeNotifier {
           steps: steps,
         );
       }
-      items.add(CanvasItem(id: i.id, kind: i.kind, props: props, action: action));
+      items.add(
+          CanvasItem(id: i.id, kind: i.kind, props: props, action: action));
     }
     return _nodeWithItems(node, items);
   }
@@ -1259,9 +1262,8 @@ class CanvasStore extends ChangeNotifier {
       }));
       return;
     }
-    final kind = node.isRow
-        ? 'row'
-        : (node.items.isEmpty ? '' : node.items.first.kind);
+    final kind =
+        node.isRow ? 'row' : (node.items.isEmpty ? '' : node.items.first.kind);
     final known = _kNodeSlots[kind] ?? const <String>[];
     if (slot.isEmpty || !known.contains(slot)) {
       throw ArgumentError('Unknown slot "$slot" for kind "$kind"');
@@ -1332,7 +1334,8 @@ class CanvasStore extends ChangeNotifier {
 
   /// Rebuilds [node] with [slotNodes] (deep-copy precedent: every other
   /// field carried, maps copied never aliased — see [setSlotChild]).
-  CanvasNode _nodeWithSlotNodes(CanvasNode node, Map<String, String> slotNodes) =>
+  CanvasNode _nodeWithSlotNodes(
+          CanvasNode node, Map<String, String> slotNodes) =>
       CanvasNode(
         id: node.id,
         screenId: node.screenId,

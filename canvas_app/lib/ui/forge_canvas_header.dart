@@ -231,8 +231,7 @@ class ForgeCanvasHeader extends StatelessWidget {
       right: Radius.circular(last ? 14 : 4),
     );
     return shadcn.Tooltip(
-      tooltip: (context) =>
-          shadcn.TooltipContainer(child: Text(device.label)),
+      tooltip: (context) => shadcn.TooltipContainer(child: Text(device.label)),
       child: Container(
         width: 28,
         height: EditorMetrics.screenLabelHeight,

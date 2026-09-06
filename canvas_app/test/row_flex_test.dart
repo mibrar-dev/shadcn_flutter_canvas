@@ -81,8 +81,7 @@ const _autoKid = CanvasNode(
 
 void main() {
   group('wrapRowChild rule', () {
-    test('null-width default is tight Flexible with flex 1 (equal shares)',
-        () {
+    test('null-width default is tight Flexible with flex 1 (equal shares)', () {
       final wrapped = wrapRowChild(_autoKid, const SizedBox());
       expect(wrapped, isA<Flexible>());
       // Tight fit (shares like Expanded) but exact runtime type Flexible
@@ -412,7 +411,8 @@ void main() {
       expect('$error', contains('overflowed'));
     });
 
-    testWidgets('row crossAxis still defaults to center', (tester) async {      _useReferenceViewport(tester);
+    testWidgets('row crossAxis still defaults to center', (tester) async {
+      _useReferenceViewport(tester);
       final store = CanvasStore(initial: _squeezeDoc());
       await tester.pumpWidget(
         MaterialApp(home: Scaffold(body: DesignCanvas(store: store))),

@@ -134,8 +134,7 @@ class _PromptPanelState extends State<PromptPanel> {
             child: Container(
               decoration: BoxDecoration(
                 color: colors.surfaceContainer,
-                borderRadius:
-                    BorderRadius.circular(EditorMetrics.tileRadius),
+                borderRadius: BorderRadius.circular(EditorMetrics.tileRadius),
               ),
               padding: const EdgeInsets.all(EditorMetrics.panelInset),
               child: SingleChildScrollView(
@@ -144,11 +143,9 @@ class _PromptPanelState extends State<PromptPanel> {
                   style: TextStyle(
                     fontSize: _bodyFontSize,
                     height: _bodyHeight,
-                    color: _isError
-                        ? colors.onSurface
-                        : colors.onSurfaceVariant,
-                    fontStyle:
-                        _isError ? FontStyle.italic : FontStyle.normal,
+                    color:
+                        _isError ? colors.onSurface : colors.onSurfaceVariant,
+                    fontStyle: _isError ? FontStyle.italic : FontStyle.normal,
                     fontFamily: 'monospace',
                   ),
                 ),
@@ -227,8 +224,7 @@ class _RegeneratePillState extends State<_RegeneratePill> {
             ),
             decoration: BoxDecoration(
               color: colors.surfaceContainerHigh,
-              borderRadius:
-                  BorderRadius.circular(EditorMetrics.searchRadius),
+              borderRadius: BorderRadius.circular(EditorMetrics.searchRadius),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -241,8 +237,7 @@ class _RegeneratePillState extends State<_RegeneratePill> {
                 const SizedBox(width: EditorMetrics.tileGap),
                 Text(
                   'Prompt',
-                  style: EditorType.readout
-                      .copyWith(color: colors.onSurface),
+                  style: EditorType.readout.copyWith(color: colors.onSurface),
                 ),
               ],
             ),

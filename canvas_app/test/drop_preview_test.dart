@@ -131,8 +131,7 @@ Future<({TestGesture gesture, RenderBox targetBox})> _startTileDrag(
   WidgetTester tester,
 ) async {
   final tileTopLeft = tester.getTopLeft(find.byType(Draggable<String>));
-  final gesture =
-      await tester.startGesture(tileTopLeft + const Offset(80, 30));
+  final gesture = await tester.startGesture(tileTopLeft + const Offset(80, 30));
   await tester.pump();
   final box = tester.renderObject<RenderBox>(find.byType(DragTarget<String>));
   return (gesture: gesture, targetBox: box);
@@ -163,8 +162,7 @@ void main() {
       expect(find.byKey(kFlowInsertLineKey), findsNothing);
 
       // The ghost occupies the slot head: above Kid A (and Kid B).
-      final ghostBottom =
-          tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
+      final ghostBottom = tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
       expect(ghostBottom,
           lessThanOrEqualTo(tester.getTopLeft(find.text('Kid A')).dy));
 
@@ -241,8 +239,7 @@ void main() {
       expect(find.byKey(kFlowInsertLineKey), findsOneWidget);
 
       final ghostTop = tester.getTopLeft(find.byKey(kDropPreviewKey)).dy;
-      final ghostBottom =
-          tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
+      final ghostBottom = tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
       expect(tester.getBottomLeft(find.text('Kid A')).dy,
           lessThanOrEqualTo(ghostTop));
       expect(ghostBottom,
@@ -271,8 +268,7 @@ void main() {
       expect(find.byKey(kFlowInsertLineKey), findsOneWidget);
 
       final ghostLeft = tester.getTopLeft(find.byKey(kDropPreviewKey)).dx;
-      final ghostRight =
-          tester.getTopRight(find.byKey(kDropPreviewKey)).dx;
+      final ghostRight = tester.getTopRight(find.byKey(kDropPreviewKey)).dx;
       expect(tester.getBottomRight(find.text('R A')).dx,
           lessThanOrEqualTo(ghostLeft));
       expect(ghostRight,
@@ -291,7 +287,8 @@ void main() {
 
       final drag = await _startTileDrag(tester);
       final box = drag.targetBox;
-      await drag.gesture.moveTo(box.localToGlobal(box.size.center(Offset.zero)));
+      await drag.gesture
+          .moveTo(box.localToGlobal(box.size.center(Offset.zero)));
       await tester.pump();
 
       // Root fallback: ghost + insert line, no crash on the empty doc.

@@ -45,8 +45,8 @@ void main() {
 
     // Rebuild with the emitted theme: the switch now reads on.
     await _pumpBar(tester, seen.single, (_) {});
-    expect(tester.widget<shadcn.Switch>(find.byType(shadcn.Switch)).value,
-        isTrue);
+    expect(
+        tester.widget<shadcn.Switch>(find.byType(shadcn.Switch)).value, isTrue);
   });
 
   testWidgets('palette select shows the current preset', (tester) async {

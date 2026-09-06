@@ -338,11 +338,12 @@ void main() {
         find.ancestor(of: find.text('C1'), matching: find.byType(Expanded)),
         findsOneWidget,
       );
-      final expanded =
-          tester.widget<Expanded>(find.ancestor(
-        of: find.text('C1'),
-        matching: find.byType(Expanded),
-      ).first);
+      final expanded = tester.widget<Expanded>(find
+          .ancestor(
+            of: find.text('C1'),
+            matching: find.byType(Expanded),
+          )
+          .first);
       expect(expanded.flex, 2);
       // Sibling without expand stays Flexible.
       expect(

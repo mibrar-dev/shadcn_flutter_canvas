@@ -111,144 +111,144 @@ Future<void> _pumpSurface(
 /// Item labels stay distinct from screen names so `find.text` on a header
 /// name is unambiguous (the player bar shows `current?.name`).
 ScreenDoc _chainDoc() => ScreenDoc.fromJson({
-  'screens': [
-    {'id': 's1', 'name': 'Showcase', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-    {'id': 's2', 'name': 'Display', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
-    {'id': 's3', 'name': 'Controls', 'x': 960.0, 'y': 0.0, 'bg': 'surface'},
-  ],
-  'nodes': [
-    {
-      'id': 'n1',
-      'screenId': 's1',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
+      'screens': [
+        {'id': 's1', 'name': 'Showcase', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+        {'id': 's2', 'name': 'Display', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
+        {'id': 's3', 'name': 'Controls', 'x': 960.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
         {
-          'id': 'i1',
-          'kind': 'button',
-          'label': 'To Display',
-          'action': {'to': 's2', 'transition': 'slide'},
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'button',
+              'label': 'To Display',
+              'action': {'to': 's2', 'transition': 'slide'},
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's2',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i2',
+              'kind': 'button',
+              'label': 'To Controls',
+              'action': {'to': 's3', 'transition': 'slide'},
+            },
+          ],
+        },
+        {
+          'id': 'n3',
+          'screenId': 's3',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i3',
+              'kind': 'button',
+              'label': 'To Showcase',
+              'action': {'to': 's1', 'transition': 'slide'},
+            },
+          ],
         },
       ],
-    },
-    {
-      'id': 'n2',
-      'screenId': 's2',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
-        {
-          'id': 'i2',
-          'kind': 'button',
-          'label': 'To Controls',
-          'action': {'to': 's3', 'transition': 'slide'},
-        },
-      ],
-    },
-    {
-      'id': 'n3',
-      'screenId': 's3',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
-        {
-          'id': 'i3',
-          'kind': 'button',
-          'label': 'To Showcase',
-          'action': {'to': 's1', 'transition': 'slide'},
-        },
-      ],
-    },
-  ],
-  'theme': {
-    'paletteKey': 'clean-slate',
-    'dark': false,
-    'shape': 'rounded',
-    'motion': 'standard',
-  },
-  'meta': {'title': 'Chain', 'brief': ''},
-});
+      'theme': {
+        'paletteKey': 'clean-slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Chain', 'brief': ''},
+    });
 
 /// Single screen whose only action points at a missing screen id.
 ScreenDoc _unknownTargetDoc() => ScreenDoc.fromJson({
-  'screens': [
-    {'id': 's1', 'name': 'Safe', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-  ],
-  'nodes': [
-    {
-      'id': 'n1',
-      'screenId': 's1',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
+      'screens': [
+        {'id': 's1', 'name': 'Safe', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      ],
+      'nodes': [
         {
-          'id': 'i1',
-          'kind': 'button',
-          'label': 'Ghost Link',
-          'action': {'to': 'gone', 'transition': 'slide'},
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'button',
+              'label': 'Ghost Link',
+              'action': {'to': 'gone', 'transition': 'slide'},
+            },
+          ],
         },
       ],
-    },
-  ],
-  'theme': {
-    'paletteKey': 'clean-slate',
-    'dark': false,
-    'shape': 'rounded',
-    'motion': 'standard',
-  },
-  'meta': {'title': 'Unknown target', 'brief': ''},
-});
+      'theme': {
+        'paletteKey': 'clean-slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Unknown target', 'brief': ''},
+    });
 
 /// Home screen with an always-visible item plus a mobile-hidden node whose
 /// item navigates to Away; Away carries a plain marker item.
 ScreenDoc _tierNavDoc() => ScreenDoc.fromJson({
-  'screens': [
-    {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-    {'id': 's2', 'name': 'Away', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
-  ],
-  'nodes': [
-    {
-      'id': 'n1',
-      'screenId': 's1',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
-        {'id': 'i0', 'kind': 'button', 'label': 'Always Here'},
+      'screens': [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+        {'id': 's2', 'name': 'Away', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
       ],
-    },
-    {
-      'id': 'n2',
-      'screenId': 's1',
-      'x': 16.0,
-      'y': 200.0,
-      'hiddenOn': ['mobile'],
-      'items': [
+      'nodes': [
         {
-          'id': 'i1',
-          'kind': 'button',
-          'label': 'Secret Next',
-          'action': {'to': 's2', 'transition': 'slide'},
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i0', 'kind': 'button', 'label': 'Always Here'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'x': 16.0,
+          'y': 200.0,
+          'hiddenOn': ['mobile'],
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'button',
+              'label': 'Secret Next',
+              'action': {'to': 's2', 'transition': 'slide'},
+            },
+          ],
+        },
+        {
+          'id': 'n3',
+          'screenId': 's2',
+          'x': 16.0,
+          'y': 96.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Arrived'},
+          ],
         },
       ],
-    },
-    {
-      'id': 'n3',
-      'screenId': 's2',
-      'x': 16.0,
-      'y': 96.0,
-      'items': [
-        {'id': 'i2', 'kind': 'button', 'label': 'Arrived'},
-      ],
-    },
-  ],
-  'theme': {
-    'paletteKey': 'clean-slate',
-    'dark': false,
-    'shape': 'rounded',
-    'motion': 'standard',
-  },
-  'meta': {'title': 'Tier nav', 'brief': ''},
-});
+      'theme': {
+        'paletteKey': 'clean-slate',
+        'dark': false,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Tier nav', 'brief': ''},
+    });
 
 Future<void> _pumpPreview(WidgetTester tester, ScreenDoc doc) async {
   await tester.pumpWidget(
@@ -541,9 +541,8 @@ void main() {
       tester,
     ) async {
       await _pumpSurface(tester, _componentsLight, 'surface');
-      final lightSurface = tester
-          .widget<PhoneFrame>(find.byType(PhoneFrame))
-          .screenColor;
+      final lightSurface =
+          tester.widget<PhoneFrame>(find.byType(PhoneFrame)).screenColor;
       expect(lightSurface, _kitBackground(_componentsLight));
       expect(lightSurface, isNot(EditorColors.dark.surface));
 

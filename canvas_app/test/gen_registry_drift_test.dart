@@ -78,8 +78,7 @@ void main() {
       expect(
         actual,
         expected,
-        reason:
-            'drift: hand-built registry bridges/bare builders vs generator '
+        reason: 'drift: hand-built registry bridges/bare builders vs generator '
             'allowlists. New bridge? Add it to _bridgeKinds in '
             'tool/gen_registry.dart. Removed kind? Remove it there too. '
             'actual-only: ${actual.difference(expected)}; '
@@ -93,7 +92,10 @@ void main() {
       expect(kCatalog, hasLength(107));
       expect(kFrozenTrackKinds, isEmpty);
       expect(
-        [for (final e in kRegistry) if (e.canvasReady) e.kind],
+        [
+          for (final e in kRegistry)
+            if (e.canvasReady) e.kind
+        ],
         hasLength(117),
       );
     });

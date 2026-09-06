@@ -12,7 +12,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// two-step flow. Returns `(store, nodeId, itemId)`.
 (CanvasStore, String, String) _storeWithState() {
   final store = CanvasStore();
-  store.addVar(const AppStateVar(name: 'count', type: 'number', defaultValue: 0));
+  store.addVar(
+      const AppStateVar(name: 'count', type: 'number', defaultValue: 0));
   final doneId = store.doc.screens.first.id;
   final nodeId = store.addNode(
     screenId: 's1',
@@ -38,11 +39,11 @@ import 'package:flutter_test/flutter_test.dart';
   return (store, nodeId, 'i1');
 }
 
-CanvasItem _item(CanvasStore store, String nodeId, String itemId) => store.doc
-    .nodes
-    .singleWhere((n) => n.id == nodeId)
-    .items
-    .singleWhere((i) => i.id == itemId);
+CanvasItem _item(CanvasStore store, String nodeId, String itemId) =>
+    store.doc.nodes
+        .singleWhere((n) => n.id == nodeId)
+        .items
+        .singleWhere((i) => i.id == itemId);
 
 void main() {
   group('var CRUD', () {

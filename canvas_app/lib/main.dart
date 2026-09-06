@@ -266,8 +266,7 @@ class _EditorShellState extends State<EditorShell> {
     super.dispose();
   }
 
-  void _setZoom(double next) =>
-      setState(() => _zoom = next.clamp(0.25, 4.0));
+  void _setZoom(double next) => setState(() => _zoom = next.clamp(0.25, 4.0));
 
   @override
   Widget build(BuildContext context) {
@@ -280,8 +279,7 @@ class _EditorShellState extends State<EditorShell> {
         // (components) theme. `effectiveChrome` is chrome-or-main, so a null
         // chrome preserves the old single-theme behavior.
         final chrome = doc.theme.effectiveChrome;
-        final colors =
-            chrome.dark ? EditorColors.dark : EditorColors.light;
+        final colors = chrome.dark ? EditorColors.dark : EditorColors.light;
         // EditorTheme sits above both branches so the preview chrome can
         // use the same tokens as the editor (it previously had no styled
         // ancestor at all, which is why its title rendered unstyled).
@@ -359,46 +357,46 @@ class _EditorShellState extends State<EditorShell> {
                           child: Row(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                        // FF7 cutover mount (BUILD_SPEC §9.1, 48/280/flex/
-                        // 300): the 48px persistent nav rail switches the
-                        // 280px panel host; the canvas takes the flex middle;
-                        // the properties column is 300px. Widths come from
-                        // [EditorMetrics] (no literals).
-                        FfNavRail(
-                          selected: _ffDestination,
-                          onSelect: (d) =>
-                              setState(() => _ffDestination = d),
-                        ),
-                        FfPanelHost(
-                          selected: _ffDestination,
-                          panels: _ffPanels(),
-                        ),
-                        Expanded(child: _canvasArea()),
-                        SizedBox(
-                          width: EditorMetrics.ffInspectorWidth,
-                          child: RightAside(
-                            store: widget.store,
-                            nodeId: _primaryNodeId(),
-                            itemId: _selectedItemId(),
-                            onSelectNode: (id) => setState(() {
-                              _selectedScreenId = null;
-                              _selectedNodeIds.clear();
-                              if (id != null) _selectedNodeIds.add(id);
-                              _selectionAnchorId = id;
-                            }),
-                            onSelectScreen: (id) => setState(() {
-                              _selectedScreenId = id;
-                              _selectedNodeIds.clear();
-                              _selectionAnchorId = null;
-                            }),
-                            // FORGE.md §1-4e (Y5 pass-through, Y6 wiring):
-                            // duplicate reselects the clone (same path as
-                            // keyboard duplicate); delete removes the node
-                            // and clears it from the selection.
-                            onDuplicate: _duplicateAndReselect,
-                            onDelete: _deleteNodeAndClear,
-                          ),
-                        ),
+                              // FF7 cutover mount (BUILD_SPEC §9.1, 48/280/flex/
+                              // 300): the 48px persistent nav rail switches the
+                              // 280px panel host; the canvas takes the flex middle;
+                              // the properties column is 300px. Widths come from
+                              // [EditorMetrics] (no literals).
+                              FfNavRail(
+                                selected: _ffDestination,
+                                onSelect: (d) =>
+                                    setState(() => _ffDestination = d),
+                              ),
+                              FfPanelHost(
+                                selected: _ffDestination,
+                                panels: _ffPanels(),
+                              ),
+                              Expanded(child: _canvasArea()),
+                              SizedBox(
+                                width: EditorMetrics.ffInspectorWidth,
+                                child: RightAside(
+                                  store: widget.store,
+                                  nodeId: _primaryNodeId(),
+                                  itemId: _selectedItemId(),
+                                  onSelectNode: (id) => setState(() {
+                                    _selectedScreenId = null;
+                                    _selectedNodeIds.clear();
+                                    if (id != null) _selectedNodeIds.add(id);
+                                    _selectionAnchorId = id;
+                                  }),
+                                  onSelectScreen: (id) => setState(() {
+                                    _selectedScreenId = id;
+                                    _selectedNodeIds.clear();
+                                    _selectionAnchorId = null;
+                                  }),
+                                  // FORGE.md §1-4e (Y5 pass-through, Y6 wiring):
+                                  // duplicate reselects the clone (same path as
+                                  // keyboard duplicate); delete removes the node
+                                  // and clears it from the selection.
+                                  onDuplicate: _duplicateAndReselect,
+                                  onDelete: _deleteNodeAndClear,
+                                ),
+                              ),
                             ],
                           ),
                         ),
@@ -629,6 +627,7 @@ class _EditorShellState extends State<EditorShell> {
       ),
     );
   }
+
   Widget _canvasArea() {
     final doc = widget.store.doc;
     // Inner components theme: screens/components render under `doc.theme`
@@ -716,7 +715,7 @@ class _EditorShellState extends State<EditorShell> {
                     ),
                   ),
                 ),
-                // Forge black selection toolbar (FORGE.md §1-3f, §3):
+                // Forge neutral-pill selection toolbar (FORGE.md §1-3f, §3):
                 // shell-centered near the canvas bottom, above the bottom
                 // inset. Up/down reorder within the node's group; duplicate
                 // clones and reselects. Hidden without a selection (the

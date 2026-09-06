@@ -32,7 +32,8 @@ void main() {
     );
   });
 
-  testWidgets('capturePng throws when boundary is not attached', (tester) async {
+  testWidgets('capturePng throws when boundary is not attached',
+      (tester) async {
     await tester.pumpWidget(const MaterialApp(home: SizedBox()));
     expect(
       () => capturePng(GlobalKey()),

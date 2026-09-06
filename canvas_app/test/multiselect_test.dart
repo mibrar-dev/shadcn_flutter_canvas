@@ -221,8 +221,7 @@ void main() {
       final nodes = store.doc.nodes;
       // First grouped node in doc order is ids[0] (slot 0): row lands there,
       // children follow in the requested [b, a] order, c stays last.
-      expect(nodes.map((n) => n.id).toList(),
-          [rowId, ids[1], ids[0], ids[2]]);
+      expect(nodes.map((n) => n.id).toList(), [rowId, ids[1], ids[0], ids[2]]);
       final row = nodes.first;
       expect(row.isRow, isTrue);
       expect(row.parentId, isNull);
@@ -279,7 +278,11 @@ void main() {
 
     test('refusals throw StateError and commit nothing', () {
       // Empty / singleton / unknown.
-      for (final bad in [<String>[], ['a'], ['a', 'nope']]) {
+      for (final bad in [
+        <String>[],
+        ['a'],
+        ['a', 'nope']
+      ]) {
         final store = _fixtureStore();
         final snapshot = _docJson(store);
         expect(() => store.groupIntoRow(bad), throwsStateError);
@@ -314,9 +317,7 @@ void main() {
       expect(_docJson(store), snapshot);
       expect(store.canUndo, isFalse);
       expect(store.redo(), isTrue);
-      expect(
-          store.doc.nodes.map((n) => n.id).toList(),
-          contains(rowId));
+      expect(store.doc.nodes.map((n) => n.id).toList(), contains(rowId));
     });
   });
 
@@ -331,8 +332,7 @@ void main() {
       expect(ungroupTargetRow(store.doc, {'nope'}), isNull);
     });
 
-    test('happy path: children take the row slot, grandchild stays nested',
-        () {
+    test('happy path: children take the row slot, grandchild stays nested', () {
       final store = _fixtureStore();
       final g = store.addNode(screenId: 's1', x: 1, y: 1);
       store.reparentNode(g, 'n');

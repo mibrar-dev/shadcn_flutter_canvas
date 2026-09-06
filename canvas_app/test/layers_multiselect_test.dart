@@ -100,8 +100,7 @@ class _PanelHarnessState extends State<_PanelHarness> {
             ),
             onGroupSelection: () {
               groupCalls++;
-              final rowId =
-                  widget.store.groupIntoRow(selected.toList());
+              final rowId = widget.store.groupIntoRow(selected.toList());
               setState(() {
                 selected = {rowId};
                 anchor = rowId;
@@ -183,8 +182,7 @@ shadcn.IconButton _headerButton(WidgetTester tester, IconData icon) =>
     );
 
 void main() {
-  testWidgets('plain tap collapses the set to the tapped node',
-      (tester) async {
+  testWidgets('plain tap collapses the set to the tapped node', (tester) async {
     final store = CanvasStore();
     final ids = _threeNodes(store);
     await tester.pumpWidget(
@@ -219,27 +217,23 @@ void main() {
     await tester.pump();
 
     // Ctrl+tap an absent node adds it and moves the anchor.
-    await _tapRow(tester, ids[1],
-        modifier: LogicalKeyboardKey.controlLeft);
+    await _tapRow(tester, ids[1], modifier: LogicalKeyboardKey.controlLeft);
     expect(_harnessState(tester).selected, {ids[0], ids[1]});
     expect(_harnessState(tester).anchor, ids[1]);
     expect(find.text('2 selected'), findsOneWidget);
 
     // Ctrl+tap a present node removes it (anchor stays, still live).
-    await _tapRow(tester, ids[0],
-        modifier: LogicalKeyboardKey.controlLeft);
+    await _tapRow(tester, ids[0], modifier: LogicalKeyboardKey.controlLeft);
     expect(_harnessState(tester).selected, {ids[1]});
 
     // Shift+tap ranges from the live anchor (ids[1]) to the tap.
-    await _tapRow(tester, ids[2],
-        modifier: LogicalKeyboardKey.shiftLeft);
+    await _tapRow(tester, ids[2], modifier: LogicalKeyboardKey.shiftLeft);
     expect(_harnessState(tester).selected, {ids[1], ids[2]});
     expect(_harnessState(tester).anchor, ids[2]);
     expect(find.text('2 selected'), findsOneWidget);
 
     // Shift+tap back ranges the full span again.
-    await _tapRow(tester, ids[0],
-        modifier: LogicalKeyboardKey.shiftLeft);
+    await _tapRow(tester, ids[0], modifier: LogicalKeyboardKey.shiftLeft);
     expect(_harnessState(tester).selected, ids.toSet());
     expect(find.text('3 selected'), findsOneWidget);
   });

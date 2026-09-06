@@ -142,8 +142,9 @@ int _uidCounter = 0;
 String _nextId() => 'u${++_uidCounter}';
 
 /// One node with a single item of [kind] on [screenId] at flow row [row].
-CanvasNode _node(String screenId, int row, String kind,
-    Map<String, dynamic> props, [NodeAction? action, String? parentId]) {
+CanvasNode _node(
+    String screenId, int row, String kind, Map<String, dynamic> props,
+    [NodeAction? action, String? parentId]) {
   return CanvasNode(
     id: _nextId(),
     screenId: screenId,
@@ -167,8 +168,7 @@ Map<String, dynamic> _labeled(String kind, Map<String, String> overrides) {
   return props;
 }
 
-Map<String, dynamic> _mixed(
-    String kind, Map<String, Object> overrides) {
+Map<String, dynamic> _mixed(String kind, Map<String, Object> overrides) {
   final props = _dropProps(kind);
   props.addAll(overrides);
   return props;
@@ -484,11 +484,12 @@ void main(List<String> args) {
     _fail('Home kinds incomplete: ${homeKinds.join(', ')}');
   }
   if ([
-    for (final node in back.nodes)
-      if (node.screenId == _homeScreenId)
-        for (final item in node.items)
-          if (item.kind == 'badge') item,
-  ].length != 3) {
+        for (final node in back.nodes)
+          if (node.screenId == _homeScreenId)
+            for (final item in node.items)
+              if (item.kind == 'badge') item,
+      ].length !=
+      3) {
     _fail('Home should hold exactly 3 stat badges');
   }
   final searchKinds = _kindsOn(back, _searchScreenId);
@@ -496,11 +497,12 @@ void main(List<String> args) {
     _fail('Search kinds incomplete: ${searchKinds.join(', ')}');
   }
   if ([
-    for (final node in back.nodes)
-      if (node.screenId == _searchScreenId)
-        for (final item in node.items)
-          if (item.kind == 'basic') item,
-  ].length != 3) {
+        for (final node in back.nodes)
+          if (node.screenId == _searchScreenId)
+            for (final item in node.items)
+              if (item.kind == 'basic') item,
+      ].length !=
+      3) {
     _fail('Search should hold exactly 3 destination rows');
   }
   final savedKinds = _kindsOn(back, _savedScreenId);
@@ -514,8 +516,7 @@ void main(List<String> args) {
         (node) =>
             node.screenId == from &&
             node.items.any((item) =>
-                item.action?.to == to &&
-                item.action?.transition == transition),
+                item.action?.to == to && item.action?.transition == transition),
       );
   String navIndex(String screenId) {
     for (final node in back.nodes) {

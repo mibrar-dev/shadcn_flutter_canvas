@@ -287,7 +287,8 @@ const _kExpectedSections = <String, String>{
 
 void main() {
   group('registry coverage', () {
-    test('all 134 kit ids plus the ten Track F primitives, each exactly once', () {
+    test('all 134 kit ids plus the ten Track F primitives, each exactly once',
+        () {
       expect(_kKitIds, hasLength(134));
       final kinds = [for (final entry in kRegistry) entry.kind];
       expect(kinds, hasLength(_kKitIds.length + 10));

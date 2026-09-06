@@ -46,51 +46,51 @@ Future<String> _pumpLeaf(
 
 /// Doc with a row container holding two children plus one root leaf.
 ScreenDoc _rowDoc() => ScreenDoc.fromJson({
-  'screens': [
-    {'id': 's1', 'name': 'Screen 1', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-  ],
-  'nodes': [
-    {
-      'id': 'r1',
-      'screenId': 's1',
-      'x': 0.0,
-      'y': 0.0,
-      'items': [],
-      'parentId': null,
-      'isRow': true,
-      'gap': 8.0,
-    },
-    {
-      'id': 'c1',
-      'screenId': 's1',
-      'x': 0.0,
-      'y': 0.0,
-      'items': [
-        {'id': 'ic1', 'kind': 'button', 'label': 'C1'},
+      'screens': [
+        {'id': 's1', 'name': 'Screen 1', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
       ],
-      'parentId': 'r1',
-      'isRow': false,
-      'gap': 8.0,
-    },
-    {
-      'id': 'r2',
-      'screenId': 's1',
-      'x': 0.0,
-      'y': 200.0,
-      'items': [],
-      'parentId': null,
-      'isRow': true,
-      'gap': 8.0,
-    },
-  ],
-  'theme': {
-    'paletteKey': 'clean-slate',
-    'dark': true,
-    'shape': 'rounded',
-    'motion': 'standard',
-  },
-  'meta': {'title': 'Flow', 'brief': ''},
-});
+      'nodes': [
+        {
+          'id': 'r1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [],
+          'parentId': null,
+          'isRow': true,
+          'gap': 8.0,
+        },
+        {
+          'id': 'c1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ic1', 'kind': 'button', 'label': 'C1'},
+          ],
+          'parentId': 'r1',
+          'isRow': false,
+          'gap': 8.0,
+        },
+        {
+          'id': 'r2',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 200.0,
+          'items': [],
+          'parentId': null,
+          'isRow': true,
+          'gap': 8.0,
+        },
+      ],
+      'theme': {
+        'paletteKey': 'clean-slate',
+        'dark': true,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Flow', 'brief': ''},
+    });
 
 void main() {
   testWidgets('tapping a button node selects it', (tester) async {

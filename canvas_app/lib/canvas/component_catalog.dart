@@ -317,11 +317,11 @@ List<Widget> _withContentSlot(
 /// empty lists never reach here (childless builders return their exact old
 /// tree so existing docs render byte-identically).
 List<Widget> _nestedStack(List<Widget> children) => [
-  for (var i = 0; i < children.length; i++) ...[
-    if (i > 0) const SizedBox(height: kFlowScreenGap),
-    children[i],
-  ],
-];
+      for (var i = 0; i < children.length; i++) ...[
+        if (i > 0) const SizedBox(height: kFlowScreenGap),
+        children[i],
+      ],
+    ];
 
 /// One draggable component kind.
 class CatalogEntry {
@@ -443,7 +443,8 @@ Widget _buildButton(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildCard(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildCard(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // Fallbacks mirror the card canvas block's propsSchema defaults
   // (`components.json`): `Card` takes a bare child, so title/description are
   // canvas-level content props with no constructor counterpart.
@@ -895,8 +896,8 @@ class _RadioGroupCellState extends State<_RadioGroupCell> {
     // (rendering unchanged), long ones clamp instead of overflowing. It is
     // the row's only flex child, so it simply takes the leftover width.
     Widget optionLabel(String option) => Flexible(
-      child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
-    );
+          child: Text(option, maxLines: 1, overflow: TextOverflow.ellipsis),
+        );
     return shadcn.RadioGroup<String>(
       value: _value,
       // Track M: `disabled` wires into `RadioGroup(enabled:)` (nullable;
@@ -969,7 +970,8 @@ Widget _buildBreadcrumb(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildDialog(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildDialog(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`overlay/dialog/preview.dart`), whose
   // `showDialog` builder content is a padded title + body + Close action
@@ -980,9 +982,8 @@ Widget _buildDialog(Map<String, dynamic> props, [List<Widget> children = const [
   // C1 container slot (COMPOSITION.md §2): `ModalContainer` column after the
   // message, before the action row.
   final title = (props['title'] ?? 'Dialog title') as String;
-  final message =
-      (props['message'] ?? 'Use dialogs for important confirmations.')
-          as String;
+  final message = (props['message'] ??
+      'Use dialogs for important confirmations.') as String;
   final showActions = (props['showActions'] ?? true) as bool;
   // Track BB slots: `content` complements the splice ([_withContentSlot]).
   final kids = _withContentSlot(props, children);
@@ -1032,7 +1033,8 @@ Widget _buildTooltip(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildToast(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildToast(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: an icon + title
   // + message notification row (the kit's preview shows a bare `Text` via
   // `ToastController.show`; the entry takes any child). The real
@@ -1078,7 +1080,8 @@ Widget _buildToast(Map<String, dynamic> props, [List<Widget> children = const []
   );
 }
 
-Widget _buildDrawer(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildDrawer(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: a title plus
   // body content. The real `DrawerWrapper` builds bare (its overlay-layer
   // lookup is null-safe and it owns its `AnimationController`); with
@@ -1324,7 +1327,8 @@ Widget _buildCardImage(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildScaffold(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildScaffold(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: an app title
   // plus a body line. Dropping a scaffold yields the default app shell —
   // the real kit `Scaffold` (its `Overlay` + `DrawerOverlay` build bare)
@@ -1494,7 +1498,8 @@ Widget _buildOutlinedContainer(
   );
 }
 
-Widget _buildHidden(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildHidden(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented. The real
   // `Hidden` needs `hidden` + `child` (durations/curves all defaulted); the
   // canvas-level `label` prop renders as that child so the visible state is
@@ -1614,7 +1619,8 @@ Widget _buildTracker(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildChat(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildChat(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real
   // `ChatBubble` requires only `child` (type/color/alignment all fall back
   // to the chat theme); the canvas-level `message` prop renders as that
@@ -1681,13 +1687,15 @@ Widget _buildStarRating(Map<String, dynamic> props) {
   // No canvas block in `components.json` — defaults invented: a value plus
   // the star count. Both parse via `num` (`jsonDecode` yields `int` for
   // whole numbers) and clamp so hand-written docs never crash.
-  final max = (((props['max'] as num?)?.toDouble() ?? 5).clamp(1, 10)).toDouble();
+  final max =
+      (((props['max'] as num?)?.toDouble() ?? 5).clamp(1, 10)).toDouble();
   final value =
       (((props['value'] as num?)?.toDouble() ?? 3).clamp(0, max)).toDouble();
   return _StarRatingCell(initialValue: value, max: max);
 }
 
-Widget _buildClickable(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildClickable(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real
   // `Clickable` is a state-aware gesture surface requiring only `child`
   // (all hover/focus/press handling defaults to the theme); the
@@ -1715,7 +1723,8 @@ Widget _buildClickable(Map<String, dynamic> props, [List<Widget> children = cons
   );
 }
 
-Widget _buildScrollbar(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildScrollbar(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real kit
   // `Scrollbar` (qualified: material's `Scrollbar` is also imported here)
   // requires only `child`; the canvas-level `label` prop renders inside a
@@ -1796,7 +1805,8 @@ Widget _buildPagination(Map<String, dynamic> props) {
   return _PaginationCell(initialPage: page, totalPages: total);
 }
 
-Widget _buildAlertDialog(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildAlertDialog(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`overlay/alert_dialog/preview.dart`: a title,
   // a message, and a Close action). The real `AlertDialog` (qualified:
@@ -1872,9 +1882,8 @@ Widget _buildPopover(Map<String, dynamic> props) {
   // mirroring the dialog catalog builder's inline-content precedent.
   final trigger = (props['trigger'] ?? 'Open Popover') as String;
   final title = (props['title'] ?? 'Popover title') as String;
-  final body =
-      (props['body'] ?? 'Use popovers for contextual helper content.')
-          as String;
+  final body = (props['body'] ?? 'Use popovers for contextual helper content.')
+      as String;
   return Column(
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.start,
@@ -2089,7 +2098,8 @@ Widget _buildSwiper(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildRefreshTrigger(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildRefreshTrigger(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: three static
   // rows. The real `RefreshTrigger` builds bare around its child; the fixed
   // height mirrors the drawer builder's fixed width (the scrollable needs
@@ -2297,8 +2307,7 @@ class _TabPaneCellState extends State<_TabPaneCell> {
     return shadcn.TabPane<String>(
       items: items,
       focused: focused,
-      onFocused: (i) =>
-          setState(() => _focused = i.clamp(0, items.length - 1)),
+      onFocused: (i) => setState(() => _focused = i.clamp(0, items.length - 1)),
       itemBuilder: (context, item, index) =>
           shadcn.TabChildWidget(indexed: true, child: Text(item.data)),
       child: Padding(
@@ -2543,7 +2552,12 @@ Color _parseHexColor(String raw) {
 /// Formats a [Color] as an uppercase `'#RRGGBB'` label for the color-kind
 /// swatch rows (mirrors the kit's `colorToHex` without the dependency).
 String _toHexLabel(Color color) {
-  final rgb = color.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase();
+  final rgb = color
+      .toARGB32()
+      .toRadixString(16)
+      .padLeft(8, '0')
+      .substring(2)
+      .toUpperCase();
   return '#$rgb';
 }
 
@@ -2760,7 +2774,8 @@ Widget _buildTable(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildForm(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildForm(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`form/form/preview.dart`: a `FormTableLayout`
   // row plus a submit button). The real `Form` (qualified: material's `Form`
@@ -2865,7 +2880,8 @@ Widget _buildFormattedInput(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildValidated(Map<String, dynamic> props, [List<Widget> children = const []]) {
+Widget _buildValidated(Map<String, dynamic> props,
+    [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`form/validated/preview.dart`: a `TextField`
   // under a required-field validator whose builder shows the error message).
@@ -3357,9 +3373,8 @@ class _MultipleChoiceCell extends StatefulWidget {
 }
 
 class _MultipleChoiceCellState extends State<_MultipleChoiceCell> {
-  late String? _single = widget.initialSingle.isEmpty
-      ? null
-      : widget.initialSingle;
+  late String? _single =
+      widget.initialSingle.isEmpty ? null : widget.initialSingle;
   late Set<String> _multi = Set<String>.of(widget.initialMulti);
 
   /// Theme-token choice chip (never hardcoded colors): the selected chip
@@ -3420,7 +3435,8 @@ class _MultipleChoiceCellState extends State<_MultipleChoiceCell> {
     if (widget.mode == 'multiple') {
       return shadcn.MultipleAnswer<String>(
         value: _multi,
-        onChanged: (v) => setState(() => _multi = Set<String>.of(v ?? const {})),
+        onChanged: (v) =>
+            setState(() => _multi = Set<String>.of(v ?? const {})),
         child: Wrap(
           spacing: 8,
           runSpacing: 8,
@@ -3494,17 +3510,17 @@ Widget _buildObjectInput(Map<String, dynamic> props) {
   final label = (props['label'] ?? '') as String;
   final Widget field = switch (mode) {
     'time' => shadcn.TimeInput(
-      onChanged: (_) {},
-      placeholder: Text(placeholder),
-    ),
+        onChanged: (_) {},
+        placeholder: Text(placeholder),
+      ),
     'duration' => shadcn.DurationInput(
-      onChanged: (_) {},
-      placeholder: Text(placeholder),
-    ),
+        onChanged: (_) {},
+        placeholder: Text(placeholder),
+      ),
     _ => shadcn.DateInput(
-      onChanged: (_) {},
-      placeholder: Text(placeholder),
-    ),
+        onChanged: (_) {},
+        placeholder: Text(placeholder),
+      ),
   };
   if (label.isEmpty) return field;
   return Column(
@@ -3685,9 +3701,8 @@ Widget _buildOverflowMarquee(Map<String, dynamic> props) {
   // widget builds bare around the required `child`; the loop only engages
   // past overflow, so short canvas text renders statically and long text
   // scrolls — no fixed shell needed either way.
-  final text =
-      (props['text'] ?? 'This text scrolls when it overflows its parent.')
-          as String;
+  final text = (props['text'] ??
+      'This text scrolls when it overflows its parent.') as String;
   return shadcn.OverflowMarquee(child: Text(text));
 }
 
@@ -3745,7 +3760,8 @@ Widget _buildScrollable(Map<String, dynamic> props) {
       (props['text1'] ?? 'First line of scrollable content.') as String;
   final text2 =
       (props['text2'] ?? 'Second line of scrollable content.') as String;
-  final text3 = (props['text3'] ?? 'Third line of scrollable content.') as String;
+  final text3 =
+      (props['text3'] ?? 'Third line of scrollable content.') as String;
   return SizedBox(
     height: 120,
     child: shadcn.FadedScrollableViewport(
@@ -4234,9 +4250,7 @@ BoxBorder? _primBorder(Object? value, ColorScheme? scheme) {
   if (!value.containsKey('color') && !value.containsKey('width')) return null;
   final parts = _primColorParts(value['color']);
   return Border.all(
-    color: parts == null
-        ? Colors.black
-        : _primResolveColor(parts, scheme),
+    color: parts == null ? Colors.black : _primResolveColor(parts, scheme),
     width: _primDouble(value['width']) ?? 1.0,
   );
 }
@@ -4331,9 +4345,8 @@ List<BoxShadow>? _primShadows(Object? value, ColorScheme? scheme) {
     }
     out.add(
       BoxShadow(
-        color: parts == null
-            ? Colors.black26
-            : _primResolveColor(parts, scheme),
+        color:
+            parts == null ? Colors.black26 : _primResolveColor(parts, scheme),
         blurRadius: _primDouble(s['blur']) ?? 0.0,
         spreadRadius: _primDouble(s['spread']) ?? 0.0,
         offset: offset,
@@ -4353,8 +4366,7 @@ BoxDecoration? _primDecoration(
   ColorScheme? scheme, {
   bool includeColor = true,
 }) {
-  final colorParts =
-      includeColor ? _primColorParts(props['color']) : null;
+  final colorParts = includeColor ? _primColorParts(props['color']) : null;
   final radius = _primBorderRadius(props['radius']);
   final border = _primBorder(props['border'], scheme);
   final gradient = _primGradient(props['gradient'], scheme);
@@ -4367,8 +4379,7 @@ BoxDecoration? _primDecoration(
     return null;
   }
   return BoxDecoration(
-    color:
-        colorParts == null ? null : _primResolveColor(colorParts, scheme),
+    color: colorParts == null ? null : _primResolveColor(colorParts, scheme),
     border: border,
     borderRadius: radius,
     boxShadow: shadows,
@@ -4433,8 +4444,7 @@ List<Widget> _primChildStack(List<Widget> children, double gap, bool vertical) {
   if (gap <= 0) return children;
   return [
     for (var i = 0; i < children.length; i++) ...[
-      if (i > 0)
-        vertical ? SizedBox(height: gap) : SizedBox(width: gap),
+      if (i > 0) vertical ? SizedBox(height: gap) : SizedBox(width: gap),
       children[i],
     ],
   ];
@@ -4522,7 +4532,8 @@ Widget _buildColumnPrimitive(
   final kids = children.isEmpty ? [_primGhost('column')] : children;
   return Column(
     mainAxisAlignment: _primMainAxis(props['mainAxis']),
-    crossAxisAlignment: _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
+    crossAxisAlignment:
+        _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
     children: _primChildStack(kids, gap, true),
   );
 }
@@ -4537,7 +4548,8 @@ Widget _buildRowPrimitive(
   final kids = children.isEmpty ? [_primGhost('row')] : children;
   return Row(
     mainAxisAlignment: _primMainAxis(props['mainAxis']),
-    crossAxisAlignment: _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
+    crossAxisAlignment:
+        _primCrossAxis(props['crossAxis'], CrossAxisAlignment.center),
     children: _primChildStack(kids, gap, false),
   );
 }
@@ -4554,7 +4566,8 @@ Widget _buildStackPrimitive(
     _ => null,
   };
   return Stack(
-    alignment: _primAlignmentOrNull(props['alignment']) ?? AlignmentDirectional.topStart,
+    alignment: _primAlignmentOrNull(props['alignment']) ??
+        AlignmentDirectional.topStart,
     fit: fit ?? StackFit.loose,
     children: children.isEmpty ? [_primGhost('stack')] : children,
   );
@@ -4566,7 +4579,8 @@ Widget _buildPaddingPrimitive(
   List<Widget> children = const [],
 ]) {
   return Padding(
-    padding: _primEdgeInsetsOrNull(props['padding']) ?? const EdgeInsets.all(16),
+    padding:
+        _primEdgeInsetsOrNull(props['padding']) ?? const EdgeInsets.all(16),
     child: _primSingleChild(children) ?? _primGhost('padding'),
   );
 }
@@ -4931,7 +4945,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'pagination',
-    label: 'Page navigation controls with skip, previous/next, and ellipsis handling.',
+    label:
+        'Page navigation controls with skip, previous/next, and ellipsis handling.',
     defaults: const {'page': 1, 'totalPages': 5},
     build: _buildPagination,
   ),
@@ -4996,7 +5011,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'context_menu',
-    label: 'Desktop-style context menu overlay for editable text and custom actions.',
+    label:
+        'Desktop-style context menu overlay for editable text and custom actions.',
     defaults: const {
       'hint': 'Right-click me',
       'item1': 'Back',
@@ -5189,7 +5205,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'formatted_input',
-    label: 'Low-level formatted-field helpers that sync multiple InputPart segments.',
+    label:
+        'Low-level formatted-field helpers that sync multiple InputPart segments.',
     defaults: const {'label': ''},
     build: _buildFormattedInput,
   ),
@@ -5282,7 +5299,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'item_picker',
-    label: 'Grid/list picker with selection chips, search, and in-place actions.',
+    label:
+        'Grid/list picker with selection chips, search, and in-place actions.',
     defaults: const {
       'placeholder': 'Select item',
       'option1': 'Option 1',
@@ -5293,7 +5311,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'multiple_choice',
-    label: 'Choice widgets with single or multiple selection and form integration.',
+    label:
+        'Choice widgets with single or multiple selection and form integration.',
     defaults: const {
       'mode': 'single',
       'option1': 'Option A',
@@ -5306,7 +5325,8 @@ final List<CatalogEntry> kCatalog = [
   ),
   CatalogEntry(
     kind: 'object_input',
-    label: 'Date, time, and duration inputs powered by formatted editors and pickers.',
+    label:
+        'Date, time, and duration inputs powered by formatted editors and pickers.',
     defaults: const {
       'mode': 'date',
       'placeholder': 'Select value',
@@ -5487,7 +5507,8 @@ final List<CatalogEntry> kCatalog = [
   // envelopes the F3 emitters read (see the contract above).
   CatalogEntry(
     kind: 'container',
-    label: 'Raw container with padding, color, radius, border, gradient, and shadow.',
+    label:
+        'Raw container with padding, color, radius, border, gradient, and shadow.',
     defaults: const {
       'width': null,
       'height': null,
@@ -5594,9 +5615,12 @@ Widget buildCatalogItem(
   Map<String, dynamic> props, [
   List<Widget> children = const [],
   Map<String, dynamic>? scope,
-]) {  final entry = findEntry(kind);
-  if (entry == null) return _buildRegistryFallback(kind, props, children, scope);
-  final effective = scope == null ? props : resolveBoundProps(kind, props, scope);
+]) {
+  final entry = findEntry(kind);
+  if (entry == null)
+    return _buildRegistryFallback(kind, props, children, scope);
+  final effective =
+      scope == null ? props : resolveBoundProps(kind, props, scope);
   if (children.isNotEmpty) {
     final build = entry.build;
     // Recovers the migrated 2-arg shape (see the [NodeBuilder] variance
@@ -5641,7 +5665,8 @@ Widget _buildRegistryFallback(
   // Same props/scope contract as the catalog path: bound props resolve
   // through [scope] first (schema-less registry kinds keep raw values — see
   // [resolveBoundProp] — so this is a no-op for them, never a crash).
-  final effective = scope == null ? props : resolveBoundProps(kind, props, scope);
+  final effective =
+      scope == null ? props : resolveBoundProps(kind, props, scope);
   final propsBuild = _registryPropsBuilderFor(kind);
   if (propsBuild != null) {
     // Mirrors the [NodeBuilder] recovery in [buildCatalogItem]: children
@@ -5779,8 +5804,7 @@ Map<String, dynamic> resolveBoundProps(
 
 /// Whether [raw] is a state binding (`=varName`). Re-exported here so
 /// inspector/preview share the catalog's binding vocabulary.
-bool isStateBinding(Object? raw) =>
-    bindingNameOf(raw) != null;
+bool isStateBinding(Object? raw) => bindingNameOf(raw) != null;
 
 /// Bridge for the generated palette registry (`component_registry.dart`):
 /// builds [kind] with a copy of its catalog defaults, so registry tiles and

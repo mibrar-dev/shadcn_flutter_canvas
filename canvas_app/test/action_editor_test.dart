@@ -15,7 +15,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// `Done` screen. Returns `(store, nodeId, itemId, doneScreenId)`.
 (CanvasStore, String, String, String) _storeWithButton() {
   final store = CanvasStore();
-  store.addVar(const AppStateVar(name: 'count', type: 'number', defaultValue: 0));
+  store.addVar(
+      const AppStateVar(name: 'count', type: 'number', defaultValue: 0));
   final doneId = store.addScreen(name: 'Done');
   final nodeId = store.addNode(
     screenId: 's1',
@@ -32,11 +33,11 @@ import 'package:flutter_test/flutter_test.dart';
   return (store, nodeId, 'i1', doneId);
 }
 
-CanvasItem _item(CanvasStore store, String nodeId, String itemId) => store.doc
-    .nodes
-    .singleWhere((n) => n.id == nodeId)
-    .items
-    .singleWhere((i) => i.id == itemId);
+CanvasItem _item(CanvasStore store, String nodeId, String itemId) =>
+    store.doc.nodes
+        .singleWhere((n) => n.id == nodeId)
+        .items
+        .singleWhere((i) => i.id == itemId);
 
 Future<void> _pumpInspector(
   WidgetTester tester,
@@ -102,7 +103,8 @@ void main() {
     ) async {
       _tallViewport(tester);
       final (store, nodeId, itemId, doneId) = _storeWithButton();
-      store.setItemAction(nodeId, itemId, NodeAction(to: doneId, transition: 'fade'));
+      store.setItemAction(
+          nodeId, itemId, NodeAction(to: doneId, transition: 'fade'));
       await _pumpInspector(tester, store, nodeId: nodeId, itemId: itemId);
 
       // Legacy editors still present for the legacy action.
@@ -161,12 +163,14 @@ void main() {
       expect(step.value, '5');
     });
 
-    testWidgets('reorder swaps steps; delete removes; last delete restores legacy', (
+    testWidgets(
+        'reorder swaps steps; delete removes; last delete restores legacy', (
       tester,
     ) async {
       _tallViewport(tester);
       final (store, nodeId, itemId, doneId) = _storeWithButton();
-      store.setItemAction(nodeId, itemId, NodeAction(to: doneId, transition: 'slide'));
+      store.setItemAction(
+          nodeId, itemId, NodeAction(to: doneId, transition: 'slide'));
       await _pumpInspector(tester, store, nodeId: nodeId, itemId: itemId);
       await _tapKey(tester, 'step-add-showSnackBar');
       await _tapKey(tester, 'step-add-showDialog');
@@ -318,7 +322,8 @@ void main() {
         y: 0,
         items: const [CanvasItem(id: 'i1', kind: 'button')],
       );
-      store.addVar(const AppStateVar(name: 'var1', type: 'bool', defaultValue: true));
+      store.addVar(
+          const AppStateVar(name: 'var1', type: 'bool', defaultValue: true));
       await _pumpInspector(tester, store, nodeId: nodeId, itemId: 'i1');
 
       await _tapKey(tester, 'state-add');

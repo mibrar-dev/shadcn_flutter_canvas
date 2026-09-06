@@ -75,9 +75,10 @@ class _EditorIconButtonState extends State<EditorIconButton> {
   Widget build(BuildContext context) {
     final colors = EditorTheme.of(context);
     final enabled = widget.onPressed != null;
-    final Color effectiveBackground =
-        widget.background ??
-        (enabled && _hovered ? colors.surfaceContainerHigh : Colors.transparent);
+    final Color effectiveBackground = widget.background ??
+        (enabled && _hovered
+            ? colors.surfaceContainerHigh
+            : Colors.transparent);
     final Color effectiveForeground = !enabled
         ? colors.disabled
         : (widget.foreground ?? colors.onSurfaceVariant);
@@ -222,9 +223,8 @@ class _SegmentButtonState extends State<_SegmentButton> {
     final colors = EditorTheme.of(context);
     final background =
         widget.selected ? colors.toolbarActive : colors.surfaceContainerHigh;
-    final foreground = widget.selected
-        ? colors.onToolbarActive
-        : colors.onSurfaceVariant;
+    final foreground =
+        widget.selected ? colors.onToolbarActive : colors.onSurfaceVariant;
 
     return MouseRegion(
       cursor: SystemMouseCursors.click,

@@ -110,9 +110,9 @@ String _peekCode(WidgetTester tester) =>
 /// labels also appear inside their tab bodies, so bare `find.text` would
 /// be ambiguous).
 Finder _pillLabel(String tabKey, String label) => find.descendant(
-  of: find.byKey(ValueKey(tabKey)),
-  matching: find.text(label),
-);
+      of: find.byKey(ValueKey(tabKey)),
+      matching: find.text(label),
+    );
 
 void main() {
   group('four-pill header', () {

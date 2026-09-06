@@ -110,8 +110,7 @@ Future<CanvasStore> _pumpCanvas(
 
 Future<TestGesture> _startTileDrag(WidgetTester tester) async {
   final tileTopLeft = tester.getTopLeft(find.byType(Draggable<String>));
-  final gesture =
-      await tester.startGesture(tileTopLeft + const Offset(80, 30));
+  final gesture = await tester.startGesture(tileTopLeft + const Offset(80, 30));
   await tester.pump();
   return gesture;
 }
@@ -122,15 +121,17 @@ void main() {
       tester,
     ) async {
       _useReferenceViewport(tester);
-      await _pumpCanvas(tester, _doc([
-        _node(id: 'scaf', kind: 'scaffold'),
-        _node(
-          id: 'kid',
-          kind: 'badge',
-          props: const {'label': 'Scaffold Kid'},
-          parentId: 'scaf',
-        ),
-      ]));
+      await _pumpCanvas(
+          tester,
+          _doc([
+            _node(id: 'scaf', kind: 'scaffold'),
+            _node(
+              id: 'kid',
+              kind: 'badge',
+              props: const {'label': 'Scaffold Kid'},
+              parentId: 'scaf',
+            ),
+          ]));
 
       // The drop did not vanish: the child paints exactly once, below the
       // body text (children splice complements the body region).
@@ -146,7 +147,8 @@ void main() {
       tester,
     ) async {
       _useReferenceViewport(tester);
-      final store = CanvasStore(initial: _doc([_node(id: 'scaf', kind: 'scaffold')]));
+      final store =
+          CanvasStore(initial: _doc([_node(id: 'scaf', kind: 'scaffold')]));
       final canvas = DesignCanvas(store: store);
       await tester.pumpWidget(
         MaterialApp(
@@ -196,16 +198,18 @@ void main() {
         'card_image',
         'basic',
       ];
-      await _pumpCanvas(tester, _doc([
-        for (final kind in hosts) _node(id: 'host-$kind', kind: kind),
-        for (final kind in hosts)
-          _node(
-            id: 'kid-$kind',
-            kind: 'badge',
-            props: {'label': 'kid-$kind'},
-            parentId: 'host-$kind',
-          ),
-      ]));
+      await _pumpCanvas(
+          tester,
+          _doc([
+            for (final kind in hosts) _node(id: 'host-$kind', kind: kind),
+            for (final kind in hosts)
+              _node(
+                id: 'kid-$kind',
+                kind: 'badge',
+                props: {'label': 'kid-$kind'},
+                parentId: 'host-$kind',
+              ),
+          ]));
 
       // No dropped node may vanish: containers splice children into chrome,
       // non-container slot hosts (basic, card_image) stack them below.
@@ -222,15 +226,17 @@ void main() {
       tester,
     ) async {
       _useReferenceViewport(tester);
-      await _pumpCanvas(tester, _doc([
-        _node(id: 'host', kind: 'refresh_trigger'),
-        _node(
-          id: 'kid',
-          kind: 'badge',
-          props: const {'label': 'kid-refresh'},
-          parentId: 'host',
-        ),
-      ]));
+      await _pumpCanvas(
+          tester,
+          _doc([
+            _node(id: 'host', kind: 'refresh_trigger'),
+            _node(
+              id: 'kid',
+              kind: 'badge',
+              props: const {'label': 'kid-refresh'},
+              parentId: 'host',
+            ),
+          ]));
 
       // The fixed-height shell lays out without crashing; scrolling the
       // inner list reveals the spliced child — it renders, not vanishes.

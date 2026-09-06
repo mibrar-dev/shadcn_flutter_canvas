@@ -173,7 +173,8 @@ class _PropNumberEditorState extends State<PropNumberEditor> {
   double _clamp(double v) {
     var out = v;
     if (widget.min != null) out = out.clamp(widget.min!, double.infinity);
-    if (widget.max != null) out = out.clamp(double.negativeInfinity, widget.max!);
+    if (widget.max != null)
+      out = out.clamp(double.negativeInfinity, widget.max!);
     return out;
   }
 
@@ -346,12 +347,12 @@ class PropColorEditor extends StatelessWidget {
   final String? value;
   final ValueChanged<String> onChanged;
 
-  const PropColorEditor({super.key, required this.value, required this.onChanged});
+  const PropColorEditor(
+      {super.key, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    final hexInitial =
-        value != null && value!.startsWith('#') ? value! : '';
+    final hexInitial = value != null && value!.startsWith('#') ? value! : '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -472,7 +473,8 @@ class PropEdgeInsetsEditor extends StatelessWidget {
             final r = value['r'] ?? 0;
             final b = value['b'] ?? 0;
             final uniform = l == t && t == r && r == b;
-            Map<String, double> all(double v) => {'l': v, 't': v, 'r': v, 'b': v};
+            Map<String, double> all(double v) =>
+                {'l': v, 't': v, 'r': v, 'b': v};
             return Row(
               children: [
                 const SizedBox(
@@ -544,7 +546,8 @@ class PropAlignmentGrid extends StatelessWidget {
   final String? value;
   final ValueChanged<String> onChanged;
 
-  const PropAlignmentGrid({super.key, required this.value, required this.onChanged});
+  const PropAlignmentGrid(
+      {super.key, required this.value, required this.onChanged});
 
   static const names = [
     ['topLeft', 'topCenter', 'topRight'],
@@ -567,7 +570,8 @@ class PropAlignmentGrid extends StatelessWidget {
             child: Row(
               children: [
                 for (var i = 0; i < row.length; i++) ...[
-                  if (i > 0) const SizedBox(width: EditorMetrics.toolbarButtonGap),
+                  if (i > 0)
+                    const SizedBox(width: EditorMetrics.toolbarButtonGap),
                   Expanded(
                     child: value == row[i]
                         ? shadcn.PrimaryButton(
@@ -639,8 +643,10 @@ class PropPaintEditor extends StatelessWidget {
   }
 
   /// Tagged token envelope for [token] (the §6.1 token path).
-  static Map<String, Object?> tokenEnvelope(String token) =>
-      {r'$': 'color', 'v': {'kind': 'token', 'token': token}};
+  static Map<String, Object?> tokenEnvelope(String token) => {
+        r'$': 'color',
+        'v': {'kind': 'token', 'token': token}
+      };
 
   @override
   Widget build(BuildContext context) {
@@ -796,8 +802,7 @@ class PropBorderEditor extends StatelessWidget {
 
   /// Lenient parse shared with the inspector wiring below (never a throw).
   static ({Object? color, double width}) parse(Object? raw) {
-    if (raw is Map &&
-        (raw.containsKey('color') || raw.containsKey('width'))) {
+    if (raw is Map && (raw.containsKey('color') || raw.containsKey('width'))) {
       final w = raw['width'];
       return (
         color: raw['color'],

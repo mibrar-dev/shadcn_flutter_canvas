@@ -296,8 +296,7 @@ class EditorType {
       TextStyle(fontSize: 13, fontWeight: FontWeight.w600, letterSpacing: 0.1);
 
   /// Zoom readout, active segment label. Measured: 13px / 600.
-  static const readout =
-      TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
+  static const readout = TextStyle(fontSize: 13, fontWeight: FontWeight.w600);
 
   /// Screen name label beside the phone frame. Measured: 15px / 500.
   static const screenLabel =

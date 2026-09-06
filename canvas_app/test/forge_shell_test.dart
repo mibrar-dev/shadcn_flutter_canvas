@@ -47,6 +47,7 @@ Future<void> _tapRail(WidgetTester tester, IconData icon) async {
   );
   await tester.pumpAndSettle();
 }
+
 void main() {
   group('FF7 shell assembly', () {
     testWidgets('all forge pieces mount in the ff7 shell; pills gone',
@@ -79,10 +80,10 @@ void main() {
       expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
       // The FF rail owns the left column — the Forge Library|Layers pills +
       // the Theme disclosure are gone.
-      expect(find.byKey(const ValueKey('forge-left-pill-library')),
-          findsNothing);
-      expect(find.byKey(const ValueKey('forge-left-pill-layers')),
-          findsNothing);
+      expect(
+          find.byKey(const ValueKey('forge-left-pill-library')), findsNothing);
+      expect(
+          find.byKey(const ValueKey('forge-left-pill-layers')), findsNothing);
       expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
           findsNothing);
     });

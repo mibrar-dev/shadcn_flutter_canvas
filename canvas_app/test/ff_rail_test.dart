@@ -117,11 +117,13 @@ void main() {
       );
       await tester.pump();
 
-      final indicators = tester.widgetList<Container>(
-        find.byType(Container),
-      ).where(
-        (c) => c.color == EditorColors.light.railActiveIndicator,
-      );
+      final indicators = tester
+          .widgetList<Container>(
+            find.byType(Container),
+          )
+          .where(
+            (c) => c.color == EditorColors.light.railActiveIndicator,
+          );
       // One indicator bar plus the active glyph share the token color.
       expect(indicators.length, greaterThanOrEqualTo(1));
     });

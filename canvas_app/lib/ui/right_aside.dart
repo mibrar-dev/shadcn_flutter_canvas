@@ -230,22 +230,22 @@ class _RightAsideBodyState extends State<_RightAsideBody> {
             Expanded(
               child: switch (index) {
                 0 => InspectorPanel(
-                  store: widget.store,
-                  nodeId: widget.nodeId,
-                  itemId: widget.itemId,
-                  onDuplicate: widget.onDuplicate,
-                  onDelete: widget.onDelete,
-                ),
+                    store: widget.store,
+                    nodeId: widget.nodeId,
+                    itemId: widget.itemId,
+                    onDuplicate: widget.onDuplicate,
+                    onDelete: widget.onDelete,
+                  ),
                 1 => CodePeek(
-                  doc: widget.store.doc,
-                  nodeId: widget.nodeId,
-                  itemId: widget.itemId,
-                ),
+                    doc: widget.store.doc,
+                    nodeId: widget.nodeId,
+                    itemId: widget.itemId,
+                  ),
                 3 => AuditPanel(
-                  issues: issues,
-                  onSelectNode: widget.onSelectNode,
-                  onSelectScreen: widget.onSelectScreen,
-                ),
+                    issues: issues,
+                    onSelectNode: widget.onSelectNode,
+                    onSelectScreen: widget.onSelectScreen,
+                  ),
                 _ => PromptPanel(doc: widget.store.doc),
               },
             ),
@@ -326,8 +326,7 @@ class _TabHeader extends StatelessWidget {
         key: const ValueKey('aside-tab-audit'),
         label: auditLabel,
         icon: Icons.fact_check,
-        tooltip:
-            'Audit: ${_countLabel(errorCount, 'error', 'errors')}, '
+        tooltip: 'Audit: ${_countLabel(errorCount, 'error', 'errors')}, '
             '${_countLabel(warningCount, 'warning', 'warnings')}, '
             '${_countLabel(infoCount, 'info', 'infos')}',
         selected: selectedIndex == 3,
@@ -381,8 +380,7 @@ class _TabSegment extends StatelessWidget {
     final foreground =
         selected ? colors.onToolbarActive : colors.onSurfaceVariant;
     return shadcn.Tooltip(
-      tooltip: (context) =>
-          shadcn.TooltipContainer(child: Text(tooltip)),
+      tooltip: (context) => shadcn.TooltipContainer(child: Text(tooltip)),
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -557,8 +555,8 @@ class AuditPanel extends StatelessWidget {
     final VoidCallback? onTap = nodeId != null
         ? (onSelectNode == null ? null : () => onSelectNode!(nodeId))
         : (screenId != null && onSelectScreen != null
-              ? () => onSelectScreen!(screenId)
-              : null);
+            ? () => onSelectScreen!(screenId)
+            : null);
     return GestureDetector(
       key: ValueKey('audit-issue-$index'),
       behavior: HitTestBehavior.opaque,

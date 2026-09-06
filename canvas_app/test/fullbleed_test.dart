@@ -143,8 +143,7 @@ void main() {
           ),
         ],
       );
-      final cardWidth =
-          tester.getSize(find.byType(shadcn.Card).first).width;
+      final cardWidth = tester.getSize(find.byType(shadcn.Card).first).width;
       expect(
         cardWidth,
         moreOrLessEquals(_chromeWidth(tester), epsilon: 1.5),
@@ -187,8 +186,7 @@ void main() {
           ),
         ],
       );
-      final cardWidth =
-          tester.getSize(find.byType(shadcn.Card).first).width;
+      final cardWidth = tester.getSize(find.byType(shadcn.Card).first).width;
       expect(
         cardWidth,
         moreOrLessEquals(_chromeWidth(tester), epsilon: 1.5),
@@ -231,7 +229,8 @@ void main() {
       expect(fixedLeft, moreOrLessEquals(autoLeft, epsilon: 1.5));
     });
 
-    testWidgets('intrinsic kinds keep natural size left-aligned', (tester) async {
+    testWidgets('intrinsic kinds keep natural size left-aligned',
+        (tester) async {
       // Regression: stretch must not balloon fixed-geometry widgets — an
       // avatar root rendered at full flow width in a screenshot. Intrinsic
       // kinds stay natural-size, left-aligned at the flow edge.
@@ -247,9 +246,13 @@ void main() {
       );
       expect(avatarBox.size.width, lessThan(100));
       expect(avatarBox.size.width, greaterThan(20));
-      final flowLeft = tester.getTopLeft(
-        find.byType(SingleChildScrollView).first,
-      ).dx + kFlowScreenPadding + 4.0;
+      final flowLeft = tester
+              .getTopLeft(
+                find.byType(SingleChildScrollView).first,
+              )
+              .dx +
+          kFlowScreenPadding +
+          4.0;
       expect(
         tester.getTopLeft(find.byType(shadcn.Avatar).first).dx,
         moreOrLessEquals(flowLeft, epsilon: 2.0),
@@ -325,8 +328,7 @@ void main() {
         ),
       );
       // Fixed-w keeps exact pixels left-aligned (Align wrapper).
-      final fixedWidth =
-          tester.getSize(find.byType(shadcn.Card).at(1)).width;
+      final fixedWidth = tester.getSize(find.byType(shadcn.Card).at(1)).width;
       expect(fixedWidth, moreOrLessEquals(200, epsilon: 1.0));
       // Row shares preserved in preview too.
       final firstX = tester.getTopLeft(find.text('PAlpha')).dx;

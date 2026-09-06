@@ -117,7 +117,8 @@ Future<ScreenDoc> generateScreen({
   final system = buildSystemPrompt();
   final user = 'Design a ScreenDoc for this brief:\n$brief';
   final text = settings.provider == 'claude'
-      ? await _completeClaude(client, base, model, settings.apiKey, system, user)
+      ? await _completeClaude(
+          client, base, model, settings.apiKey, system, user)
       : await _completeOpenAi(
           client, base, model, settings.apiKey, system, user);
   return parseAiJson(text);
@@ -155,7 +156,8 @@ Future<String> _completeOpenAi(
     throw AiException('ai request failed: $e');
   }
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw AiException('ai request failed: ${res.statusCode} ${_short(res.body)}');
+    throw AiException(
+        'ai request failed: ${res.statusCode} ${_short(res.body)}');
   }
   late final Map<String, dynamic> body;
   try {
@@ -207,7 +209,8 @@ Future<String> _completeClaude(
     throw AiException('ai request failed: $e');
   }
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    throw AiException('ai request failed: ${res.statusCode} ${_short(res.body)}');
+    throw AiException(
+        'ai request failed: ${res.statusCode} ${_short(res.body)}');
   }
   late final Map<String, dynamic> body;
   try {

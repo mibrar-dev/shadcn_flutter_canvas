@@ -19,19 +19,19 @@ import 'package:flutter_test/flutter_test.dart';
 /// Synthetic entry so kind-vs-label semantics hold independent of registry
 /// contents (kind set + descriptions may shift under concurrent edits).
 RegistryEntry _entry(String kind, String label) => RegistryEntry(
-  kind: kind,
-  label: label,
-  section: 'Display',
-  icon: Icons.widgets,
-  build: (_) => const SizedBox(),
-  canvasReady: false,
-);
+      kind: kind,
+      label: label,
+      section: 'Display',
+      icon: Icons.widgets,
+      build: (_) => const SizedBox(),
+      canvasReady: false,
+    );
 
 /// Kinds in the live registry matching [query] (no count pins).
 List<String> _hits(String query) => [
-  for (final entry in kRegistry)
-    if (registryMatchesQuery(entry, query)) entry.kind,
-];
+      for (final entry in kRegistry)
+        if (registryMatchesQuery(entry, query)) entry.kind,
+    ];
 
 void main() {
   group('registryMatchesQuery behavior (Track Q: kind-only)', () {
@@ -42,7 +42,8 @@ void main() {
       expect(_hits('card'), contains('card'));
     });
 
-    test("compound kinds match per word: 'card' hits 'card_image' via kind", () {
+    test("compound kinds match per word: 'card' hits 'card_image' via kind",
+        () {
       // NOT label over-matching: 'card_image' splits on '_' into
       // [card, image] and its tile shows 'Card Image', so 'card' (and
       // 'image', and 'card image') must match under kind-only semantics.

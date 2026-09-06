@@ -35,21 +35,27 @@ void _useWideViewport(WidgetTester tester) {
 ScreenDoc _doc(
   List<Map<String, dynamic>> nodes, {
   List<Map<String, dynamic>>? screens,
-}) => ScreenDoc.fromJson({
-  'screens':
-      screens ??
-      [
-        {'id': 's1', 'name': 'Screen 1', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-      ],
-  'nodes': nodes,
-  'theme': {
-    'paletteKey': 'clean-slate',
-    'dark': true,
-    'shape': 'rounded',
-    'motion': 'standard',
-  },
-  'meta': {'title': 'Nesting', 'brief': ''},
-});
+}) =>
+    ScreenDoc.fromJson({
+      'screens': screens ??
+          [
+            {
+              'id': 's1',
+              'name': 'Screen 1',
+              'x': 0.0,
+              'y': 0.0,
+              'bg': 'surface'
+            },
+          ],
+      'nodes': nodes,
+      'theme': {
+        'paletteKey': 'clean-slate',
+        'dark': true,
+        'shape': 'rounded',
+        'motion': 'standard',
+      },
+      'meta': {'title': 'Nesting', 'brief': ''},
+    });
 
 Future<void> _pumpCanvas(WidgetTester tester, ScreenDoc doc) async {
   final store = CanvasStore(initial: doc);
@@ -68,299 +74,304 @@ Future<void> _pumpPreview(WidgetTester tester, ScreenDoc doc) async {
 
 /// Card node holding one button child.
 ScreenDoc _cardWithButtonDoc() => _doc([
-  {
-    'id': 'card1',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
       {
-        'id': 'icard',
-        'kind': 'card',
-        'title': 'Outer Card',
-        'description': 'Outer Desc',
+        'id': 'card1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {
+            'id': 'icard',
+            'kind': 'card',
+            'title': 'Outer Card',
+            'description': 'Outer Desc',
+          },
+        ],
       },
-    ],
-  },
-  {
-    'id': 'btn1',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'card1',
-    'items': [
-      {'id': 'ibtn', 'kind': 'button', 'label': 'Inner Btn'},
-    ],
-  },
-]);
+      {
+        'id': 'btn1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'card1',
+        'items': [
+          {'id': 'ibtn', 'kind': 'button', 'label': 'Inner Btn'},
+        ],
+      },
+    ]);
 
 /// Three-deep container chain: card > outlined_container > button.
 ScreenDoc _deepChainDoc() => _doc([
-  {
-    'id': 'l1',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
-      {'id': 'il1', 'kind': 'card', 'title': 'Level1', 'description': 'Top'},
-    ],
-  },
-  {
-    'id': 'l2',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'l1',
-    'items': [
-      {'id': 'il2', 'kind': 'outlined_container', 'label': 'Mid Box'},
-    ],
-  },
-  {
-    'id': 'l3',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'l2',
-    'items': [
-      {'id': 'il3', 'kind': 'button', 'label': 'Deep Btn'},
-    ],
-  },
-]);
+      {
+        'id': 'l1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {
+            'id': 'il1',
+            'kind': 'card',
+            'title': 'Level1',
+            'description': 'Top'
+          },
+        ],
+      },
+      {
+        'id': 'l2',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'l1',
+        'items': [
+          {'id': 'il2', 'kind': 'outlined_container', 'label': 'Mid Box'},
+        ],
+      },
+      {
+        'id': 'l3',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'l2',
+        'items': [
+          {'id': 'il3', 'kind': 'button', 'label': 'Deep Btn'},
+        ],
+      },
+    ]);
 
 /// Both cross directions: a row nested in a card, and a card nested in a row.
 ScreenDoc _rowBothWaysDoc() => _doc([
-  {
-    'id': 'cardA',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
-      {'id': 'icardA', 'kind': 'card', 'title': 'Card Host'},
-    ],
-  },
-  {
-    'id': 'rowA',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'cardA',
-    'isRow': true,
-    'gap': 8.0,
-    'items': [],
-  },
-  {
-    'id': 'strip1',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'rowA',
-    'items': [
-      {'id': 'istrip1', 'kind': 'button', 'label': 'Strip Left'},
-    ],
-  },
-  {
-    'id': 'strip2',
-    'screenId': 's1',
-    'x': 10.0,
-    'y': 0.0,
-    'parentId': 'rowA',
-    'items': [
-      {'id': 'istrip2', 'kind': 'badge', 'label': 'Strip Right'},
-    ],
-  },
-  {
-    'id': 'rowB',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 100.0,
-    'isRow': true,
-    'gap': 8.0,
-    'items': [],
-  },
-  {
-    'id': 'cardB',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'rowB',
-    'items': [
-      {'id': 'icardB', 'kind': 'card', 'title': 'Row Card'},
-    ],
-  },
-  {
-    'id': 'tagB',
-    'screenId': 's1',
-    'x': 10.0,
-    'y': 0.0,
-    'parentId': 'rowB',
-    'items': [
-      {'id': 'itagB', 'kind': 'badge', 'label': 'Row Tag'},
-    ],
-  },
-]);
+      {
+        'id': 'cardA',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {'id': 'icardA', 'kind': 'card', 'title': 'Card Host'},
+        ],
+      },
+      {
+        'id': 'rowA',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'cardA',
+        'isRow': true,
+        'gap': 8.0,
+        'items': [],
+      },
+      {
+        'id': 'strip1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'rowA',
+        'items': [
+          {'id': 'istrip1', 'kind': 'button', 'label': 'Strip Left'},
+        ],
+      },
+      {
+        'id': 'strip2',
+        'screenId': 's1',
+        'x': 10.0,
+        'y': 0.0,
+        'parentId': 'rowA',
+        'items': [
+          {'id': 'istrip2', 'kind': 'badge', 'label': 'Strip Right'},
+        ],
+      },
+      {
+        'id': 'rowB',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 100.0,
+        'isRow': true,
+        'gap': 8.0,
+        'items': [],
+      },
+      {
+        'id': 'cardB',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'rowB',
+        'items': [
+          {'id': 'icardB', 'kind': 'card', 'title': 'Row Card'},
+        ],
+      },
+      {
+        'id': 'tagB',
+        'screenId': 's1',
+        'x': 10.0,
+        'y': 0.0,
+        'parentId': 'rowB',
+        'items': [
+          {'id': 'itagB', 'kind': 'badge', 'label': 'Row Tag'},
+        ],
+      },
+    ]);
 
 /// Leaf (button) node with a badge child: the §1 below-fallback.
 ScreenDoc _leafFallbackDoc() => _doc([
-  {
-    'id': 'leafTop',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
-      {'id': 'ileaf', 'kind': 'button', 'label': 'Leaf Top'},
-    ],
-  },
-  {
-    'id': 'leafKid',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'leafTop',
-    'items': [
-      {'id': 'ikid', 'kind': 'badge', 'label': 'Leaf Kid'},
-    ],
-  },
-]);
+      {
+        'id': 'leafTop',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {'id': 'ileaf', 'kind': 'button', 'label': 'Leaf Top'},
+        ],
+      },
+      {
+        'id': 'leafKid',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'leafTop',
+        'items': [
+          {'id': 'ikid', 'kind': 'badge', 'label': 'Leaf Kid'},
+        ],
+      },
+    ]);
 
 /// Mobile-hidden card holding a button whose action navigates to Away.
 ScreenDoc _hiddenActionDoc() => _doc(
-  [
-    {
-      'id': 'hideCard',
-      'screenId': 's1',
-      'x': 0.0,
-      'y': 0.0,
-      'hiddenOn': ['mobile'],
-      'items': [
-        {'id': 'ihide', 'kind': 'card', 'title': 'Hide Card'},
-      ],
-    },
-    {
-      'id': 'secretBtn',
-      'screenId': 's1',
-      'x': 0.0,
-      'y': 0.0,
-      'parentId': 'hideCard',
-      'items': [
+      [
         {
-          'id': 'isecret',
-          'kind': 'button',
-          'label': 'Secret Go',
-          'action': {'to': 's2', 'transition': 'slide'},
+          'id': 'hideCard',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'hiddenOn': ['mobile'],
+          'items': [
+            {'id': 'ihide', 'kind': 'card', 'title': 'Hide Card'},
+          ],
+        },
+        {
+          'id': 'secretBtn',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'parentId': 'hideCard',
+          'items': [
+            {
+              'id': 'isecret',
+              'kind': 'button',
+              'label': 'Secret Go',
+              'action': {'to': 's2', 'transition': 'slide'},
+            },
+          ],
+        },
+        {
+          'id': 'awayMark',
+          'screenId': 's2',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'iarrived', 'kind': 'button', 'label': 'Arrived Mark'},
+          ],
         },
       ],
-    },
-    {
-      'id': 'awayMark',
-      'screenId': 's2',
-      'x': 0.0,
-      'y': 0.0,
-      'items': [
-        {'id': 'iarrived', 'kind': 'button', 'label': 'Arrived Mark'},
+      screens: [
+        {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+        {'id': 's2', 'name': 'Away', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
       ],
-    },
-  ],
-  screens: [
-    {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
-    {'id': 's2', 'name': 'Away', 'x': 480.0, 'y': 0.0, 'bg': 'surface'},
-  ],
-);
+    );
 
 /// Childless doc: solo roots plus one row-only group (no nesting).
 ScreenDoc _childlessDoc() => _doc([
-  {
-    'id': 'soloBtn',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
-      {'id': 'isolo', 'kind': 'button', 'label': 'Solo Btn'},
-    ],
-  },
-  {
-    'id': 'soloCard',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 50.0,
-    'items': [
-      {'id': 'isoloCard', 'kind': 'card', 'title': 'Solo Card'},
-    ],
-  },
-  {
-    'id': 'rowR',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 100.0,
-    'isRow': true,
-    'gap': 8.0,
-    'items': [],
-  },
-  {
-    'id': 'rOne',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'rowR',
-    'items': [
-      {'id': 'irOne', 'kind': 'button', 'label': 'R One'},
-    ],
-  },
-  {
-    'id': 'rTwo',
-    'screenId': 's1',
-    'x': 10.0,
-    'y': 0.0,
-    'parentId': 'rowR',
-    'items': [
-      {'id': 'irTwo', 'kind': 'badge', 'label': 'R Two'},
-    ],
-  },
-]);
+      {
+        'id': 'soloBtn',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {'id': 'isolo', 'kind': 'button', 'label': 'Solo Btn'},
+        ],
+      },
+      {
+        'id': 'soloCard',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 50.0,
+        'items': [
+          {'id': 'isoloCard', 'kind': 'card', 'title': 'Solo Card'},
+        ],
+      },
+      {
+        'id': 'rowR',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 100.0,
+        'isRow': true,
+        'gap': 8.0,
+        'items': [],
+      },
+      {
+        'id': 'rOne',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'rowR',
+        'items': [
+          {'id': 'irOne', 'kind': 'button', 'label': 'R One'},
+        ],
+      },
+      {
+        'id': 'rTwo',
+        'screenId': 's1',
+        'x': 10.0,
+        'y': 0.0,
+        'parentId': 'rowR',
+        'items': [
+          {'id': 'irTwo', 'kind': 'badge', 'label': 'R Two'},
+        ],
+      },
+    ]);
 
 /// Corrupt doc: an A↔B parent cycle, a self-parent, and one healthy root.
 /// `validateNesting` reports the cycle/self-parent; renderers must terminate
 /// (unreachable cyclic nodes simply never render).
 ScreenDoc _cycleDoc() => _doc([
-  {
-    'id': 'healthy',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'items': [
-      {'id': 'ihealthy', 'kind': 'button', 'label': 'Cycle Root'},
-    ],
-  },
-  {
-    'id': 'cycA',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'cycB',
-    'items': [
-      {'id': 'icycA', 'kind': 'button', 'label': 'Cycle A'},
-    ],
-  },
-  {
-    'id': 'cycB',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'cycA',
-    'items': [
-      {'id': 'icycB', 'kind': 'button', 'label': 'Cycle B'},
-    ],
-  },
-  {
-    'id': 'selfS',
-    'screenId': 's1',
-    'x': 0.0,
-    'y': 0.0,
-    'parentId': 'selfS',
-    'items': [
-      {'id': 'iself', 'kind': 'button', 'label': 'Self Loop'},
-    ],
-  },
-]);
+      {
+        'id': 'healthy',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'items': [
+          {'id': 'ihealthy', 'kind': 'button', 'label': 'Cycle Root'},
+        ],
+      },
+      {
+        'id': 'cycA',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'cycB',
+        'items': [
+          {'id': 'icycA', 'kind': 'button', 'label': 'Cycle A'},
+        ],
+      },
+      {
+        'id': 'cycB',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'cycA',
+        'items': [
+          {'id': 'icycB', 'kind': 'button', 'label': 'Cycle B'},
+        ],
+      },
+      {
+        'id': 'selfS',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'parentId': 'selfS',
+        'items': [
+          {'id': 'iself', 'kind': 'button', 'label': 'Self Loop'},
+        ],
+      },
+    ]);
 
 void main() {
   group('container with button child (canvas)', () {

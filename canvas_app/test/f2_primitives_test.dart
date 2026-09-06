@@ -132,14 +132,18 @@ void main() {
           },
           'radius': 16.0,
           'padding': 20,
-        }, [const Text('kid')]),
+        }, [
+          const Text('kid')
+        ]),
       );
       final container = tester.widget<Container>(find.byType(Container).first);
       expect(container.padding, const EdgeInsets.all(20));
       final decoration = container.decoration! as BoxDecoration;
-      expect(decoration.color, Theme.of(
-        tester.element(find.byType(Container).first),
-      ).colorScheme.primary);
+      expect(
+          decoration.color,
+          Theme.of(
+            tester.element(find.byType(Container).first),
+          ).colorScheme.primary);
       expect(decoration.borderRadius, BorderRadius.circular(16));
       expect(find.text('kid'), findsOneWidget);
     });
@@ -168,8 +172,13 @@ void main() {
       await _pump(
         tester,
         buildCatalogItem('container', {
-          'color': {'\$': 'color', 'v': {'kind': 'token', 'token': 'surface'}},
-        }, [const Text('kid')]),
+          'color': {
+            '\$': 'color',
+            'v': {'kind': 'token', 'token': 'surface'}
+          },
+        }, [
+          const Text('kid')
+        ]),
       );
       final container = tester.widget<Container>(find.byType(Container).first);
       expect(container.decoration, isNull);
@@ -189,7 +198,10 @@ void main() {
         buildCatalogItem('column', {
           'gap': 4.0,
           'mainAxis': 'center',
-        }, [const Text('a'), const Text('b')]),
+        }, [
+          const Text('a'),
+          const Text('b')
+        ]),
       );
       final column = tester.widget<Column>(find.byType(Column).first);
       expect(column.mainAxisAlignment, MainAxisAlignment.center);
@@ -205,7 +217,10 @@ void main() {
         tester,
         buildCatalogItem('row', {
           'gap': 8.0,
-        }, [const Text('a'), const Text('b')]),
+        }, [
+          const Text('a'),
+          const Text('b')
+        ]),
       );
       expect(find.byType(Row), findsOneWidget);
       final gap = tester.widget<SizedBox>(find.byType(SizedBox));
@@ -219,7 +234,9 @@ void main() {
         tester,
         buildCatalogItem('stack', {
           'alignment': 'topLeft',
-        }, [const Text('s')]),
+        }, [
+          const Text('s')
+        ]),
       );
       expect(
         tester
@@ -236,7 +253,9 @@ void main() {
         tester,
         buildCatalogItem('padding', {
           'padding': 24,
-        }, [const Text('p')]),
+        }, [
+          const Text('p')
+        ]),
       );
       expect(
         tester
@@ -255,7 +274,9 @@ void main() {
         tester,
         buildCatalogItem('align', {
           'alignment': 'bottomRight',
-        }, [const Text('a')]),
+        }, [
+          const Text('a')
+        ]),
       );
       expect(
         tester
@@ -277,7 +298,9 @@ void main() {
         tester,
         buildCatalogItem('expanded', {
           'flex': 2,
-        }, [const Text('e')]),
+        }, [
+          const Text('e')
+        ]),
       );
       final expanded = tester.widget<Expanded>(find.byType(Expanded).first);
       expect(expanded.flex, 2);
@@ -285,7 +308,9 @@ void main() {
         MaterialApp(
           home: Scaffold(
             body: Row(
-              children: [buildCatalogItem('spacer', {'flex': 2})],
+              children: [
+                buildCatalogItem('spacer', {'flex': 2})
+              ],
             ),
           ),
         ),
@@ -317,7 +342,10 @@ void main() {
         tester,
         buildCatalogItem('padding', {
           'padding': 8,
-        }, [const Text('a'), const Text('b')]),
+        }, [
+          const Text('a'),
+          const Text('b')
+        ]),
       );
       final padding = tester.widget<Padding>(find.byType(Padding));
       expect(padding.child, isA<Column>());
@@ -355,7 +383,9 @@ void main() {
             },
           ],
           'radius': 16.0,
-        }, [const Text('kid')]),
+        }, [
+          const Text('kid')
+        ]),
       );
       final container = tester.widget<Container>(find.byType(Container).first);
       final decoration = container.decoration! as BoxDecoration;

@@ -67,7 +67,8 @@ Future<String?> pickTextFile() {
   }
 
   final document = globalContext['document']! as JSObject;
-  final input = document.callMethod<JSObject>('createElement'.toJS, 'input'.toJS);
+  final input =
+      document.callMethod<JSObject>('createElement'.toJS, 'input'.toJS);
   input['type'] = 'file'.toJS;
   input['accept'] = 'application/json,.json'.toJS;
   input['onchange'] = ((JSAny? _) {

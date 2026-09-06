@@ -40,8 +40,7 @@ Set<String> rangeNodeSelection(
   if (anchor.parentId != tapped.parentId) return const {};
   final group = [
     for (final n in doc.nodes)
-      if (n.screenId == anchor.screenId && n.parentId == anchor.parentId)
-        n.id,
+      if (n.screenId == anchor.screenId && n.parentId == anchor.parentId) n.id,
   ];
   final from = group.indexOf(anchorId);
   final to = group.indexOf(tappedId);

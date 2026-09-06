@@ -3,7 +3,8 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/main.dart';
-import 'package:canvas_app/ui/canvas_toolbar.dart' show kForgeSelectionToolbarKey;
+import 'package:canvas_app/ui/canvas_toolbar.dart'
+    show kForgeSelectionToolbarKey;
 import 'package:canvas_app/ui/design_canvas.dart';
 import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
@@ -109,8 +110,7 @@ void main() {
       );
     });
 
-    test('unknown device throws, unknown screen and same value are no-ops',
-        () {
+    test('unknown device throws, unknown screen and same value are no-ops', () {
       final store = CanvasStore(initial: _twoScreenDoc());
       expect(
         () => store.setScreenDevice('s1', 'watch'),
@@ -267,8 +267,7 @@ void main() {
             (viewport.height - content.height * z) / 2,
           );
       final before = (cursor - origin(1.0)) / 1.0;
-      final after =
-          (cursor - origin(result.zoom) - result.pan) / result.zoom;
+      final after = (cursor - origin(result.zoom) - result.pan) / result.zoom;
       expect(after.dx, moreOrLessEquals(before.dx));
       expect(after.dy, moreOrLessEquals(before.dy));
     });
@@ -335,8 +334,7 @@ void main() {
               onZoomOut: () {},
               onFit: () {},
               screenDevice: store.doc.screens.first.device,
-              onDeviceChanged: (device) =>
-                  store.setScreenDevice('s1', device),
+              onDeviceChanged: (device) => store.setScreenDevice('s1', device),
             ),
           ),
         ),
@@ -400,7 +398,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(home: EditorShell(store: store)));
       await tester.pumpAndSettle();
 
-      // No selection → the black Forge toolbar hides (it returns shrink).
+      // No selection → the neutral-pill Forge toolbar hides (it returns shrink).
       expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
       expect(store.doc.nodes, hasLength(1));
       expect(store.doc.screens, hasLength(2));

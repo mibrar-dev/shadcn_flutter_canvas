@@ -54,8 +54,7 @@ void main() {
   test('addScreen honors an explicit name', () {
     final store = CanvasStore(prefs: FakePrefs());
     final id = store.addScreen(name: 'Onboarding');
-    expect(store.doc.screens.singleWhere((s) => s.id == id).name,
-        'Onboarding');
+    expect(store.doc.screens.singleWhere((s) => s.id == id).name, 'Onboarding');
   });
 
   test('addScreen is undoable and redoable', () {
@@ -164,8 +163,7 @@ void main() {
 
     // Aim at inner-screen point (50, 60): take the inner DragTarget box and
     // convert to global coords, exactly as a real pointer drop would arrive.
-    final box =
-        tester.renderObject<RenderBox>(find.byType(DragTarget<String>));
+    final box = tester.renderObject<RenderBox>(find.byType(DragTarget<String>));
     const want = Offset(50, 60);
     final global = box.localToGlobal(want);
 

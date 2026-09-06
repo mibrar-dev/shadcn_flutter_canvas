@@ -28,8 +28,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// derived, never stored — P16 reconciliation).
 String _roundTripJson(ScreenDoc doc) {
   final first = jsonEncode(doc.toJson());
-  final revived =
-      ScreenDoc.fromJson(jsonDecode(first) as Map<String, dynamic>);
+  final revived = ScreenDoc.fromJson(jsonDecode(first) as Map<String, dynamic>);
   expect(jsonEncode(revived.toJson()), first);
   expect(first.contains('widthMode'), isFalse);
   expect(first.contains('heightMode'), isFalse);
@@ -174,11 +173,8 @@ void main() {
       );
       await tester.tap(paddingPlus.first);
       await tester.pump();
-      final props = store.doc.nodes
-          .singleWhere((n) => n.id == nodeId)
-          .items
-          .single
-          .props;
+      final props =
+          store.doc.nodes.singleWhere((n) => n.id == nodeId).items.single.props;
       expect(props['padding'], {'l': 4.0, 't': 0.0, 'r': 0.0, 'b': 0.0});
     });
 
@@ -202,11 +198,8 @@ void main() {
       await tester.pump();
       await tester.tap(find.text('bottomRight'));
       await tester.pump();
-      final props = store.doc.nodes
-          .singleWhere((n) => n.id == nodeId)
-          .items
-          .single
-          .props;
+      final props =
+          store.doc.nodes.singleWhere((n) => n.id == nodeId).items.single.props;
       expect(props['alignment'], 'bottomRight');
     });
   });
@@ -579,8 +572,8 @@ void main() {
       // Named ends + two stops emit the collapsed gradient.
       tester
           .widget<PropGradientEditor>(
-            find.byKey(const ValueKey('i1/gradient')),
-          )
+        find.byKey(const ValueKey('i1/gradient')),
+      )
           .onChanged({
         'begin': {'x': -1.0, 'y': -1.0},
         'end': {'x': 1.0, 'y': 1.0},

@@ -70,7 +70,8 @@ void main() {
     final store = CanvasStore(prefs: prefs);
     final id = store.addNode(screenId: 's1', x: 10, y: 20);
     await store.flush();
-    final saved = jsonDecode(prefs.writes['canvas:doc']!) as Map<String, dynamic>;
+    final saved =
+        jsonDecode(prefs.writes['canvas:doc']!) as Map<String, dynamic>;
     final ids = [
       for (final n in saved['nodes'] as List) (n as Map)['id'] as String
     ];
@@ -89,7 +90,8 @@ void main() {
     expect(itemIds, contains('i1'));
   });
 
-  test('deleteScreen refused while targeted, proceeds after retarget', () {    final store = CanvasStore(prefs: FakePrefs(), initial: _twoScreenDoc());
+  test('deleteScreen refused while targeted, proceeds after retarget', () {
+    final store = CanvasStore(prefs: FakePrefs(), initial: _twoScreenDoc());
     final refused = store.deleteScreen('s9');
     expect(refused, contains('dangling action i1 -> missing screen s9'));
     expect(store.doc.screens.map((s) => s.id), contains('s9'));

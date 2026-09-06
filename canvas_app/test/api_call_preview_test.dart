@@ -107,7 +107,8 @@ void main() {
     });
 
     test('transport errors and timeouts skip (no throw)', () async {
-      final failing = MockClient((_) async => throw http.ClientException('down'));
+      final failing =
+          MockClient((_) async => throw http.ClientException('down'));
       expect(
         await executeApiCall(
           const ActionStep.apiCall(url: 'https://a.b/'),

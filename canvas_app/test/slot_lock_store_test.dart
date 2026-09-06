@@ -388,12 +388,10 @@ void main() {
         'meta': {'title': 'T', 'brief': ''},
       }));
       final clone2 = store2.duplicateNode('h');
-      final cloneNode =
-          store2.doc.nodes.singleWhere((n) => n.id == clone2);
+      final cloneNode = store2.doc.nodes.singleWhere((n) => n.id == clone2);
       final kidCloneId = cloneNode.slotNodes['content']!;
       expect(kidCloneId, isNot('c'));
-      final kidClone2 =
-          store2.doc.nodes.singleWhere((n) => n.id == kidCloneId);
+      final kidClone2 = store2.doc.nodes.singleWhere((n) => n.id == kidCloneId);
       expect(kidClone2.parentId, clone2);
     });
 

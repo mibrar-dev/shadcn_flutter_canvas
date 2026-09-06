@@ -365,8 +365,7 @@ ScreenDoc buildFullPaletteDoc() {
   const tierScreenId = 's9';
   const showcaseScreenId = 's10';
   // Nav pair: Controls button -> Display, Display's first item -> Controls.
-  final displayScreenId =
-      screenIdForSection(_sectionOrder.indexOf('Display'));
+  final displayScreenId = screenIdForSection(_sectionOrder.indexOf('Display'));
   final controlsScreenId =
       screenIdForSection(_sectionOrder.indexOf('Controls'));
 
@@ -770,8 +769,7 @@ void main(List<String> args) {
   if (!tierNodes.any((node) => node.breakpointValues.isNotEmpty)) {
     _fail('Tier demo has no breakpointValues node');
   }
-  final tierScreen =
-      back.screens.singleWhere((screen) => screen.id == 's9');
+  final tierScreen = back.screens.singleWhere((screen) => screen.id == 's9');
   if (tierScreen.device != 'tablet') {
     _fail('Tier demo device should be tablet, found ${tierScreen.device}');
   }

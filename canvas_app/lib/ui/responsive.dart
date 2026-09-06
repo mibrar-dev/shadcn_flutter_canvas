@@ -89,8 +89,8 @@ bool isNodeHiddenOnWidth(double width, Set<String> hiddenOn) =>
     hiddenOn.contains(tierForWidth(width).name);
 
 /// Builder exposed by [ResponsiveBuilder]: context, resolved tier, width.
-typedef ResponsiveBuild =
-    Widget Function(BuildContext context, Tier tier, double width);
+typedef ResponsiveBuild = Widget Function(
+    BuildContext context, Tier tier, double width);
 
 /// [LayoutBuilder]-based widget exposing `(context, tier, width)`.
 ///
