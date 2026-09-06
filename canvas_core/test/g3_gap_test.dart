@@ -18,8 +18,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:canvas_core/canvas_core.dart';
-import 'package:canvas_core/src/emit/expr_emitter.dart';
-import 'package:canvas_core/src/emit/g3_emitters.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:test/test.dart';
 

@@ -19,11 +19,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:canvas_core/canvas_core.dart';
-import 'package:canvas_core/src/emit/emit_context.dart';
-import 'package:canvas_core/src/emit/expr_emitter.dart';
-import 'package:canvas_core/src/emit/project_writer.dart';
-import 'package:canvas_core/src/emit/tagged_value.dart';
-import 'package:canvas_core/src/emit/value_codecs.dart';
 import 'package:code_builder/code_builder.dart' hide EnumValue;
 import 'package:dart_style/dart_style.dart';
 import 'package:test/test.dart';

@@ -11,3 +11,4 @@ export 'src/share_codec.dart';
 export 'src/codegen_single.dart';
 export 'src/screen_doc_schema.dart';
 export 'src/codegen_bundle.dart';
+export 'src/emit/emit.dart';

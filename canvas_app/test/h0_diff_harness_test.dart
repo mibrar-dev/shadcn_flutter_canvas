@@ -172,6 +172,52 @@ void main() {
     });
   });
 
+  group('H0 harness: runHarness exit-code contract (H-FINAL-1)', () {
+    test('--help resolves to pass without touching the filesystem', () async {
+      expect(await h0.runHarness(['--help']), h0.H0Exit.pass);
+    });
+
+    test('unknown flags and missing fixtures resolve to infra-error', () async {
+      expect(await h0.runHarness(['--bogus', 'x']), h0.H0Exit.infraError);
+      final out = Directory.systemTemp.createTempSync('h0exit').path;
+      expect(
+        await h0.runHarness([
+          '--stage',
+          'pure',
+          '--fixtures',
+          '/nonexistent-h0-fixtures',
+          '--out',
+          out,
+        ]),
+        h0.H0Exit.infraError,
+      );
+    });
+
+    test('pure stage scaffolds reports and resolves stage-unimplemented',
+        () async {
+      final dir = Directory('../canvas_core/test/fixtures');
+      if (!dir.existsSync()) return;
+      final out = Directory.systemTemp.createTempSync('h0pure').path;
+      expect(
+        await h0.runHarness([
+          '--stage',
+          'pure',
+          '--fixtures',
+          dir.path,
+          '--out',
+          out,
+        ]),
+        h0.H0Exit.stageNotImplemented,
+      );
+      expect(
+        File('$out${Platform.pathSeparator}primitives_screen.report.md')
+            .existsSync(),
+        isTrue,
+        reason: 'pure stage scaffolds one report per fixture',
+      );
+    });
+  });
+
   group('H0 harness: CLI + exit codes', () {
     test('defaults parse; unknown/valueless flags are infra errors', () {
       final def = h0.h0ParseArgs([]);

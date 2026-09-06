@@ -106,9 +106,8 @@ class _KindSpec {
 // `pubspec.dependencies`, `dependsOn` verbatim — unknown dep ids warn at
 // export time, same as the seed kinds' `text_field`).
 // NOTE: `select`'s `dependsOn` (`async`, `command`, `hover`,
-// `menu`, `text_field`) — `command`/`menu` now resolve (this batch),
-// `async`/`hover`/`text_field` still warn (transitively pulled bodies are out
-// of scope; the ids are kept verbatim, never invented). Its `chip` and
+// `menu`, `text_field`) — all resolve (Track H added the `async` utility
+// row; the ids are kept verbatim, never invented). Its `chip` and
 // `dialog` deps resolve.
 // NOTE: `tooltip`'s `dependsOn` (`popover`) now resolves (this batch adds
 // `popover`).
@@ -485,6 +484,24 @@ const _kinds = <String, _KindSpec>{
   'text_animate': _KindSpec('{installPath}/components/display/text_animate/',
       ['component_schema', 'style_value', 'theme'],
       {'gap': '^3.0.1'}, ['markdown']),
+  // Track H (H-FINAL-3): `async` + `locale_utils` are real kit components
+  // (utility barrels — see the kit-truth note below), not dangling ids.
+  // `select` relatively imports `../../utility/async/async.dart` (verified
+  // in the shipped `select.dart` body) and `object_input` names
+  // `locale_utils` in its kit `dependsOn`; both rows below close the
+  // `unknown component … skipped` manifest warnings at the root instead of
+  // silencing them. Specs derived from the shipped bodies: `async.dart` is
+  // a single file importing only `dart:async` + `package:flutter/widgets`
+  // (no shared files, no pub deps, no kit-component deps);
+  // `locale_utils.dart` (+ its three `_impl/core/*_part.dart` parts, which
+  // carry no imports of their own) imports only `dart:math` plus the
+  // `shared/utils/util.dart` helper, so `shared` is `['util']`.
+  'async': _KindSpec('{installPath}/components/utility/async/',
+      [],
+      {}, []),
+  'locale_utils': _KindSpec('{installPath}/components/utility/locale_utils/',
+      ['util'],
+      {}, []),
 };
 
 const _installPath = '{installPath}/';

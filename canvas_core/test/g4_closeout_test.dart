@@ -14,7 +14,6 @@ library;
 import 'dart:io';
 
 import 'package:canvas_core/canvas_core.dart';
-import 'package:canvas_core/src/emit/emit.dart';
 import 'package:dart_style/dart_style.dart';
 import 'package:test/test.dart';
 
@@ -87,9 +86,9 @@ void main() {
 
   group('g4 barrel (src/emit as one import)', () {
     test('registry surface resolves through the barrel', () {
-      // Every symbol below is reached via `src/emit/emit.dart` (the
-      // direct import at the top of this file) — same elements as the
-      // `canvas_core.dart` re-export, so no ambiguity.
+      // Every symbol below is reached via `canvas_core.dart` (which
+      // re-exports `src/emit/emit.dart`, the §8.2 surface) — a single
+      // import covers the whole registry surface, so no ambiguity.
       expect(g3Registry().driftKinds, isEmpty);
       expect(primitiveRegistry().emitterCount, 10);
       expect(kG3KitImport, contains('flutter_shadcn_kit'));

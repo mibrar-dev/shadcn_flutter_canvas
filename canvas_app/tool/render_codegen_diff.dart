@@ -281,7 +281,16 @@ Map<String, String> h0ParseArgs(List<String> args) {
   return out;
 }
 
-Future<int> main(List<String> args) async {
+/// CLI entry point: the Dart VM ignores `main`'s return value, so the
+/// [H0Exit] code is pushed through `exit()` explicitly (H-FINAL-1). The
+/// int contract itself stays unit-testable via [runHarness].
+Future<void> main(List<String> args) async {
+  exit(await runHarness(args));
+}
+
+/// Runs the harness, returning the [H0Exit] code ([main] forwards it to
+/// `exit()` so CI sees 0/1/2/3 instead of a constant 0).
+Future<int> runHarness(List<String> args) async {
   final opts = h0ParseArgs(args);
   if (opts.containsKey('help')) {
     _usage();
