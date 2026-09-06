@@ -1,0 +1,1 @@
+{"meta":{"brief":"","title":"G3 code snippet"},"nodes":[{"id":"n1","items":[{"code":"void main() {}","id":"cs1","kind":"code_snippet"}],"screenId":"s1","x":0.0,"y":0.0}],"screens":[{"bg":"surface","id":"s1","name":"Home","x":0.0,"y":0.0}],"theme":{"dark":false,"motion":"standard","paletteKey":"slate","shape":"rounded"}}

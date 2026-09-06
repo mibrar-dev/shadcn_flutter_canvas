@@ -1,0 +1,1 @@
+{"meta":{"brief":"","title":"G3 alert"},"nodes":[{"id":"n1","items":[{"content":"Read this first.","destructive":true,"id":"alert1","kind":"alert","title":"Heads up"}],"screenId":"s1","x":0.0,"y":0.0}],"screens":[{"bg":"surface","id":"s1","name":"Home","x":0.0,"y":0.0}],"theme":{"dark":false,"motion":"standard","paletteKey":"slate","shape":"rounded"}}

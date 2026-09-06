@@ -1,0 +1,1 @@
+{"meta":{"brief":"","title":"G3 number ticker"},"nodes":[{"id":"n1","items":[{"id":"nt1","kind":"number_ticker","value":1234.5}],"screenId":"s1","x":0.0,"y":0.0}],"screens":[{"bg":"surface","id":"s1","name":"Home","x":0.0,"y":0.0}],"theme":{"dark":false,"motion":"standard","paletteKey":"slate","shape":"rounded"}}

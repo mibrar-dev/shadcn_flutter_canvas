@@ -621,12 +621,19 @@ class ExportDialog extends StatefulWidget {
   /// Overrides [kIsWeb] (tests run on the VM, where web is always false).
   final bool? isWebOverride;
 
+  /// Track G4: the exporter mode the dialog opens in. The single-file path
+  /// is demoted to [ExportMode.inlineSourcesExperimental]; the dialog
+  /// defaults to [ExportMode.bundle]. Mode-wiring only — every option below
+  /// keeps working in either mode.
+  final ExportMode initialMode;
+
   const ExportDialog({
     super.key,
     required this.store,
     this.onDownload,
     this.onCopy,
     this.isWebOverride,
+    this.initialMode = ExportMode.bundle,
   });
 
   @override
@@ -642,7 +649,16 @@ class _ExportDialogState extends State<ExportDialog> {
   bool _working = false;
   Timer? _copyTimer;
 
+  /// Track G4: active exporter mode (see [ExportDialog.initialMode]).
+  late ExportMode _mode;
+
   bool get _isWeb => widget.isWebOverride ?? kIsWeb;
+
+  @override
+  void initState() {
+    super.initState();
+    _mode = widget.initialMode;
+  }
 
   @override
   void dispose() {
@@ -816,6 +832,40 @@ class _ExportDialogState extends State<ExportDialog> {
                 ),
               ],
               section('Code'),
+              // Track G4: exporter-mode switch (mode-wiring only — every
+              // option below keeps working in either mode; the switch
+              // records the active path and labels the demoted single-file
+              // path experimental). No dialog redesign.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: SegmentedButton<ExportMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: ExportMode.bundle,
+                      label: Text('Project'),
+                    ),
+                    ButtonSegment(
+                      value: ExportMode.inlineSourcesExperimental,
+                      label: Text('Inline sources (experimental)'),
+                    ),
+                  ],
+                  selected: {_mode},
+                  onSelectionChanged: (modes) {
+                    if (modes.isNotEmpty) {
+                      setState(() => _mode = modes.single);
+                    }
+                  },
+                ),
+              ),
+              Text(
+                _mode == ExportMode.bundle
+                    ? 'Project ZIP is the supported path: clean folders '
+                        'depending on flutter_shadcn_kit.'
+                    : 'Inline single-file is experimental: kit sources are '
+                        'inlined by the legacy linker (kept, not load-bearing).',
+                style:
+                    EditorType.field.copyWith(color: colors.onSurfaceVariant),
+              ),
               option('Download project ZIP', _downloadZip),
               option('Download single .dart file', _downloadSingle),
               option('Copy single-file code', _copySingle),

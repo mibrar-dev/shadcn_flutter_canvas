@@ -67,6 +67,9 @@ class EmitterRegistry {
   /// Registers a unified binding for a kind whose emitter migrates in G2.
   void registerBinding(KindBinding binding) => _bindings[binding.type] = binding;
 
+  /// Unified binding for [kind], or null when unbound.
+  KindBinding? bindingFor(String kind) => _bindings[kind];
+
   /// Real emitter for [kind], or null (→ placeholder path).
   WidgetEmitter? lookup(String kind) => _emitters[kind];
 

@@ -9,11 +9,13 @@
 /// `component_catalog.dart` builders prop-for-prop with the same defaults
 /// and edge handling, static-snapshotted: stateful cells render their
 /// initial value with no-op callbacks, exactly like `codegen_single.dart`).
-/// Non-catalog kinds (unknown ids, or known kinds with no catalog builder:
-/// `chip`, `alert`, `circular_progress_indicator`,
-/// `linear_progress_indicator`, `triple_dots`, `dot_indicator`,
-/// `empty_state`, `code_snippet`, `number_ticker`, `text_area`) keep the
-/// explicit doc comment plus a `Text` placeholder and never crash.
+/// Non-catalog kinds (unknown ids) keep the explicit doc comment plus a
+/// `Text` placeholder and never crash. (Track G3 closed the former
+/// 10-kind placeholder gap — `chip`, `alert`,
+/// `circular_progress_indicator`, `linear_progress_indicator`,
+/// `triple_dots`, `dot_indicator`, `empty_state`, `code_snippet`,
+/// `number_ticker`, `text_area` — via §8.2 `AstEmitter`s in
+/// `emit/g3_emitters.dart`, one implementation behind both paths.)
 ///
 /// Barrel paths resolve against the real kit entry files (verified once
 /// against the pinned kit checkout's `components.json` `files[].destination`
@@ -56,6 +58,7 @@ import 'package:archive/archive.dart';
 
 import 'screen_doc.dart';
 import 'app_state.dart';
+import 'emit/g3_emitters.dart';
 import 'emit/value_codecs.dart';
 
 /// Result of [buildCleanBundle].
@@ -540,22 +543,8 @@ const _barrelFile = <String, String>{
   'tab_list': '_impl/core/tab_list.dart',
 };
 
-/// Track H2 (screen wiring): kinds whose screen bodies are `Text`
-/// placeholders (no catalog builder in [_bundleBody]) need no barrel import —
-/// the screen references no kit names for them. Every other known kind has a
-/// real body and gets a barrel import in screens that use it.
-const _bundlePlaceholderKinds = {
-  'chip',
-  'alert',
-  'circular_progress_indicator',
-  'linear_progress_indicator',
-  'triple_dots',
-  'dot_indicator',
-  'empty_state',
-  'code_snippet',
-  'number_ticker',
-  'text_area',
-};
+/// Track H2 (screen wiring): every known kind has a real body and gets a
+/// barrel import in screens that use it.
 
 /// Track H2: extra kind barrels a screen body references beyond its own
 /// kind's barrel (verified per builder against the pinned kit checkout —
@@ -732,8 +721,7 @@ BundleManifest buildCleanBundle(
   final screenExtraKinds = <String>{};
   for (final node in doc.nodes) {
     for (final item in node.items) {
-      if (_kinds[item.kind] == null ||
-          _bundlePlaceholderKinds.contains(item.kind)) {
+      if (_kinds[item.kind] == null) {
         continue;
       }
       for (final extra in _screenExtraKinds[item.kind] ?? const <String>[]) {
@@ -964,7 +952,7 @@ String _barrel(String kind) =>
 /// Known catalog kinds inline the widget expression mirroring the canvas
 /// app's `component_catalog.dart` builder for that kind (same props, same
 /// defaults, same edge handling — statically snapshotted, see the library
-/// docs); non-catalog kinds keep the doc comment plus a `Text` placeholder.
+/// docs); unknown kinds keep the doc comment plus a `Text` placeholder.
 /// Component bodies ALSO ship under `lib/ui/shadcn/` (barrel paths listed in
 /// the header for wiring).
 ///
@@ -1067,13 +1055,8 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   // resolved via [_barrelFile] — the same entry files the header comments
   // list. Clash disambiguation follows the convention documented above
   // [_screenMenuHide]: Flutter names hide on the Flutter import, `menu`
-  // hides its shadowed names, `tabs` imports prefixed. Placeholder kinds
-  // reference no kit names, so they contribute no imports (their header
-  // comment still documents the shipped barrel for hand wiring).
-  final catalogUsed = {
-    for (final k in usedKinds)
-      if (!_bundlePlaceholderKinds.contains(k)) k,
-  };
+  // hides its shadowed names, `tabs` imports prefixed.
+  final catalogUsed = {...usedKinds};
   final importKinds = {
     ...catalogUsed,
     for (final k in catalogUsed) ...(_screenExtraKinds[k] ?? const <String>[]),
@@ -1464,7 +1447,7 @@ List<String> _bundleContainerBody(
 /// rule); overlay-driven kinds render their inline static form exactly like
 /// the catalog does. Props read leniently (missing/wrong-typed values fall
 /// back to the catalog default) so hand-written docs never crash the
-/// exporter. Non-catalog kinds keep the old `Text` placeholder byte-identical.
+/// exporter. Unknown kinds keep the old `Text` placeholder byte-identical.
 List<String> _bundleBody(CanvasItem item) {
   switch (item.kind) {
     case 'button':
@@ -1664,6 +1647,30 @@ List<String> _bundleBody(CanvasItem item) {
       return _bundleSubfocus(item.props);
     case 'repeated_animation_builder':
       return _bundleRepeatedAnimationBuilder(item.props);
+    // Track G3 (the 10-kind gap, closed structurally via §8.2): one
+    // `AstEmitter` per kind in `emit/g3_emitters.dart` behind both paths —
+    // these wrappers adapt the canonical AST output to bundle body lines
+    // (same program, line-split + trailing comma only).
+    case 'chip':
+      return _bundleChip(item);
+    case 'alert':
+      return _bundleAlert(item);
+    case 'circular_progress_indicator':
+      return _bundleCircularProgress(item);
+    case 'linear_progress_indicator':
+      return _bundleLinearProgress(item);
+    case 'triple_dots':
+      return _bundleTripleDots(item);
+    case 'dot_indicator':
+      return _bundleDotIndicator(item);
+    case 'empty_state':
+      return _bundleEmptyState(item);
+    case 'code_snippet':
+      return _bundleCodeSnippet(item);
+    case 'number_ticker':
+      return _bundleNumberTicker(item);
+    case 'text_area':
+      return _bundleTextArea(item);
     // Track F layout primitives (raw Flutter, kit-first exempt). `spacer`
     // is a leaf; the rest splice children via [_bundleContainerBody] above
     // (single-item container nodes) and render childless here.
@@ -3696,6 +3703,41 @@ List<String> _bundleTextFieldKind(Map<String, dynamic> props) {
     '),',
   ];
 }
+
+/// Track G3 bundle adapters (the 10-kind gap, §8.2): thin wrappers over the
+/// single `AstEmitter` implementation per kind in `emit/g3_emitters.dart`
+/// ([g3BundleLines] — same program the page walker emits, adapted to bundle
+/// body lines). The wrappers own no props logic; defaults, leniency, and
+/// clamping live in the emitter.
+List<String> _bundleChip(CanvasItem item) =>
+    g3BundleLines(const ChipEmitter(), item);
+
+List<String> _bundleAlert(CanvasItem item) =>
+    g3BundleLines(const AlertEmitter(), item);
+
+List<String> _bundleCircularProgress(CanvasItem item) =>
+    g3BundleLines(const CircularProgressEmitter(), item);
+
+List<String> _bundleLinearProgress(CanvasItem item) =>
+    g3BundleLines(const LinearProgressEmitter(), item);
+
+List<String> _bundleTripleDots(CanvasItem item) =>
+    g3BundleLines(const TripleDotsEmitter(), item);
+
+List<String> _bundleDotIndicator(CanvasItem item) =>
+    g3BundleLines(const DotIndicatorEmitter(), item);
+
+List<String> _bundleEmptyState(CanvasItem item) =>
+    g3BundleLines(const EmptyStateEmitter(), item);
+
+List<String> _bundleCodeSnippet(CanvasItem item) =>
+    g3BundleLines(const CodeSnippetEmitter(), item);
+
+List<String> _bundleNumberTicker(CanvasItem item) =>
+    g3BundleLines(const NumberTickerEmitter(), item);
+
+List<String> _bundleTextArea(CanvasItem item) =>
+    g3BundleLines(const TextAreaEmitter(), item);
 
 List<String> _bundleMarkdown(Map<String, dynamic> props) {
   return [

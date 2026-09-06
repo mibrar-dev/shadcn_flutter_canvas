@@ -1,0 +1,1 @@
+{"meta":{"brief":"","title":"G3 empty state"},"nodes":[{"id":"n1","items":[{"description":"Try again.","id":"es1","kind":"empty_state","title":"No results"}],"screenId":"s1","x":0.0,"y":0.0}],"screens":[{"bg":"surface","id":"s1","name":"Home","x":0.0,"y":0.0}],"theme":{"dark":false,"motion":"standard","paletteKey":"slate","shape":"rounded"}}

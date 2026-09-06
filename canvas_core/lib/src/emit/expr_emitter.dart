@@ -856,13 +856,23 @@ typedef PageBlock = ({String comment, Expression expr});
 ///   cycle note and skip (never a hang).
 /// * Imports come SOLELY from [EmitContext.imports] (priority (a)); model
 ///   split + responsive leaf via [emitPage] (priority (d)).
+/// * [extraEmitters] (Track G3 — additive, defaults to none) registers
+///   further leaf-kind emitters (e.g. the ten G3 kit kinds) under the same
+///   walk rules; G2 callers pass nothing and see byte-identical output.
 List<ProjectOutFile> emitPrimitivePageFiles({
   required ScreenDoc doc,
   required CanvasScreen screen,
+  List<AstEmitter> extraEmitters = const [],
 }) {
   final ctx = EmitContext();
-  final byType = {for (final e in primitiveEmitters) e.type: e};
+  final byType = {
+    for (final e in primitiveEmitters) e.type: e,
+    for (final e in extraEmitters) e.type: e,
+  };
   for (final e in primitiveEmitters) {
+    e.collectImports(ctx);
+  }
+  for (final e in extraEmitters) {
     e.collectImports(ctx);
   }
   final nodeIds = {for (final n in doc.nodes) n.id};

@@ -7,6 +7,38 @@ import 'screen_doc.dart';
 import 'app_state.dart';
 import 'emit/tagged_value.dart';
 
+/// Track G4 — export-mode demotion (BUILD_SPEC §8.1).
+///
+/// The single-file exporter below is DEMOTED to an optional experimental
+/// mode: the supported export path is the package-dep bundle
+/// (`buildCleanBundle` in `codegen_bundle.dart` — clean widget tree plus
+/// `import 'package:flutter_shadcn_kit/…'`). The single-file path inlines
+/// kit sources through the hand-rolled linker documented on
+/// [buildSingleFile]; it is KEPT (never deleted) as the
+/// [ExportMode.inlineSourcesExperimental] path for one-file demos and
+/// diffing. New export UI defaults to [ExportMode.bundle] and labels the
+/// single-file path experimental (see [exportModeLabel]).
+enum ExportMode {
+  /// Supported path: multi-file project depending on `flutter_shadcn_kit`.
+  bundle,
+
+  /// Optional experimental path: single file with kit sources inlined
+  /// ([buildSingleFile] and its linker, kept verbatim — demoted, not
+  /// load-bearing).
+  inlineSourcesExperimental,
+}
+
+/// Display label for [mode] (the export dialog's mode switch reads these —
+/// the experimental qualifier is part of the contract, not styling).
+String exportModeLabel(ExportMode mode) {
+  switch (mode) {
+    case ExportMode.bundle:
+      return 'Project';
+    case ExportMode.inlineSourcesExperimental:
+      return 'Inline sources (experimental)';
+  }
+}
+
 /// Builds a single-file Dart program for [doc], inlining the registry
 /// sources of every used component [kind] found in [sourcesByDestination].
 ///
