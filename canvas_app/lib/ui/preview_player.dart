@@ -59,7 +59,12 @@ import 'package:http/http.dart' as http;
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/state_scope.dart';
 import 'package:canvas_app/ui/phone_frame.dart'
-    show alignIntrinsicKind, applyNodeSize, rowCrossAxis, rowMainAxis, wrapRowChild;
+    show
+        alignIntrinsicKind,
+        applyNodeSize,
+        rowCrossAxis,
+        rowMainAxis,
+        wrapRowChild;
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
@@ -105,7 +110,8 @@ Future<String?> executeApiCall(
     late final http.Response response;
     if (step.method == 'POST') {
       response = await owned
-          .post(uri, headers: headers, body: step.body.isEmpty ? null : step.body)
+          .post(uri,
+              headers: headers, body: step.body.isEmpty ? null : step.body)
           .timeout(timeout);
     } else {
       response = await owned.get(uri, headers: headers).timeout(timeout);
@@ -135,6 +141,20 @@ class PreviewPlayer extends StatefulWidget {
   /// execution surface only.
   final http.Client? httpClient;
 
+  /// Test-only seam for the per-node error boundary (Track FF3): when set,
+  /// node catalog builds route through this instead of [buildCatalogItem].
+  /// Tests set it to a function that throws for one kind (and delegates to
+  /// [buildCatalogItem] otherwise) to prove a crashing widget renders an
+  /// inline [_PreviewErrorCard] while siblings still render. Production code
+  /// never sets it. Reset it in `tearDown`/`addTearDown` — it is static.
+  @visibleForTesting
+  static Widget Function(
+    String kind,
+    Map<String, dynamic> props,
+    List<Widget> children,
+    Map<String, dynamic> scope,
+  )? debugItemBuilder;
+
   const PreviewPlayer({
     super.key,
     required this.doc,
@@ -157,12 +177,44 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   ];
 
   /// Device picker state. Internal only (no ctor change): index into
-  /// [kPreviewDevices], defaulting to phone.
+  /// [kPreviewDevices]. Defaults to the CURRENT screen's device (Track FF3 —
+  /// see [initState]/[_adoptCurrentScreenDevice]), falling back to phone for
+  /// screens without one; a manual picker/landscape choice ([_userPicked])
+  /// wins over screen defaults for the rest of the session.
   int _deviceIndex = 0;
 
   /// Landscape toggle: swaps framed phone/tablet dimensions (844×390 /
   /// 1024×768). Ignored for frameless desktop presets.
   bool _landscape = false;
+
+  /// True once the user picks a device preset or flips the landscape toggle
+  /// in this session: per-screen device adoption stops so the manual choice
+  /// sticks across navigations.
+  bool _userPicked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _deviceIndex = _deviceIndexForScreen(_currentId);
+  }
+
+  /// Picker index for the device of screen [id] (phone when the id is null,
+  /// unknown, or the screen stores no device — same fallback as
+  /// [specForScreenDevice], so old docs stay phone-width).
+  int _deviceIndexForScreen(String? id) {
+    final screen = id == null ? null : _screen(id);
+    final spec = specForScreenDevice(screen?.device);
+    final index = kPreviewDevices.indexWhere((d) => d.id == spec.id);
+    return index < 0 ? 0 : index;
+  }
+
+  /// Follows the current screen's device unless the user manually picked one
+  /// ([_userPicked]). Called after every stack change (push/pop); navigation,
+  /// tier, slot, and lock semantics are untouched — only the stage preset.
+  void _adoptCurrentScreenDevice() {
+    if (_userPicked) return;
+    _deviceIndex = _deviceIndexForScreen(_currentId);
+  }
 
   /// Adaptive-nav demo overlay. Behaves like a pushed preview screen: Back
   /// closes it first, then pops the doc stack.
@@ -265,7 +317,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     for (final nav in plan.navigate) {
       if (!mounted) return;
       if (_screen(nav.to) == null) continue;
-      setState(() => _stack.add(nav.to));
+      setState(() {
+        _stack.add(nav.to);
+        _adoptCurrentScreenDevice();
+      });
     }
   }
 
@@ -275,7 +330,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
       return;
     }
     if (_stack.length > 1) {
-      setState(() => _stack.removeLast());
+      setState(() {
+        _stack.removeLast();
+        _adoptCurrentScreenDevice();
+      });
     } else {
       widget.onExit?.call();
     }
@@ -318,12 +376,15 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                       selectedIndex: _deviceIndex,
                       onSelect: (index) => setState(() {
                         _deviceIndex = index;
+                        _userPicked = true;
                       }),
                       landscape: _landscape,
-                      onLandscapeChanged: (value) =>
-                          setState(() => _landscape = value),
+                      onLandscapeChanged: (value) => setState(() {
+                        _landscape = value;
+                        _userPicked = true;
+                      }),
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 8),
                     shadcn.GhostButton(
                       onPressed: _demoOpen
                           ? null
@@ -332,6 +393,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(height: 8),
+              // Hairline separator between the chrome bar and the stage so
+              // the top bar reads as chrome in both brightnesses.
+              Container(
+                key: const ValueKey('previewChromeDivider'),
+                height: 1,
+                color: colors.surfaceContainerHigh,
               ),
               const SizedBox(height: 8),
               Expanded(
@@ -356,14 +425,12 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     // params collapse to zero when frameless, so the content
                     // subtree keeps its element position on every switch and
                     // demo selection survives tier changes.
-                    final frame = spec.framed
-                        ? EditorMetrics.phoneBezel
-                        : 0.0;
+                    final frame = spec.framed ? EditorMetrics.phoneBezel : 0.0;
                     var innerHeight = spec.height == null
                         ? constraints.maxHeight
                         : (spec.height! > constraints.maxHeight
-                              ? constraints.maxHeight
-                              : spec.height!);
+                            ? constraints.maxHeight
+                            : spec.height!);
                     // Reserve the bezel inside the available height so the
                     // frame never overflows short viewports (e.g. the 844pt
                     // phone in widget-test viewports).
@@ -374,8 +441,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                     innerHeight = outerHeight - frame * 2;
                     final outerWidth =
                         stageWidth + frame * 2 > constraints.maxWidth
-                        ? constraints.maxWidth
-                        : stageWidth + frame * 2;
+                            ? constraints.maxWidth
+                            : stageWidth + frame * 2;
                     // The canvas IS the breakpoint: preview width resolves
                     // the tier, shown as a chip under the stage.
                     final tier = tierForWidth(stageWidth);
@@ -441,6 +508,15 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
                                 decoration: BoxDecoration(
                                   color: colors.surfaceContainerHigh,
                                   borderRadius: BorderRadius.circular(12),
+                                  // Hairline border: the chip sits over the
+                                  // stage edge on frameless presets, where
+                                  // the fill alone is low-contrast in light
+                                  // mode.
+                                  border: Border.all(
+                                    color: colors.onSurfaceVariant.withValues(
+                                      alpha: 0.35,
+                                    ),
+                                  ),
                                 ),
                                 child: Text(
                                   '${tier.name} · ${stageWidth.round()}',
@@ -502,11 +578,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     EditorColors colors,
     double stageWidth,
   ) {
+    // Track FF3: a doc with zero screens renders a designed empty state
+    // (kit widget, theme-aware in both brightnesses) instead of a bare line
+    // of text on a blank stage. Chrome (back bar, picker) stays mounted.
     if (current == null) {
-      return Center(
-        child: Text(
-          'No screens to preview',
-          style: EditorType.field.copyWith(color: colors.onSurfaceVariant),
+      return const Center(
+        child: _PreviewEmptyState(
+          title: 'No screens yet',
+          description: 'Add a screen in the editor to preview it here.',
         ),
       );
     }
@@ -537,6 +616,31 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
 
     bool hidden(CanvasNode node) => effectivelyHidden(node);
 
+    // Track FF3: a screen with zero visible nodes renders a designed empty
+    // state instead of a blank stage. A screen with no nodes at all says so;
+    // a screen whose nodes are all filtered on this tier names the tier so
+    // the author knows where the content went (responsive visibility, never
+    // deleted).
+    if (roots.isEmpty) {
+      final hasNodes = widget.doc.nodes.any((n) => n.screenId == current.id);
+      if (!hasNodes) {
+        return const Center(
+          child: _PreviewEmptyState(
+            title: 'This screen is empty',
+            description:
+                'Add components on the canvas — they will appear here.',
+          ),
+        );
+      }
+      return Center(
+        child: _PreviewEmptyState(
+          title: 'Nothing to show on $tierName',
+          description:
+              'Every node on this screen is hidden on the $tierName tier.',
+        ),
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -560,9 +664,9 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// included). The `parentId` edges are untouched; unknown ids skip nothing;
   /// corrupt slot cycles with no live host render nothing (canvas parity).
   Set<String> get _slotAssignedIds => {
-    for (final n in widget.doc.nodes)
-      for (final id in n.slotNodes.values) id,
-  };
+        for (final n in widget.doc.nodes)
+          for (final id in n.slotNodes.values) id,
+      };
 
   /// Builds [node]'s named-slot widgets (Track AA generic injection, canvas
   /// parity): for each [CanvasNode.slotNodes] entry whose child id resolves
@@ -650,6 +754,13 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// SizedBox would be forced full width); auto fills via stretch columns.
   /// Track AA: top-left (canvas parity — pinned boxes ride the top naturally
   /// inside tight-height slots instead of vertically centering).
+  ///
+  /// Track FF3 error boundary: the whole node build is guarded — a throwing
+  /// catalog builder (bad props, misbehaving widget) renders an inline
+  /// [_PreviewErrorCard] for THIS node only, and siblings/ancestors still
+  /// render. Unknown kinds are NOT errors (they keep the catalog's honest
+  /// `unknown:` fallback); only synchronous throws are caught. Throws during
+  /// layout (e.g. unbounded constraints) still surface via FlutterError.
   Widget _buildPreviewNode(
     CanvasNode node,
     String tierName,
@@ -657,18 +768,43 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     bool Function(CanvasNode) hidden,
     Set<String> ancestors,
   ) {
-    final inner = _buildPreviewNodeInner(
-      node,
-      tierName,
-      stageWidth,
-      hidden,
-      ancestors,
-    );
-    if (node.w == null) return applyNodeSize(node, inner);
-    return Align(
-      alignment: Alignment.topLeft,
-      child: applyNodeSize(node, inner),
-    );
+    try {
+      final inner = _buildPreviewNodeInner(
+        node,
+        tierName,
+        stageWidth,
+        hidden,
+        ancestors,
+      );
+      if (node.w == null) return applyNodeSize(node, inner);
+      return Align(
+        alignment: Alignment.topLeft,
+        child: applyNodeSize(node, inner),
+      );
+    } catch (e) {
+      final firstKind =
+          node.items.isEmpty ? 'empty-node' : node.items.first.kind;
+      return _PreviewErrorCard(label: '${node.id} ($firstKind)', message: '$e');
+    }
+  }
+
+  /// Single catalog call site for the preview tree (leaf items and container
+  /// chrome alike): routes through [PreviewPlayer.debugItemBuilder] when a
+  /// test sets it, else [buildCatalogItem]. Synchronous throws become an
+  /// inline [_PreviewErrorCard] (see [_buildPreviewNode]) — never a blanked
+  /// stage.
+  Widget _catalogBuild(
+    String kind,
+    Map<String, dynamic> props, [
+    List<Widget> children = const [],
+  ]) {
+    try {
+      final debug = PreviewPlayer.debugItemBuilder;
+      if (debug != null) return debug(kind, props, children, _session);
+      return buildCatalogItem(kind, props, children, _session);
+    } catch (e) {
+      return _PreviewErrorCard(label: kind, message: '$e');
+    }
   }
 
   Widget _buildPreviewNodeInner(
@@ -712,11 +848,12 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
     if (_isPreviewContainer(node, items)) {
       final first = items.first;
       // Track R1: container chrome resolves bindings through the session.
-      final built = buildCatalogItem(
+      // Track FF3: routed through [_catalogBuild] so a throwing container
+      // builder degrades to an inline error card, never a blanked stage.
+      final built = _catalogBuild(
         first.kind,
         {...first.props, ...slots},
         builtKids,
-        _session,
       );
       final container = first.action == null
           ? built
@@ -809,7 +946,10 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
         if (items.any((item) => item.id == key)) key,
     };
     if (named.isEmpty) return items;
-    return [for (final item in items) if (named.contains(item.id)) item];
+    return [
+      for (final item in items)
+        if (named.contains(item.id)) item
+    ];
   }
 
   /// Action-less items render bare so every gesture reaches the real widget.
@@ -817,6 +957,8 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// Track AA: the host node's slotWidgets spread over the item props (same
   /// generic injection as the canvas renderer; Widget values pass bindings
   /// through untouched).
+  /// Track FF3: routed through [_catalogBuild] (guarded — see
+  /// [_buildPreviewNode]).
   Widget _previewItem(
     CanvasItem item,
     CanvasNode host,
@@ -827,18 +969,52 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   ) {
     final built = alignIntrinsicKind(
       item.kind,
-      buildCatalogItem(
-        item.kind,
-        {
-          ...item.props,
-          ..._previewSlotWidgets(host, tierName, stageWidth, hidden, ancestors),
-        },
-        const [],
-        _session,
-      ),
+      _catalogBuild(item.kind, {
+        ...item.props,
+        ..._previewSlotWidgets(host, tierName, stageWidth, hidden, ancestors),
+      }),
     );
     if (item.action == null) return built;
     return _TapCatcher(onTap: () => _onItemTap(item), child: built);
+  }
+}
+
+/// Inline per-node error card (Track FF3): a throwing catalog builder renders
+/// THIS for its node while the rest of the stage still renders. Kit
+/// [shadcn.Alert] (destructive) so it is token-styled in both brightnesses;
+/// the title names the failing kind/node, the content carries the message.
+class _PreviewErrorCard extends StatelessWidget {
+  final String label;
+  final String message;
+
+  const _PreviewErrorCard({required this.label, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.Alert.destructive(
+      title: Text('Preview error: $label'),
+      content: Text(message),
+    );
+  }
+}
+
+/// Designed stage empty state (Track FF3): kit [shadcn.EmptyState] in compact
+/// size so it fits short stages, theme-aware in both brightnesses. Used for
+/// zero-screen docs, zero-node screens, and fully-hidden tiers (see
+/// [_PreviewPlayerState._stageContent]).
+class _PreviewEmptyState extends StatelessWidget {
+  final String title;
+  final String description;
+
+  const _PreviewEmptyState({required this.title, required this.description});
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.EmptyState(
+      size: shadcn.EmptyStateSize.compact,
+      title: Text(title),
+      description: Text(description),
+    );
   }
 }
 

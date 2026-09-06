@@ -141,8 +141,13 @@ String buildSingleFile(
     // Track R1: material (a widgets superset) replaces the widgets import
     // only when an action step needs material-only APIs — legacy docs keep
     // the exact old header.
+    // Track FF4: `icon` bodies need material-only `Icons.*` constants (the
+    // `Icon` widget itself is widgets-level); conditional like
+    // `keyboard_shortcut` below, so docs without it keep byte-identical
+    // headers.
+    final needsMaterial = needsMaterialSteps || kinds.contains('icon');
     out.writeln(
-      needsMaterialSteps
+      needsMaterial
           ? "import 'package:flutter/material.dart';"
           : "import 'package:flutter/widgets.dart';",
     );
@@ -260,6 +265,11 @@ String buildSingleFile(
     out
       ..writeln()
       ..writeln(_kStepperHelper);
+  }
+  if (kinds.contains('fade_scroll')) {
+    out
+      ..writeln()
+      ..writeln(_kFadeScrollHelper);
   }
 
   final emitted = <String>{};
@@ -4578,6 +4588,236 @@ List<String> _slotUnits(
   return units;
 }
 
+/// Track FF4 (per-slot emission for the multi-slot hosts in `kNodeSlots`):
+/// raw unindented statement text for [node]'s [slotName] child (tap comments,
+/// tap wraps, and responsive wrappers preserved via [_writeFlowChild]), or
+/// null when the slot is unassigned, dangling, or emits nothing (missing
+/// child → omit, never a crash). No `// slot:` trace here — callers add it
+/// at the splice site so both list slots (`headers`/`footers`) and
+/// single-widget params (`leading`, `image`, …) trace identically.
+String? _singleSlotStmt(
+  ScreenDoc doc,
+  CanvasNode node,
+  String slotName,
+  Set<String> visited,
+) {
+  if (node.slotNodes.isEmpty) return null;
+  final id = node.slotNodes[slotName];
+  if (id == null) return null;
+  CanvasNode? child;
+  for (final n in doc.nodes) {
+    if (n.id == id) {
+      child = n;
+      break;
+    }
+  }
+  if (child == null) return null;
+  final buf = StringBuffer();
+  _writeFlowChild(buf, doc, child, '', visited);
+  final text = buf.toString().trimRight();
+  if (text.isEmpty) return null;
+  return text;
+}
+
+/// Splits a raw slot statement (see [_singleSlotStmt]) into leading `//`
+/// comment lines and the widget lines that follow. Tap comments
+/// (`// taps -> …`, `// steps …`, `// responsive …`) ride above the param;
+/// the widget lines carry the trailing comma in statement form.
+({List<String> comments, List<String> widgets}) _splitSlotStmt(String stmt) {
+  final comments = <String>[];
+  final widgets = <String>[];
+  var inComments = true;
+  for (final line in stmt.split('\n')) {
+    if (line.isEmpty) continue;
+    if (inComments && line.trimLeft().startsWith('//')) {
+      comments.add(line);
+    } else {
+      inComments = false;
+      widgets.add(line);
+    }
+  }
+  return (comments: comments, widgets: widgets);
+}
+
+/// Indents [lines] by [indent] (prefix per line, empty lines dropped).
+String _indentSlotLines(List<String> lines, String indent) {
+  final buf = StringBuffer();
+  for (final line in lines) {
+    if (line.isEmpty) continue;
+    buf.writeln('$indent$line');
+  }
+  return buf.toString();
+}
+
+/// Single-widget param block for a named slot (see [_singleSlotStmt]):
+/// `// slot: <name>` trace plus any tap comments above, then
+/// `<paramName>: <expr>,` where `<expr>` is the slot child's widget lines
+/// re-indented under [paramIndent] with the statement trailing comma
+/// stripped and re-added by the param. Returns null when the slot is absent
+/// (caller keeps the prop default, so slotless output stays byte-identical).
+String? _singleSlotParam(
+  String? stmt,
+  String slotName,
+  String paramName,
+  String paramIndent,
+) {
+  if (stmt == null) return null;
+  final parts = _splitSlotStmt(stmt);
+  if (parts.widgets.isEmpty) return null;
+  var expr = parts.widgets.join('\n').trimRight();
+  if (expr.endsWith(',')) expr = expr.substring(0, expr.length - 1);
+  final exprLines = expr.split('\n');
+  final buf = StringBuffer()
+    ..writeln('$paramIndent// slot: $slotName');
+  for (final c in parts.comments) {
+    buf.writeln('$paramIndent$c');
+  }
+  buf.writeln('$paramIndent$paramName: ${exprLines.first}');
+  for (final line in exprLines.skip(1)) {
+    if (line.isEmpty) continue;
+    buf.writeln('$paramIndent  $line');
+  }
+  // Re-add the param trailing comma on the last emitted line.
+  final text = buf.toString().trimRight();
+  return '$text,\n';
+}
+
+/// List-slot block for `headers`/`footers` (see [_singleSlotStmt]): the slot
+/// child's statement lines (kept with their trailing comma) spliced as list
+/// elements under [itemIndent], traced by `// slot: <name>`. Returns null
+/// when absent (caller keeps the default list).
+String? _singleSlotListItem(
+  String? stmt,
+  String slotName,
+  String itemIndent,
+) {
+  if (stmt == null) return null;
+  final parts = _splitSlotStmt(stmt);
+  if (parts.widgets.isEmpty) return null;
+  final buf = StringBuffer()..writeln('$itemIndent// slot: $slotName');
+  for (final c in parts.comments) {
+    buf.writeln('$itemIndent$c');
+  }
+  buf.write(_indentSlotLines(parts.widgets, itemIndent));
+  return buf.toString();
+}
+
+/// `Basic` chrome with named slots (see `kNodeSlots`): `leading`/`trailing`
+/// slot widgets REPLACE the `showLeading`/`showTrailing` bool chrome when
+/// provided (mirroring `_buildBasic`); null keeps the historical bool chrome
+/// exactly. [leadingStmt]/[trailingStmt] are raw slot statements (see
+/// [_singleSlotStmt]); flow children never reach here (leaves stack below via
+/// the fallback path).
+String _basicExprWithSlots(
+  Map<String, dynamic> props,
+  String? leadingStmt,
+  String? trailingStmt,
+) {
+  final leading = _singleSlotParam(leadingStmt, 'leading', 'leading', '  ') ??
+      "  leading: ${_boolT(props, 'showLeading') ? "Text('•')" : 'null'},\n";
+  final trailing =
+      _singleSlotParam(trailingStmt, 'trailing', 'trailing', '  ') ??
+          "  trailing: ${_boolT(props, 'showTrailing') ? "Text('›')" : 'null'},\n";
+  return 'Basic(\n'
+      '$leading'
+      "  title: ${_slotText(props, 'title', 'Title')},\n"
+      "  subtitle: ${_slotText(props, 'subtitle', 'Subtitle')},\n"
+      "  content: ${_slotText(props, 'content', 'Content')},\n"
+      '$trailing'
+      '),';
+}
+
+/// `CardImage` chrome with the named `image` slot (see `kNodeSlots`): the
+/// slot widget REPLACES the default tonal art when provided (mirroring
+/// `_buildCardImage`); null keeps the historical art exactly.
+String _cardImageExprWithSlots(
+  Map<String, dynamic> props,
+  String? imageStmt,
+) {
+  final image = _singleSlotParam(imageStmt, 'image', 'image', '    ') ??
+      "    image: SizedBox(height: 120, child: Center(child: Text('Image'))),\n";
+  return 'SizedBox(\n'
+      '  height: 240,\n'
+      '  child: CardImage(\n'
+      '$image'
+      "    title: ${_slotText(props, 'title', 'Card title')},\n"
+      "    subtitle: ${_slotText(props, 'subtitle', 'Card subtitle')},\n"
+      '  ),\n'
+      '),';
+}
+
+/// `Scaffold` chrome with named slots (see `kNodeSlots`): `appBar` fills
+/// `headers` (REPLACES the default titled `AppBar` when provided),
+/// `body` fills the body region (SHADOWS the `body` string prop when a Widget
+/// is injected, exactly like `_buildScaffold`), and `footer` fills `footers`
+/// (null keeps the historical omission — no `footers` param at all, so
+/// slotless output stays byte-identical). [flowUnits] are the `parentId`
+/// flow children (C1 splice): they complement the body region below the body
+/// content, mirroring the catalog's `children` splice.
+String _scaffoldExprWithSlots(
+  Map<String, dynamic> props,
+  List<String> flowUnits,
+  String? appBarStmt,
+  String? bodyStmt,
+  String? footerStmt,
+) {
+  final title = _str(_prop(props, 'title', 'My App'));
+  final headers = appBarStmt == null
+      ? '    headers: [AppBar(title: Text($title))],\n'
+      : '    headers: [\n'
+          '${_singleSlotListItem(appBarStmt, 'appBar', '      ')}'
+          '    ],\n';
+  final footers = footerStmt == null
+      ? ''
+      : '    footers: [\n'
+          '${_singleSlotListItem(footerStmt, 'footer', '      ')}'
+          '    ],\n';
+  // Body region: slot widget shadows the string prop; flow children complement
+  // below it (catalog order: slot/body text first, then spliced children).
+  String? bodyExpr;
+  String bodyComments = '';
+  if (bodyStmt != null) {
+    final parts = _splitSlotStmt(bodyStmt);
+    if (parts.widgets.isNotEmpty) {
+      var expr = parts.widgets.join('\n').trimRight();
+      if (expr.endsWith(',')) expr = expr.substring(0, expr.length - 1);
+      bodyExpr = expr;
+      final traces = <String>[
+        '      // slot: body',
+        for (final c in parts.comments) '      $c',
+      ];
+      bodyComments = '${traces.join('\n')}\n';
+    }
+  }
+  final bodyText = 'Text(${_str(_prop(props, 'body', 'Welcome'))})';
+  final hasBodyContent = bodyExpr != null || flowUnits.isNotEmpty;
+  final padded = !hasBodyContent
+      ? '    child: Padding(\n'
+          '      padding: const EdgeInsets.all(16),\n'
+          '      child: $bodyText,\n'
+          '    ),\n'
+      : '    child: Padding(\n'
+          '      padding: const EdgeInsets.all(16),\n'
+          '      child: Column(\n'
+          '        mainAxisSize: MainAxisSize.min,\n'
+          '        crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '        children: [\n'
+          '$bodyComments'
+          '          ${bodyExpr ?? bodyText},\n'
+          '${_spliceSlotChildren(flowUnits, '          ')}'
+          '        ],\n'
+          '      ),\n'
+          '    ),\n';
+  return 'SizedBox(\n'
+      '  height: 320,\n'
+      '  child: Scaffold(\n'
+      '$headers'
+      '$padded'
+      '$footers'
+      '  ),\n'
+      '),';
+}
+
 /// Track C3 (COMPOSITION.md §2): kinds whose child slot codegen splices
 /// recursively generated children into. The `row` pseudo-kind is structural
 /// (`isRow == true`, handled by the Row emitters) and is NOT listed here.
@@ -5332,12 +5572,13 @@ void _writeItemBlock(
 /// slot, then spliced children), so export keeps canvas parity. Slotless
 /// nodes pass empty slot units, so historical output is byte-identical.
 ///
-/// NOTE (multi-slot hosts): kinds with several named slots (`scaffold`
-/// `appBar`/`body`/`footer`, `basic` `leading`/`trailing`) collapse every
-/// resolved slot into the one §2 splice in slot-name order — the render
-/// injects those into distinct kit params (replace semantics), which the
-/// generic emitters cannot address per kind. Single-`content` hosts (the
-/// common case) match the render exactly.
+/// Track FF4 (per-slot hosts): `scaffold` (`appBar`/`body`/`footer`),
+/// `basic` (`leading`/`trailing`), and `card_image` (`image`) splice each
+/// resolved slot into its distinct kit param with replace/shadow semantics
+/// (mirroring `_buildScaffold`/`_buildBasic`/`_buildCardImage`), not into the
+/// one §2 splice. Single-`content` hosts keep the collapse above (which
+/// matches the render exactly); see [_writeScaffoldNode] and
+/// [_writeBasicOrCardImageNode].
 void _writeNonRowCore(
   StringBuffer out,
   ScreenDoc doc,
@@ -5346,6 +5587,54 @@ void _writeNonRowCore(
   String indent,
   Set<String> visited,
 ) {
+  // FF4 per-slot fast paths (single-item hosts only; multi-item nodes keep
+  // the generic fallback so no own widget is lost).
+  if (node.items.length == 1 && !node.isRow) {
+    final kind = node.items.single.kind;
+    if (kind == 'scaffold') {
+      final flow = _childUnits(doc, kids, visited);
+      final appBar = _singleSlotStmt(doc, node, 'appBar', visited);
+      final body = _singleSlotStmt(doc, node, 'body', visited);
+      final footer = _singleSlotStmt(doc, node, 'footer', visited);
+      final unknown = _unknownSlotUnits(doc, node, const {
+        'appBar',
+        'body',
+        'footer',
+      }, visited);
+      _writeScaffoldNode(
+        out,
+        doc,
+        node.items.single,
+        [...unknown, ...flow],
+        appBar,
+        body,
+        footer,
+        indent,
+      );
+      return;
+    }
+    if (kind == 'basic' || kind == 'card_image') {
+      final known = kind == 'basic'
+          ? const {'leading', 'trailing'}
+          : const {'image'};
+      var hasKnown = false;
+      for (final s in _slotKids(doc, node)) {
+        if (known.contains(s.slot)) {
+          final stmt = _singleSlotStmt(doc, node, s.slot, visited);
+          if (stmt != null) {
+            hasKnown = true;
+            break;
+          }
+        }
+      }
+      if (hasKnown) {
+        _writeBasicOrCardImageNode(out, doc, node, kids, visited, indent);
+        return;
+      }
+      // No known slots: fall through to the generic collapse (unknown slots
+      // ride below, slotless stays byte-identical).
+    }
+  }
   final nested = [
     ..._slotUnits(doc, node, visited),
     ..._childUnits(doc, kids, visited),
@@ -5356,6 +5645,123 @@ void _writeNonRowCore(
     return;
   }
   _writeLeafFallback(out, doc, node, nested, indent);
+}
+
+/// Track FF4: unknown-slot units for a per-slot host — resolved slot children
+/// whose names are NOT in [known], each with its `// slot:` trace (see
+/// [_slotUnits]). Unknown names cannot be produced via the editor's
+/// `setSlotChild` (it throws), only via hand-written docs; they splice into
+/// the host's generic content region (scaffold body, or below the chrome for
+/// leaves) so no subtree is silently dropped.
+List<String> _unknownSlotUnits(
+  ScreenDoc doc,
+  CanvasNode node,
+  Set<String> known,
+  Set<String> visited,
+) {
+  final units = <String>[];
+  for (final s in _slotKids(doc, node)) {
+    if (known.contains(s.slot)) continue;
+    final buf = StringBuffer();
+    _writeFlowChild(buf, doc, s.child, '', visited);
+    final text = buf.toString().trimRight();
+    if (text.isEmpty) continue;
+    units.add('// slot: ${s.slot}\n$text');
+  }
+  return units;
+}
+
+/// Track FF4: writes a single-item `scaffold` host with per-slot emission
+/// (see [_scaffoldExprWithSlots]). Tap comments/wraps apply to the whole
+/// scaffold exactly like [_writeContainerNode].
+void _writeScaffoldNode(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasItem item,
+  List<String> flow,
+  String? appBar,
+  String? body,
+  String? footer,
+  String indent,
+) {
+  final taps = _tapTargets(doc);
+  final comment = _tapCommentLine(item);
+  if (comment != null) out.writeln('$indent$comment');
+  var expr = _scaffoldExprWithSlots(item.props, flow, appBar, body, footer);
+  expr = _tapWrapStatement(expr, item, taps) ?? expr;
+  for (final line in expr.split('\n')) {
+    out.writeln('$indent$line');
+  }
+}
+
+/// Track FF4: writes a single-item `basic`/`card_image` host whose known
+/// slots are present. The chrome carries the slot widgets inside (see
+/// [_basicExprWithSlots]/[_cardImageExprWithSlots]) with the host item's tap
+/// comment/wrap on the chrome; `parentId` flow children plus unknown-slot
+/// units stack BELOW the chrome in the leaf-fallback rhythm (so flow subtrees
+/// keep their own tiers/taps and nothing is dropped).
+void _writeBasicOrCardImageNode(
+  StringBuffer out,
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasNode> kids,
+  Set<String> visited,
+  String indent,
+) {
+  final item = node.items.single;
+  final taps = _tapTargets(doc);
+  final String chrome;
+  if (item.kind == 'basic') {
+    chrome = _basicExprWithSlots(
+      item.props,
+      _singleSlotStmt(doc, node, 'leading', visited),
+      _singleSlotStmt(doc, node, 'trailing', visited),
+    );
+  } else {
+    chrome = _cardImageExprWithSlots(
+      item.props,
+      _singleSlotStmt(doc, node, 'image', visited),
+    );
+  }
+  final comment = _tapCommentLine(item);
+  final wrapped = _tapWrapStatement(chrome, item, taps) ?? chrome;
+  final ownUnit = [
+    if (comment != null) comment,
+    ...wrapped.split('\n'),
+  ].join('\n');
+  final known =
+      item.kind == 'basic' ? const {'leading', 'trailing'} : const {'image'};
+  final nested = [
+    ..._unknownSlotUnits(doc, node, known, visited),
+    ..._childUnits(doc, kids, visited),
+  ];
+  if (nested.isEmpty) {
+    for (final line in ownUnit.split('\n')) {
+      out.writeln('$indent$line');
+    }
+    return;
+  }
+  final units = [ownUnit, ...nested];
+  final childIndent = '$indent    ';
+  final gap = '$childIndent'
+      'const SizedBox(height: ${_flowNum(kFlowScreenGap)}),';
+  out
+    ..writeln('${indent}Column(')
+    ..writeln('${indent}  mainAxisSize: MainAxisSize.min,')
+    ..writeln('${indent}  crossAxisAlignment: CrossAxisAlignment.start,')
+    ..writeln('${indent}  children: [');
+  var first = true;
+  for (final unit in units) {
+    if (!first) out.writeln(gap);
+    first = false;
+    for (final line in unit.split('\n')) {
+      if (line.isEmpty) continue;
+      out.writeln('$childIndent$line');
+    }
+  }
+  out
+    ..writeln('$indent  ],')
+    ..writeln('$indent),');
 }
 
 /// Writes a container node: its item expression with recursively emitted
@@ -5819,6 +6225,33 @@ const Map<String, List<String>> _kKindDeps = {
   'code_snippet': ['gap', 'data_widget'],
   'number_ticker': ['gap', 'intl'],
   'text_area': ['gap'],
+  'navigation_bar': ['gap', 'data_widget'],
+  // Track FF2 (mirror of the bundle `_kinds` pubspec table, gap-first like
+  // the rows above; kinds with no deps stay absent, same as having none).
+  'phone_input': ['gap', 'data_widget', 'country_flags', 'phonecodes'],
+  'chip_input': ['gap', 'data_widget'],
+  'autocomplete': ['gap', 'data_widget'],
+  'item_picker': ['gap', 'data_widget'],
+  'multiple_choice': ['gap', 'data_widget'],
+  'object_input': ['gap', 'data_widget'],
+  'text_field': ['gap', 'data_widget'],
+  'markdown': ['gap'],
+  'text_animate': ['gap'],
+  'icon': ['gap'],
+  'navigation_menu': ['gap', 'data_widget'],
+  'dropzone': ['gap'],
+  'overflow_marquee': ['gap'],
+  'focus_outline': ['gap'],
+  'scrollable': ['gap'],
+  'stage_container': ['gap'],
+  'media_query': ['gap'],
+  'hover': ['gap'],
+  'text': ['gap', 'data_widget'],
+  'filter_bar': ['gap'],
+  'fade_scroll': ['gap'],
+  'resizable': ['gap', 'data_widget'],
+  'subfocus': ['data_widget'],
+  'repeated_animation_builder': ['gap', 'data_widget'],
 };
 
 /// Merged deps for [kinds], deduped, first-seen order. When [doc] carries an
@@ -6033,6 +6466,54 @@ class _CanvasStepperCellState extends State<CanvasStepperCell> {
             contentBuilder: (_) => Text(widget.details[i]),
           ),
       ],
+    );
+  }
+}
+''';
+
+/// Track FF2 stateful helper emitted when the doc uses `fade_scroll`: the kit
+/// `FadeScroll` shares one `ScrollController` with its `ListView` (mirroring
+/// the catalog's `_FadeScrollCell`), so static emission cannot construct it.
+/// Rows ride a constructor param, so one shared class serves every node.
+const _kFadeScrollHelper = '''
+class CanvasFadeScrollCell extends StatefulWidget {
+  final List<String> rows;
+
+  const CanvasFadeScrollCell({
+    super.key,
+    required this.rows,
+  });
+
+  @override
+  State<CanvasFadeScrollCell> createState() => _CanvasFadeScrollCellState();
+}
+
+class _CanvasFadeScrollCellState extends State<CanvasFadeScrollCell> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 160,
+      child: FadeScroll(
+        controller: _controller,
+        child: ListView(
+          controller: _controller,
+          children: [
+            for (final row in widget.rows)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(row),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -6901,6 +7382,38 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
           '    ),\n'
           '  ),\n'
           '),';
+    case 'navigation_bar':
+      // Track Y1 (mirror of `_buildNavigationBar`): four destination labels
+      // plus the selected index (parsed leniently, clamped into range so
+      // hand-written docs never crash). Static snapshot of the catalog's
+      // stateful cell: the index renders statically with a no-op tap (the
+      // `_SliderCell`/`_TabsCell` honesty rule — taps update highlight at
+      // runtime on canvas, export stays static). Widgets-only: the catalog's
+      // `Icon(Icons.home/…)` chrome becomes `Text('•')` (the `Basic`
+      // single-file idiom), so docs with this kind keep the widgets-only
+      // header byte-identical to other new kinds.
+      final nbLabels = [
+        _prop(props, 'tab1', 'Home'),
+        _prop(props, 'tab2', 'Search'),
+        _prop(props, 'tab3', 'Saved'),
+        _prop(props, 'tab4', 'You'),
+      ];
+      final nbIndex = _int(props, 'index', 0).clamp(0, 3).toInt();
+      final nbItems = StringBuffer();
+      for (final label in nbLabels) {
+        nbItems.writeln(
+            "    NavigationItem(child: Text('•'), label: Text(${_str(label)})),");
+      }
+      return 'NavigationBar(\n'
+          '  index: $nbIndex,\n'
+          '  labelType: NavigationLabelType.all,\n'
+          '  alignment: NavigationBarAlignment.center,\n'
+          '  expands: true,\n'
+          '  onSelected: (_) {},\n'
+          '  children: [\n'
+          '$nbItems'
+          '  ],\n'
+          '),';
     case 'number_ticker':
       final ntValue = _num(props, 'value', 42);
       return 'NumberTicker(\n'
@@ -7281,6 +7794,295 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
       return 'MoreDots(count: $tdCount),';
     case 'validated':
       return _validatedExpr(props, nested);
+    // Track FF2 (mirror of the 28 newly-added catalog builders — same props,
+    // same defaults, same edge handling, statically snapshotted; stateful
+    // cells render their initial value with a no-op callback, exactly like
+    // the seed builders above).
+    case 'phone_input':
+      final piLabel = _prop(props, 'label', '');
+      final piHint = _prop(props, 'searchHint', 'Search countries...');
+      final piField = 'ConstrainedBox(\n'
+          '  constraints: const BoxConstraints(minHeight: 48),\n'
+          '  child: PhoneInput(\n'
+          '    onChanged: (_) {},\n'
+          '    searchPlaceholder: Text(${_str(piHint)}),\n'
+          '  ),\n'
+          '),';
+      if (piLabel.isEmpty) return piField;
+      return 'Column(\n'
+          '  mainAxisSize: MainAxisSize.min,\n'
+          '  crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '  children: [\n'
+          '    Text(${_str(piLabel)}),\n'
+          '    const SizedBox(height: 8),\n'
+          '    $piField\n'
+          '  ],\n'
+          '),';
+    case 'chip_input':
+      final ciChips = [
+        _prop(props, 'chip1', 'Design'),
+        _prop(props, 'chip2', ''),
+      ].where((c) => c.isNotEmpty).toList();
+      final ciLit = ciChips.isEmpty
+          ? 'const <String>[]'
+          : '[${ciChips.map(_str).join(', ')}]';
+      return 'ChipInput<String>(\n'
+          '  chipBuilder: (context, chip) => Text(chip),\n'
+          '  onChipSubmitted: (value) => value.isEmpty ? null : value,\n'
+          '  initialChips: $ciLit,\n'
+          '  placeholder: Text(${_str(_prop(props, 'placeholder', 'Add a tag'))}),\n'
+          '),';
+    case 'autocomplete':
+      final acSugg = [
+        _prop(props, 'suggestion1', 'Apple'),
+        _prop(props, 'suggestion2', 'Apricot'),
+      ].where((s) => s.isNotEmpty).toList();
+      final acLit = acSugg.isEmpty
+          ? 'const <String>[]'
+          : '[${acSugg.map(_str).join(', ')}]';
+      return 'AutoComplete(\n'
+          '  suggestions: $acLit,\n'
+          '  child: TextField(placeholder: Text(${_str(_prop(props, 'placeholder', 'Search...'))})),\n'
+          '),';
+    case 'item_picker':
+      final ipValue = _prop(props, 'value', '');
+      return 'ItemPicker<String>(\n'
+          '  items: ItemList([${_str(_prop(props, 'option1', 'Option 1'))}, ${_str(_prop(props, 'option2', 'Option 2'))}]),\n'
+          '  builder: (context, item) => Text(item),\n'
+          '  value: ${ipValue.isEmpty ? 'null' : _str(ipValue)},\n'
+          '  onChanged: (_) {},\n'
+          '  placeholder: Text(${_str(_prop(props, 'placeholder', 'Select item'))}),\n'
+          '),';
+    case 'multiple_choice':
+      final mcOpts = [
+        _prop(props, 'option1', 'Option A'),
+        _prop(props, 'option2', 'Option B'),
+        _prop(props, 'option3', 'Option C'),
+      ];
+      final mcChips = mcOpts.map((o) => 'Text(${_str(o)})').join(', ');
+      if (props['mode'] == 'multiple') {
+        final set = [
+          _prop(props, 'value', 'Option A'),
+          _prop(props, 'value2', 'Option B'),
+        ]
+            .where((v) => v.isNotEmpty && mcOpts.contains(v))
+            .map(_str)
+            .toList();
+        final setLit = set.isEmpty ? 'const <String>{}' : '{${set.join(', ')}}';
+        return 'MultipleAnswer<String>(\n'
+            '  value: $setLit,\n'
+            '  onChanged: (_) {},\n'
+            '  child: Wrap(\n'
+            '    spacing: 8,\n'
+            '    runSpacing: 8,\n'
+            '    children: [$mcChips],\n'
+            '  ),\n'
+            '),';
+      }
+      final mcValue = _prop(props, 'value', 'Option A');
+      return 'MultipleChoice<String>(\n'
+          '  value: ${mcValue.isEmpty ? 'null' : _str(mcValue)},\n'
+          '  onChanged: (_) {},\n'
+          '  child: Wrap(\n'
+          '    spacing: 8,\n'
+          '    runSpacing: 8,\n'
+          '    children: [$mcChips],\n'
+          '  ),\n'
+          '),';
+    case 'object_input':
+      final oiCtor = switch (props['mode']) {
+        'time' => 'TimeInput',
+        'duration' => 'DurationInput',
+        _ => 'DateInput',
+      };
+      final oiField = '$oiCtor(\n'
+          '  onChanged: (_) {},\n'
+          '  placeholder: Text(${_str(_prop(props, 'placeholder', 'Select value'))}),\n'
+          '),';
+      final oiLabel = _prop(props, 'label', '');
+      if (oiLabel.isEmpty) return oiField;
+      return 'Column(\n'
+          '  mainAxisSize: MainAxisSize.min,\n'
+          '  crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '  children: [\n'
+          '    Text(${_str(oiLabel)}),\n'
+          '    const SizedBox(height: 6),\n'
+          '    $oiField\n'
+          '  ],\n'
+          '),';
+    case 'text_field':
+      final tfLabel = _prop(props, 'label', '');
+      final tfField = 'ConstrainedBox(\n'
+          '  constraints: const BoxConstraints(minHeight: 48),\n'
+          '  child: TextField(\n'
+          '    placeholder: Text(${_str(_prop(props, 'placeholder', 'Type here'))}),\n'
+          '    enabled: ${!_bool(props, 'disabled')},\n'
+          '    initialValue: ${_prop(props, 'initialValue', '').isEmpty ? 'null' : _str(_prop(props, 'initialValue', ''))},\n'
+          '  ),\n'
+          '),';
+      if (tfLabel.isEmpty) return tfField;
+      return 'Column(\n'
+          '  mainAxisSize: MainAxisSize.min,\n'
+          '  crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '  children: [\n'
+          '    Text(${_str(tfLabel)}),\n'
+          '    const SizedBox(height: 8),\n'
+          '    $tfField\n'
+          '  ],\n'
+          '),';
+    case 'markdown':
+      return 'Markdown(data: ${_str(_prop(props, 'data', '# Title\n\nSome **rich** text.'))}),';
+    case 'text_animate':
+      return 'StreamingText(text: ${_str(_prop(props, 'text', 'Watch the words appear.'))}),';
+    case 'icon':
+      final icSize = _num(props, 'size', 24.0).clamp(12.0, 64.0).toDouble();
+      final icGlyph = switch (_prop(props, 'name', 'star')) {
+        'heart' => 'Icons.favorite',
+        'home' => 'Icons.home',
+        'search' => 'Icons.search',
+        'settings' => 'Icons.settings',
+        'check' => 'Icons.check',
+        'info' => 'Icons.info',
+        'image' => 'Icons.image',
+        _ => 'Icons.star',
+      };
+      return 'WrappedIcon(\n'
+          '  data: (context, theme) => IconThemeData(size: ${_flowNum(icSize)}),\n'
+          '  child: Icon($icGlyph),\n'
+          '),';
+    case 'navigation_menu':
+      return 'SingleChildScrollView(\n'
+          '  scrollDirection: Axis.horizontal,\n'
+          '  child: NavigationMenu(\n'
+          '    children: [\n'
+          '      NavigationMenuItem(\n'
+          '        content: NavigationMenuContentList(\n'
+          '          children: [\n'
+          '            NavigationMenuContent(\n'
+          '              title: Text(${_str(_prop(props, 'item1', 'Web Apps'))}),\n'
+          '              content: Text(${_str(_prop(props, 'detail1', 'Landing pages and dashboards.'))}),\n'
+          '            ),\n'
+          '          ],\n'
+          '        ),\n'
+          '        child: Text(${_str(_prop(props, 'menu1', 'Products'))}),\n'
+          '      ),\n'
+          '      NavigationMenuItem(\n'
+          '        content: NavigationMenuContentList(\n'
+          '          children: [\n'
+          '            NavigationMenuContent(\n'
+          '              title: Text(${_str(_prop(props, 'item2', 'About'))}),\n'
+          '              content: Text(${_str(_prop(props, 'detail2', 'Team, culture, and careers.'))}),\n'
+          '            ),\n'
+          '          ],\n'
+          '        ),\n'
+          '        child: Text(${_str(_prop(props, 'menu2', 'Company'))}),\n'
+          '      ),\n'
+          '    ],\n'
+          '  ),\n'
+          '),';
+    case 'dropzone':
+      return 'FileDropzone(\n'
+          '  hint: Text(${_str(_prop(props, 'hint', 'Drag files here'))}),\n'
+          '  actionLabel: ${_str(_prop(props, 'action', 'Browse files'))},\n'
+          '  onPressed: () {},\n'
+          '),';
+    case 'border_loading':
+      return 'BorderLoading(\n'
+          '  child: Padding(\n'
+          '    padding: const EdgeInsets.all(12),\n'
+          '    child: Text(${_str(_prop(props, 'label', 'Loading'))}),\n'
+          '  ),\n'
+          '),';
+    case 'overflow_marquee':
+      return 'OverflowMarquee(child: Text(${_str(_prop(props, 'text', 'This text scrolls when it overflows its parent.'))})),';
+    case 'focus_outline':
+      return 'FocusOutline(\n'
+          '  focused: ${_boolT(props, 'focused')},\n'
+          '  child: OutlineButton(onPressed: () {}, child: Text(${_str(_prop(props, 'label', 'Focus me'))})),\n'
+          '),';
+    case 'switcher':
+      final swDir = switch (props['direction']) {
+        'right' => 'AxisDirection.right',
+        'up' => 'AxisDirection.up',
+        'down' => 'AxisDirection.down',
+        _ => 'AxisDirection.left',
+      };
+      return 'SizedBox(\n'
+          '  height: 96,\n'
+          '  child: Switcher(\n'
+          '    direction: $swDir,\n'
+          '    children: [\n'
+          '      Center(child: Text(${_str(_prop(props, 'page1', 'Page 1'))})),\n'
+          '      Center(child: Text(${_str(_prop(props, 'page2', 'Page 2'))})),\n'
+          '    ],\n'
+          '  ),\n'
+          '),';
+    case 'scrollable':
+      return 'SizedBox(\n'
+          '  height: 120,\n'
+          '  child: FadedScrollableViewport(\n'
+          '    child: SingleChildScrollView(\n'
+          '      child: Column(\n'
+          '        mainAxisSize: MainAxisSize.min,\n'
+          '        crossAxisAlignment: CrossAxisAlignment.start,\n'
+          '        children: [\n'
+          '          Text(${_str(_prop(props, 'text1', 'First line of scrollable content.'))}),\n'
+          '          Text(${_str(_prop(props, 'text2', 'Second line of scrollable content.'))}),\n'
+          '          Text(${_str(_prop(props, 'text3', 'Third line of scrollable content.'))}),\n'
+          '        ],\n'
+          '      ),\n'
+          '    ),\n'
+          '  ),\n'
+          '),';
+    case 'stage_container':
+      return 'StageContainer(\n'
+          '  builder: (context, padding) => Padding(padding: padding, child: Text(${_str(_prop(props, 'label', 'Stage content'))})),\n'
+          '),';
+    case 'media_query':
+      final mqMin = _num(props, 'minWidth', 0.0).clamp(0.0, 2000.0).toDouble();
+      return 'MediaQueryVisibility(\n'
+          '  minWidth: ${_flowNum(mqMin)},\n'
+          '  child: Text(${_str(_prop(props, 'label', 'Wide content'))}),\n'
+          '  alternateChild: Text(${_str(_prop(props, 'alternate', 'Narrow content'))}),\n'
+          '),';
+    case 'scrollview':
+      return 'ScrollViewInterceptor(child: Text(${_str(_prop(props, 'label', 'Middle-drag to scroll'))})),';
+    case 'hover':
+      return 'HoverActivity(onHover: () {}, child: Text(${_str(_prop(props, 'label', 'Hover me'))})),';
+    case 'patch':
+      return 'ClickDetector(onClick: (_) {}, child: Text(${_str(_prop(props, 'label', 'Tap me'))})),';
+    case 'text':
+      return 'WrappedText(child: Text(${_str(_prop(props, 'text', 'Styled text'))})),';
+    case 'filter_bar':
+      return 'FilterBar(\n'
+          '  state: const FilterState(),\n'
+          '  onStateChanged: (_) {},\n'
+          '  presentation: FilterBarPresentation.inline,\n'
+          '  searchPlaceholder: ${_str(_prop(props, 'searchPlaceholder', 'Search'))},\n'
+          '),';
+    case 'fade_scroll':
+      final fsRows = [
+        _prop(props, 'row1', 'Row 1'),
+        _prop(props, 'row2', 'Row 2'),
+        _prop(props, 'row3', 'Row 3'),
+      ];
+      return 'CanvasFadeScrollCell(\n'
+          '  rows: [${fsRows.map(_str).join(', ')}],\n'
+          '),';
+    case 'resizable':
+      return 'SizedBox(\n'
+          '  height: 120,\n'
+          '  child: ResizablePanel.horizontal(\n'
+          '    children: [\n'
+          '      ResizablePane.flex(child: Center(child: Text(${_str(_prop(props, 'pane1', 'Left pane'))}))),\n'
+          '      ResizablePane.flex(child: Center(child: Text(${_str(_prop(props, 'pane2', 'Right pane'))}))),\n'
+          '    ],\n'
+          '  ),\n'
+          '),';
+    case 'subfocus':
+      return 'SubFocus(builder: (context, state) => Text(${_str(_prop(props, 'label', 'Focused scope'))})),';
+    case 'repeated_animation_builder':
+      return 'PulsingAnimation(child: Text(${_str(_prop(props, 'label', 'Pulsing'))})),';
     default:
       return "Text('unknown: ${item.kind}'),";
   }

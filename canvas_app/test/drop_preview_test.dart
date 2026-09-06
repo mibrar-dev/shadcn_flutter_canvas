@@ -146,19 +146,100 @@ void main() {
       await _pumpEditor(tester, _cardDoc());
 
       final drag = await _startTileDrag(tester);
-      // Midpoint between the two child centers: safely inside the card
-      // chrome, below Kid A's center and above Kid B's — insertion index 1.
+      // FF1 (drop-into-slot): the card's `content` slot is EMPTY, so the
+      // hover previews the slot assignment instead of the flow index — the
+      // ghost heads the slot (above Kid A) and the index line hides (the
+      // landing ignores the index). See `drop_slots_test.dart` (slot ghost
+      // preview group) for the dedicated pins; the occupied-slot flow
+      // preview below still covers the classic between-children ghost.
       final a = tester.getCenter(find.text('Kid A'));
       final b = tester.getCenter(find.text('Kid B'));
       await drag.gesture.moveTo(Offset(a.dx, (a.dy + b.dy) / 2));
       await tester.pump();
 
-      // The ghost carries the dragged kind's label; the insert line stays.
+      // The ghost carries the dragged kind's label, inside the slot region.
+      expect(find.byKey(kDropPreviewKey), findsOneWidget);
+      expect(find.text('Drop badge here'), findsOneWidget);
+      expect(find.byKey(kFlowInsertLineKey), findsNothing);
+
+      // The ghost occupies the slot head: above Kid A (and Kid B).
+      final ghostBottom =
+          tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
+      expect(ghostBottom,
+          lessThanOrEqualTo(tester.getTopLeft(find.text('Kid A')).dy));
+
+      // Leave clears the ghost (no line was shown).
+      await drag.gesture.cancel();
+      await tester.pumpAndSettle();
+      expect(find.byKey(kDropPreviewKey), findsNothing);
+      expect(find.byKey(kFlowInsertLineKey), findsNothing);
+    });
+
+    testWidgets('occupied slot keeps the ghost between children', (
+      tester,
+    ) async {
+      _useReferenceViewport(tester);
+      // FF1: with the `content` slot TAKEN, the hover falls back to the
+      // classic flow preview — the ghost splices between the visible
+      // children at the hover index and the insert line shows. This keeps
+      // the D3 between-children contract pinned after the empty-slot case
+      // above moved to the slot head.
+      await _pumpEditor(
+        tester,
+        _doc([
+          {
+            'id': 'card1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'icard', 'kind': 'card', 'title': 'Host Card'},
+            ],
+            'slotNodes': {'content': 'slotKid'},
+          },
+          {
+            'id': 'slotKid',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'parentId': 'card1',
+            'items': [
+              {'id': 'islot', 'kind': 'button', 'label': 'Slot Kid'},
+            ],
+          },
+          {
+            'id': 'kidA',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'parentId': 'card1',
+            'items': [
+              {'id': 'ikidA', 'kind': 'button', 'label': 'Kid A'},
+            ],
+          },
+          {
+            'id': 'kidB',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 48.0,
+            'parentId': 'card1',
+            'items': [
+              {'id': 'ikidB', 'kind': 'button', 'label': 'Kid B'},
+            ],
+          },
+        ]),
+      );
+
+      final drag = await _startTileDrag(tester);
+      final a = tester.getCenter(find.text('Kid A'));
+      final b = tester.getCenter(find.text('Kid B'));
+      await drag.gesture.moveTo(Offset(a.dx, (a.dy + b.dy) / 2));
+      await tester.pump();
+
       expect(find.byKey(kDropPreviewKey), findsOneWidget);
       expect(find.text('Drop badge here'), findsOneWidget);
       expect(find.byKey(kFlowInsertLineKey), findsOneWidget);
 
-      // The ghost occupies the landing slot: after Kid A, before Kid B.
       final ghostTop = tester.getTopLeft(find.byKey(kDropPreviewKey)).dy;
       final ghostBottom =
           tester.getBottomLeft(find.byKey(kDropPreviewKey)).dy;
@@ -167,7 +248,6 @@ void main() {
       expect(ghostBottom,
           lessThanOrEqualTo(tester.getTopLeft(find.text('Kid B')).dy));
 
-      // Leave clears both the ghost and the insert line.
       await drag.gesture.cancel();
       await tester.pumpAndSettle();
       expect(find.byKey(kDropPreviewKey), findsNothing);
@@ -239,18 +319,30 @@ void main() {
       await drag.gesture.up();
       await tester.pumpAndSettle();
 
-      // The drop committed into the container between the two kids.
+      // The drop committed into the container. FF1 (drop-into-slot): the
+      // card's `content` slot was empty, so the landing assigns it IN
+      // ADDITION to parenting (one commit — slot wins at render, the doc
+      // order below still follows the pointer). The slot-head ghost shown
+      // during hover displaces the flow kids downward, so the held pointer
+      // resolves above Kid A (index 0); the render is identical either way
+      // because the slot heads the content.
       expect(find.byKey(kDropPreviewKey), findsNothing);
       expect(canvas.store.doc.nodes, hasLength(4));
       final landed = canvas.store.doc.nodes.singleWhere(
         (n) => n.items.any((i) => i.kind == 'badge'),
       );
       expect(landed.parentId, 'card1');
+      expect(
+        canvas.store.doc.nodes
+            .singleWhere((n) => n.id == 'card1')
+            .slotNodes['content'],
+        landed.id,
+      );
       final order = [
         for (final n in canvas.store.doc.nodes)
           if (n.parentId == 'card1') n.id,
       ];
-      expect(order, ['kidA', landed.id, 'kidB']);
+      expect(order.toSet(), {'kidA', 'kidB', landed.id});
     });
   });
 }

@@ -441,7 +441,7 @@ void main() {
     expect(out, contains('StepperController(currentStep:'));
   });
 
-  test('full-seed smoke: all 78 kinds, zero unknown markers', () {
+  test('full-seed smoke: all 107 kinds, zero unknown markers', () {
     final doc = ScreenDoc.fromJson({
       'screens': [
         {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
@@ -2591,6 +2591,490 @@ typedef AliasFn = Widget Function(BuildContext context);
       expect(buildSingleFile(buildTwoScreenDoc(), kTestSources), kSingleFileGolden);
     });
   });
+
+  group('Track FF4 codegen (navigation_bar + named slots)', () {
+    ScreenDoc ff4Doc(List<Map<String, dynamic>> nodes) =>
+        ScreenDoc.fromJson({
+          'screens': [
+            {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+            {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+          ],
+          'nodes': nodes,
+          'theme': {
+            'paletteKey': 'slate',
+            'dark': false,
+            'shape': 'rounded',
+            'motion': 'standard',
+          },
+          'meta': {'title': 'FF4', 'brief': ''},
+        });
+
+    test('navigation_bar emits its static cell with clamped index', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'navigation_bar',
+                'tab1': 'Home',
+                'tab2': 'Search',
+                'tab3': 'Saved',
+                'tab4': 'You',
+                'index': 2,
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('NavigationBar('));
+      expect(out, contains('NavigationItem('));
+      expect(out, contains('NavigationLabelType.all'));
+      expect(out, contains('NavigationBarAlignment.center'));
+      expect(out, contains('expands: true'));
+      expect(out, contains('index: 2'));
+      expect(out, contains("'Saved'"));
+      expect(out, isNot(contains('unknown: navigation_bar')));
+    });
+
+    test('navigation_bar clamps out-of-range index and falls back', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'navigation_bar', 'index': 99},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('index: 3'));
+      final fallback = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'navigation_bar'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(fallback, contains("'Home'"));
+      expect(fallback, contains('index: 0'));
+    });
+
+    test('scaffold appBar slot replaces the default header', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'scaffold', 'title': 'My App'},
+            ],
+            'slotNodes': {'appBar': 'kid'},
+          },
+          {
+            'id': 'kid',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 100.0,
+            'items': [
+              {'id': 'ib', 'kind': 'button', 'label': 'Bar'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('// slot: appBar'));
+      expect(out, contains("'Bar'"));
+      // The default titled AppBar is replaced, not duplicated.
+      expect(out, isNot(contains("AppBar(title: Text('My App'))")));
+      expect(out, contains('headers: ['));
+      expect(out, contains('Scaffold('));
+    });
+
+    test('scaffold body slot shadows the string prop, footer fills footers',
+        () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'scaffold', 'body': 'Welcome'},
+            ],
+            'slotNodes': {'body': 'kb', 'footer': 'kf'},
+          },
+          {
+            'id': 'kb',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 100.0,
+            'items': [
+              {'id': 'ib', 'kind': 'button', 'label': 'BodyW'},
+            ],
+          },
+          {
+            'id': 'kf',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 200.0,
+            'items': [
+              {'id': 'if', 'kind': 'button', 'label': 'FootW'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('// slot: body'));
+      expect(out, contains('// slot: footer'));
+      expect(out, contains("'BodyW'"));
+      expect(out, contains("'FootW'"));
+      expect(out, contains('footers: ['));
+      // Body slot shadows the string prop: the default text plus the slot
+      // widget must not both render as body text siblings.
+      expect(out.indexOf("'BodyW'"), lessThan(out.indexOf("'FootW'")));
+    });
+
+    test('scaffold missing slot child is omitted with defaults', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'scaffold', 'title': 'T'},
+            ],
+            'slotNodes': {'appBar': 'ghost', 'footer': 'ghost2'},
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, isNot(contains('// slot:')));
+      expect(out, contains("AppBar(title: Text('T'))"));
+      expect(out, isNot(contains('footers:')));
+    });
+
+    test('basic leading/trailing slots replace the bool chrome', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'basic', 'title': 'T'},
+            ],
+            'slotNodes': {'leading': 'kl', 'trailing': 'kt'},
+          },
+          {
+            'id': 'kl',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 100.0,
+            'items': [
+              {'id': 'il', 'kind': 'button', 'label': 'Lead'},
+            ],
+          },
+          {
+            'id': 'kt',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 200.0,
+            'items': [
+              {'id': 'it', 'kind': 'button', 'label': 'Trail'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('// slot: leading'));
+      expect(out, contains('// slot: trailing'));
+      expect(out, contains("'Lead'"));
+      expect(out, contains("'Trail'"));
+      expect(out, contains('Basic('));
+    });
+
+    test('card_image image slot replaces the default art', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'card_image', 'title': 'CT'},
+            ],
+            'slotNodes': {'image': 'ki'},
+          },
+          {
+            'id': 'ki',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 100.0,
+            'items': [
+              {'id': 'ii', 'kind': 'button', 'label': 'Art'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('// slot: image'));
+      expect(out, contains("'Art'"));
+      expect(out, contains('CardImage('));
+    });
+
+    test('slotless scaffold/basic/card_image stay byte-identical', () {
+      for (final kind in ['scaffold', 'basic', 'card_image']) {
+        final a = buildSingleFile(_singleItemDoc(kind), kTestSources);
+        final b = buildSingleFile(
+          ScreenDoc.fromJson({
+            'screens': [
+              {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+            ],
+            'nodes': [
+              {
+                'id': 'n1',
+                'screenId': 's1',
+                'x': 0.0,
+                'y': 0.0,
+                'items': [
+                  {'id': 'i1', 'kind': kind},
+                ],
+                'slotNodes': {},
+                'locked': false,
+              },
+            ],
+            'theme': {
+              'paletteKey': 'slate',
+              'dark': false,
+              'shape': 'rounded',
+              'motion': 'standard',
+            },
+            'meta': {'title': 'K', 'brief': ''},
+          }),
+          kTestSources,
+        );
+        expect(a, b, reason: kind);
+      }
+    });
+
+    test('responsive + tap interplay on navigation_bar', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'hiddenOn': ['mobile'],
+            'breakpointValues': {
+              'desktop': {'index': 3},
+            },
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'navigation_bar',
+                'tab1': 'Home',
+                'action': {'to': 's2', 'transition': 'slide'},
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('LayoutBuilder'));
+      expect(out, contains("tier == 'mobile'"));
+      expect(out, contains("tier == 'desktop'"));
+      expect(out, contains('NavigationBar('));
+      expect(out, contains('index: 3'));
+      expect(out, contains('// taps -> s2'));
+      expect(out, contains("pushNamed('/done')"));
+    });
+
+    test('slotted tap child keeps its navigation inside the host slot', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'host',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'ih', 'kind': 'scaffold', 'title': 'T'},
+            ],
+            'slotNodes': {'body': 'kid'},
+          },
+          {
+            'id': 'kid',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 100.0,
+            'items': [
+              {
+                'id': 'ib',
+                'kind': 'button',
+                'label': 'Go',
+                'action': {'to': 's2', 'transition': 'fade'},
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('// slot: body'));
+      expect(out, contains('// taps -> s2'));
+      expect(out, contains("pushNamed('/done')"));
+    });
+
+    test('fade_scroll emits the shared stateful helper once', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'fade_scroll', 'row1': 'R1'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('CanvasFadeScrollCell('));
+      expect(out, contains('class CanvasFadeScrollCell extends StatefulWidget'));
+      expect(out, contains('ScrollController()'));
+    });
+
+    test('icon adds the material import for Icons; others do not', () {
+      final withIcon = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'icon', 'name': 'home'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(withIcon, contains("import 'package:flutter/material.dart';"));
+      expect(withIcon, contains('Icons.home'));
+      final without = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'text', 'text': 'Hi'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(without, contains("import 'package:flutter/widgets.dart';"));
+      expect(without, isNot(contains('material.dart')));
+    });
+
+    test('responsive + tap interplay on an FF2 kind (icon)', () {
+      final out = buildSingleFile(
+        ff4Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'hiddenOn': ['mobile'],
+            'breakpointValues': {
+              'desktop': {'size': 48},
+            },
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'icon',
+                'name': 'star',
+                'size': 24,
+                'action': {'to': 's2', 'transition': 'slide'},
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('LayoutBuilder'));
+      expect(out, contains("tier == 'mobile'"));
+      expect(out, contains("tier == 'desktop'"));
+      expect(out, contains('WrappedIcon('));
+      expect(out, contains('size: 48'));
+      expect(out, contains('size: 24'));
+      expect(out, contains('// taps -> s2'));
+      expect(out, contains("pushNamed('/done')"));
+    });
+
+    test('dropzone custom action label emits via in-memory props', () {
+      // The `action` label prop cannot round-trip through JSON (it shares
+      // its name with the tap-navigation field), so build the doc directly.
+      final doc = ScreenDoc(
+        screens: const [
+          CanvasScreen(id: 's1', name: 'Home', x: 0.0, y: 0.0, bg: 'surface'),
+        ],
+        nodes: const [
+          CanvasNode(
+            id: 'n1',
+            screenId: 's1',
+            x: 0.0,
+            y: 0.0,
+            items: [
+              CanvasItem(
+                id: 'i1',
+                kind: 'dropzone',
+                props: {'hint': 'Drop', 'action': 'Go'},
+              ),
+            ],
+          ),
+        ],
+        theme: const CanvasTheme(
+          paletteKey: 'slate',
+          dark: false,
+          shape: 'rounded',
+          motion: 'standard',
+        ),
+        meta: const DocMeta(title: 'FF4', brief: ''),
+      );
+      final out = buildSingleFile(doc, kTestSources);
+      expect(out, contains('FileDropzone('));
+      expect(out, contains("'Drop'"));
+      expect(out, contains("'Go'"));
+    });
+  });
 }
 
 /// Builds a one-screen doc from [nodes] for the C3 recursion tests.
@@ -3070,7 +3554,7 @@ class _KindCase {
   const _KindCase(this.props, this.markers);
 }
 
-/// All 68 catalog kinds plus the 10 hand-verified EASY kinds, mirroring the
+/// All 69 catalog kinds plus the 10 hand-verified EASY kinds, mirroring the
 /// catalog defaults in `component_catalog.dart` / `component_registry.dart`.
 const _kKindCases = <String, _KindCase>{
   'button': _KindCase(
@@ -3262,6 +3746,10 @@ const _kKindCases = <String, _KindCase>{
     {'menu1': 'File', 'menu2': 'Edit'},
     ['Menubar(', "'File'"],
   ),
+  'navigation_bar': _KindCase(
+    {'tab1': 'Home', 'tab2': 'Search', 'tab3': 'Saved', 'tab4': 'You', 'index': 2},
+    ['NavigationBar(', 'NavigationItem(', "'Search'", 'index: 2'],
+  ),
   'number_ticker': _KindCase(
     {'value': 7},
     ['NumberTicker(', 'number: 7'],
@@ -3417,9 +3905,128 @@ const _kKindCases = <String, _KindCase>{
     {'placeholder': 'Name', 'errorText': 'Req'},
     ['Validated<String>(', 'ValidatorBuilder<String>(', "'Req'"],
   ),
+  // Track FF2 (28 newly-added catalog builders — same defaults as
+  // `component_catalog.dart`; markers pin the widget name + a prop value).
+  'phone_input': _KindCase(
+    {'label': 'Phone', 'searchHint': 'Find'},
+    ['PhoneInput(', "'Phone'", "'Find'"],
+  ),
+  'chip_input': _KindCase(
+    {'placeholder': 'Tags', 'chip1': 'A', 'chip2': 'B'},
+    ['ChipInput<String>(', 'initialChips:', "'Tags'"],
+  ),
+  'autocomplete': _KindCase(
+    {'placeholder': 'Find', 'suggestion1': 'X', 'suggestion2': 'Y'},
+    ['AutoComplete(', 'suggestions:', "'Find'"],
+  ),
+  'item_picker': _KindCase(
+    {'placeholder': 'Pick', 'option1': 'A', 'option2': 'B', 'value': 'A'},
+    ['ItemPicker<String>(', 'ItemList(', "value: 'A'"],
+  ),
+  'multiple_choice': _KindCase(
+    {'mode': 'multiple', 'option1': 'A', 'option2': 'B', 'value': 'A'},
+    ['MultipleAnswer<String>(', "'A'"],
+  ),
+  'object_input': _KindCase(
+    {'mode': 'time', 'placeholder': 'When', 'label': 'L'},
+    ['TimeInput(', "'When'", "'L'"],
+  ),
+  'text_field': _KindCase(
+    {'placeholder': 'T', 'label': 'L', 'initialValue': 'V'},
+    ['TextField(', "'T'", "'L'", "'V'"],
+  ),
+  'markdown': _KindCase(
+    {'data': '# H'},
+    ['Markdown(', "'# H'"],
+  ),
+  'text_animate': _KindCase(
+    {'text': 'Hello'},
+    ['StreamingText(', "'Hello'"],
+  ),
+  'icon': _KindCase(
+    {'name': 'home', 'size': 32},
+    ['WrappedIcon(', 'Icons.home', 'size: 32'],
+  ),
+  'navigation_menu': _KindCase(
+    {'menu1': 'M1', 'item1': 'I1'},
+    ['NavigationMenu(', 'NavigationMenuItem(', "'M1'"],
+  ),
+  // NOTE (dropzone): the catalog's `action` label prop shares its name with
+  // `CanvasItem.action` (the tap-navigation field, reserved in JSON), so it
+  // cannot ride `_singleItemDoc` (which round-trips through `fromJson`).
+  // Pin the hint here; the custom action label is covered via direct
+  // `ScreenDoc` construction in the FF4 group below.
+  'dropzone': _KindCase(
+    {'hint': 'Drop'},
+    ['FileDropzone(', "'Drop'", "'Browse files'"],
+  ),
+  'border_loading': _KindCase(
+    {'label': 'Wait'},
+    ['BorderLoading(', "'Wait'"],
+  ),
+  'overflow_marquee': _KindCase(
+    {'text': 'Scroll me'},
+    ['OverflowMarquee(', "'Scroll me'"],
+  ),
+  'focus_outline': _KindCase(
+    {'label': 'F', 'focused': false},
+    ['FocusOutline(', 'focused: false', "'F'"],
+  ),
+  'switcher': _KindCase(
+    {'direction': 'right', 'page1': 'P1', 'page2': 'P2'},
+    ['Switcher(', 'AxisDirection.right', "'P1'"],
+  ),
+  'scrollable': _KindCase(
+    {'text1': 'A', 'text2': 'B', 'text3': 'C'},
+    ['FadedScrollableViewport(', "'A'"],
+  ),
+  'stage_container': _KindCase(
+    {'label': 'Stage'},
+    ['StageContainer(', "'Stage'"],
+  ),
+  'media_query': _KindCase(
+    {'label': 'W', 'alternate': 'N', 'minWidth': 600},
+    ['MediaQueryVisibility(', 'minWidth: 600', "'W'"],
+  ),
+  'scrollview': _KindCase(
+    {'label': 'Drag'},
+    ['ScrollViewInterceptor(', "'Drag'"],
+  ),
+  'hover': _KindCase(
+    {'label': 'Hov'},
+    ['HoverActivity(', "'Hov'"],
+  ),
+  'patch': _KindCase(
+    {'label': 'Tap'},
+    ['ClickDetector(', "'Tap'"],
+  ),
+  'text': _KindCase(
+    {'text': 'Styled'},
+    ['WrappedText(', "'Styled'"],
+  ),
+  'filter_bar': _KindCase(
+    {'searchPlaceholder': 'Find'},
+    ['FilterBar(', 'FilterBarPresentation.inline', "'Find'"],
+  ),
+  'fade_scroll': _KindCase(
+    {'row1': 'R1', 'row2': 'R2', 'row3': 'R3'},
+    ['CanvasFadeScrollCell(', "'R1'"],
+  ),
+  'resizable': _KindCase(
+    {'pane1': 'L', 'pane2': 'R'},
+    ['ResizablePanel.horizontal(', "'L'"],
+  ),
+  'subfocus': _KindCase(
+    {'label': 'Focus'},
+    ['SubFocus(', "'Focus'"],
+  ),
+  'repeated_animation_builder': _KindCase(
+    {'label': 'Pulse'},
+    ['PulsingAnimation(', "'Pulse'"],
+  ),
 };
 
-/// Every kind the full-seed smoke doc touches: the 68 catalog kinds plus the
+/// Every kind the full-seed smoke doc touches: the 97 catalog kinds plus the
 /// 10 hand-verified EASY kinds.
 const _kAllSmokeKinds = [
   'button',
@@ -3472,6 +4079,35 @@ const _kAllSmokeKinds = [
   'tab_list',
   'tab_pane',
   'stepper',
+  'navigation_bar',
+  'phone_input',
+  'chip_input',
+  'autocomplete',
+  'item_picker',
+  'multiple_choice',
+  'object_input',
+  'text_field',
+  'markdown',
+  'text_animate',
+  'icon',
+  'navigation_menu',
+  'dropzone',
+  'border_loading',
+  'overflow_marquee',
+  'focus_outline',
+  'switcher',
+  'scrollable',
+  'stage_container',
+  'media_query',
+  'scrollview',
+  'hover',
+  'patch',
+  'text',
+  'filter_bar',
+  'fade_scroll',
+  'resizable',
+  'subfocus',
+  'repeated_animation_builder',
   'slider',
   'input_otp',
   'calendar',

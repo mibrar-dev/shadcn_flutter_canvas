@@ -397,6 +397,90 @@ const _kinds = <String, _KindSpec>{
   'feature_carousel': _KindSpec('{installPath}/components/display/feature_carousel/',
       ['component_schema', 'theme'],
       {'gap': '^3.0.1'}, []),
+  'phone_input': _KindSpec('{installPath}/components/form/phone_input/',
+      ['component_schema', 'form_value_supplier', 'geometry_extensions', 'overlay', 'style_value', 'text_modifiers', 'theme'],
+      {'country_flags': '^4.1.1', 'data_widget': '^0.0.2', 'gap': '^3.0.1', 'phonecodes': '^0.0.4'}, ['select', 'text_field']),
+  'item_picker': _KindSpec('{installPath}/components/form/item_picker/',
+      ['overlay', 'text_modifiers', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['basic', 'button', 'card', 'dialog', 'form_field']),
+  'chip_input': _KindSpec('{installPath}/components/form/chip_input/',
+      ['component_schema', 'form_value_supplier', 'lucide_icons', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['chip', 'text_field', 'autocomplete']),
+  'autocomplete': _KindSpec('{installPath}/components/form/autocomplete/',
+      ['overlay', 'style_value', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'card']),
+  'multiple_choice': _KindSpec('{installPath}/components/form/multiple_choice/',
+      ['component_schema', 'form_control', 'form_value_supplier', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'object_input': _KindSpec('{installPath}/components/form/object_input/',
+      ['form_control', 'localizations', 'localizations_extensions', 'lucide_icons', 'text_modifiers', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['formatted_input', 'date_picker', 'card', 'locale_utils', 'calendar', 'form_field']),
+  'text_field': _KindSpec('{installPath}/components/form/text_field/',
+      ['border_utils', 'chip_utils', 'clickable', 'color_extensions', 'component_schema', 'constants', 'focus_outline', 'form_value_supplier', 'geometry_extensions', 'hidden', 'lucide_icons', 'overlay', 'style_value', 'text_input_utils', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'card']),
+  'text': _KindSpec('{installPath}/components/display/text/',
+      ['theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'selectable']),
+  'icon': _KindSpec('{installPath}/components/display/icon/',
+      ['theme'],
+      {'gap': '^3.0.1'}, []),
+  'navigation_menu': _KindSpec('{installPath}/components/navigation/navigation_menu/',
+      ['animated_value_builder', 'color_extensions', 'constants', 'icon_extensions', 'radix_icons', 'theme', 'util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, ['button', 'popover', 'basic', 'outlined_container', 'text']),
+  'dropzone': _KindSpec('{installPath}/components/form/dropzone/',
+      ['color_extensions', 'constants', 'geometry_extensions', 'outlined_container', 'radix_icons', 'theme'],
+      {'gap': '^3.0.1'}, ['button']),
+  'border_loading': _KindSpec('{installPath}/components/display/border_loading/',
+      [],
+      {}, []),
+  'overflow_marquee': _KindSpec('{installPath}/components/layout/overflow_marquee/',
+      ['style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'focus_outline': _KindSpec('{installPath}/components/utility/focus_outline/',
+      ['animated_value_builder', 'component_schema', 'constants', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'switcher': _KindSpec('{installPath}/components/navigation/switcher/',
+      ['animated_value_builder'],
+      {}, []),
+  'scrollable': _KindSpec('{installPath}/components/layout/scrollable/',
+      ['component_schema', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'stage_container': _KindSpec('{installPath}/components/layout/stage_container/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'media_query': _KindSpec('{installPath}/components/layout/media_query/',
+      ['style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'scrollview': _KindSpec('{installPath}/components/control/scrollview/',
+      [],
+      {}, []),
+  'hover': _KindSpec('{installPath}/components/control/hover/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'patch': _KindSpec('{installPath}/components/control/patch/',
+      [],
+      {}, []),
+  'filter_bar': _KindSpec('{installPath}/components/layout/filter_bar/',
+      ['component_schema', 'localizations', 'lucide_icons', 'theme'],
+      {'gap': '^3.0.1'}, ['button', 'chip', 'calendar', 'checkbox', 'text_field', 'select', 'date_picker', 'form_field', 'drawer', 'scaffold', 'stage_container']),
+  'fade_scroll': _KindSpec('{installPath}/components/layout/fade_scroll/',
+      ['generated_colors', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'resizable': _KindSpec('{installPath}/components/layout/resizable/',
+      ['constants', 'radix_icons', 'resizer', 'style_value', 'theme'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'subfocus': _KindSpec('{installPath}/components/navigation/subfocus/',
+      [],
+      {'data_widget': '^0.0.2'}, []),
+  'repeated_animation_builder': _KindSpec('{installPath}/components/utility/repeated_animation_builder/',
+      ['util'],
+      {'data_widget': '^0.0.2', 'gap': '^3.0.1'}, []),
+  'markdown': _KindSpec('{installPath}/components/display/markdown/',
+      ['style_value', 'theme'],
+      {'gap': '^3.0.1'}, []),
+  'text_animate': _KindSpec('{installPath}/components/display/text_animate/',
+      ['component_schema', 'style_value', 'theme'],
+      {'gap': '^3.0.1'}, ['markdown']),
 };
 
 const _installPath = '{installPath}/';
@@ -417,7 +501,19 @@ const _dartAsync = 'dart:' 'async'; // split: same trick for the validator helpe
 /// `Theme`/`Icons`) precisely to stay widgets-only; see their builders.
 /// `popup` needs material for the catalog-mirroring `const Divider(height: 1)`
 /// in its body (Flutter's `Divider` lives in material, not widgets).
-const _bundleNeedsMaterial = {'basic', 'toast', 'feature_carousel', 'popup'};
+/// Track FF4: `navigation_bar` needs material for its `Icons.home/…`
+/// destination chrome (mirroring the catalog cell).
+/// Track FF2: `icon` needs material for its `Icons.*` glyph (see
+/// `_bundleIcon`); conditional like the rows above, so docs without it keep
+/// byte-identical headers.
+const _bundleNeedsMaterial = {
+  'basic',
+  'toast',
+  'feature_carousel',
+  'popup',
+  'navigation_bar',
+  'icon',
+};
 
 /// Real kit entry file per kind, relative to the kind's install prefix.
 ///
@@ -488,6 +584,10 @@ const _screenExtraKinds = <String, List<String>>{
   'validated': ['form'],
   'color_picker': ['history'],
   'color_input': ['history'],
+  // Track FF2: `focus_outline` bodies render the *button* barrel's
+  // `OutlineButton` (mirroring the catalog, which reads it off the kit's
+  // global barrel; the focus_outline barrel never re-exports it).
+  'focus_outline': ['button'],
 };
 
 /// Track H2: non-kind library files a screen body references. `TextField`
@@ -503,6 +603,9 @@ const _screenExtraTemplates = <String, String>{
   'form': '{installPath}/components/form/text_field/text_field.dart',
   'form_field': '{installPath}/components/form/text_field/text_field.dart',
   'validated': '{installPath}/components/form/text_field/text_field.dart',
+  // Track FF2: `autocomplete` bodies render `TextField` the same way `input`
+  // does (the autocomplete barrel imports but never re-exports it).
+  'autocomplete': '{installPath}/components/form/text_field/text_field.dart',
   'color_picker': '{installPath}/components/utility/color/color.dart',
   'color_input': '{installPath}/components/utility/color/color.dart',
 };
@@ -550,6 +653,15 @@ const _screenFlutterHideMaterial = <String, List<String>>{
   'badge': ['Badge'],
   'card': ['Card'],
   'dropdown_menu': ['DropdownMenu'],
+  // Track FF4: the kit `NavigationBar` (see `_bundleNavigationBar`) shares
+  // its name with material's own `NavigationBar` — hide the Flutter one so
+  // the kit call site stays bare (same trap as `Tooltip`/`Table`/…).
+  'navigation_bar': ['NavigationBar'],
+  // Track FF2: the kit `TextField` (see `_bundleTextFieldKind`) shares its
+  // name with material's own `TextField` — hide the Flutter one on material
+  // screens (the supplemental-file rule below covers `input`/`command`/…;
+  // this row covers the `text_field` kind's own barrel).
+  'text_field': ['TextField'],
 };
 
 /// Track H2 clash convention (documented once, applied per screen):
@@ -1430,6 +1542,8 @@ List<String> _bundleBody(CanvasItem item) {
       return _bundleTabPane(item.props);
     case 'stepper':
       return _bundleStepper(item.props);
+    case 'navigation_bar':
+      return _bundleNavigationBar(item.props);
     case 'slider':
       return _bundleSlider(item.props);
     case 'input_otp':
@@ -1466,6 +1580,65 @@ List<String> _bundleBody(CanvasItem item) {
       return _bundleHistory(item.props);
     case 'feature_carousel':
       return _bundleFeatureCarousel(item.props);
+    // Track FF2 (mirror of the 28 newly-added catalog builders — same props,
+    // same defaults, same edge handling, statically snapshotted; stateful
+    // cells render their initial value with a no-op callback).
+    case 'phone_input':
+      return _bundlePhoneInput(item.props);
+    case 'chip_input':
+      return _bundleChipInput(item.props);
+    case 'autocomplete':
+      return _bundleAutocomplete(item.props);
+    case 'item_picker':
+      return _bundleItemPicker(item.props);
+    case 'multiple_choice':
+      return _bundleMultipleChoice(item.props);
+    case 'object_input':
+      return _bundleObjectInput(item.props);
+    case 'text_field':
+      return _bundleTextFieldKind(item.props);
+    case 'markdown':
+      return _bundleMarkdown(item.props);
+    case 'text_animate':
+      return _bundleTextAnimate(item.props);
+    case 'icon':
+      return _bundleIcon(item.props);
+    case 'navigation_menu':
+      return _bundleNavigationMenu(item.props);
+    case 'dropzone':
+      return _bundleDropzone(item.props);
+    case 'border_loading':
+      return _bundleBorderLoading(item.props);
+    case 'overflow_marquee':
+      return _bundleOverflowMarquee(item.props);
+    case 'focus_outline':
+      return _bundleFocusOutline(item.props);
+    case 'switcher':
+      return _bundleSwitcher(item.props);
+    case 'scrollable':
+      return _bundleScrollable(item.props);
+    case 'stage_container':
+      return _bundleStageContainer(item.props);
+    case 'media_query':
+      return _bundleMediaQuery(item.props);
+    case 'scrollview':
+      return _bundleScrollview(item.props);
+    case 'hover':
+      return _bundleHover(item.props);
+    case 'patch':
+      return _bundlePatch(item.props);
+    case 'text':
+      return _bundleText(item.props);
+    case 'filter_bar':
+      return _bundleFilterBar(item.props);
+    case 'fade_scroll':
+      return _bundleFadeScroll(item.props);
+    case 'resizable':
+      return _bundleResizable(item.props);
+    case 'subfocus':
+      return _bundleSubfocus(item.props);
+    case 'repeated_animation_builder':
+      return _bundleRepeatedAnimationBuilder(item.props);
     default:
       return ["Text(${_bundleStr(_labelOf(item))}),"];
   }
@@ -2012,6 +2185,61 @@ List<String> _bundleCardImage(Map<String, dynamic> props) {
   ];
 }
 
+/// Track FF4: `Basic` chrome with named slots (see `kNodeSlots`):
+/// `leading`/`trailing` slot widgets REPLACE the bool chrome when provided
+/// (mirroring the catalog); null keeps the historical chrome exactly.
+List<String> _bundleBasicWithSlots(
+  Map<String, dynamic> props,
+  List<String>? leadingBlock,
+  List<String>? trailingBlock,
+) {
+  final leading = _bundleSingleParam(leadingBlock, 'leading', 'leading', '  ') ??
+      [
+        '  leading: ${_bBool(props, 'showLeading', true) ? 'const Icon(Icons.person)' : 'null'},',
+      ];
+  final trailing =
+      _bundleSingleParam(trailingBlock, 'trailing', 'trailing', '  ') ??
+          [
+            '  trailing: ${_bBool(props, 'showTrailing', true) ? 'const Icon(Icons.chevron_right)' : 'null'},',
+          ];
+  return [
+    'Basic(',
+    ...leading,
+    "  title: ${_bTextOrNull(_bStr(props, 'title', 'Title'))},",
+    "  subtitle: ${_bTextOrNull(_bStr(props, 'subtitle', 'Subtitle'))},",
+    "  content: ${_bTextOrNull(_bStr(props, 'content', 'Content'))},",
+    ...trailing,
+    '),',
+  ];
+}
+
+/// Track FF4: `CardImage` chrome with the named `image` slot (see
+/// `kNodeSlots`): the slot widget REPLACES the default tonal art when
+/// provided; null keeps the historical art exactly.
+List<String> _bundleCardImageWithSlots(
+  Map<String, dynamic> props,
+  List<String>? imageBlock,
+) {
+  final image = _bundleSingleParam(imageBlock, 'image', 'image', '    ') ??
+      [
+        '    image: Container(',
+        '      height: 120,',
+        '      color: const Color(0xFFE8EAED),',
+        "      child: Center(child: Text('Image')),",
+        '    ),',
+      ];
+  return [
+    'SizedBox(',
+    '  height: 240,',
+    '  child: CardImage(',
+    ...image,
+    "    title: ${_bTextOrNull(_bStr(props, 'title', 'Card title'))},",
+    "    subtitle: ${_bTextOrNull(_bStr(props, 'subtitle', 'Card subtitle'))},",
+    '  ),',
+    '),',
+  ];
+}
+
 List<String> _bundleScaffold(
   Map<String, dynamic> props, [
   List<List<String>> nested = const [],
@@ -2038,6 +2266,81 @@ List<String> _bundleScaffold(
     '      padding: const EdgeInsets.all(16),',
     padded,
     '    ),',
+    '  ),',
+    '),',
+  ];
+}
+
+/// Track FF4: `Scaffold` chrome with named slots (see `kNodeSlots`):
+/// `appBar` fills `headers` (REPLACES the default titled `AppBar`),
+/// `body` fills the body region (SHADOWS the `body` string prop when a Widget
+/// is injected, mirroring the catalog), and `footer` fills `footers` (null
+/// keeps the historical omission — no `footers` param at all, so slotless
+/// output stays byte-identical). [flow] are the `parentId` flow blocks plus
+/// unknown-slot blocks: they complement the body region below the body
+/// content.
+List<String> _bundleScaffoldWithSlots(
+  Map<String, dynamic> props,
+  List<List<String>> flow,
+  List<String>? appBarBlock,
+  List<String>? bodyBlock,
+  List<String>? footerBlock,
+) {
+  final headers = _bundleSlotListItem(appBarBlock, 'appBar', '      ') == null
+      ? "    headers: [AppBar(title: Text(${_bundleStr(_bStr(props, 'title', 'My App'))}))],"
+      : [
+          '    headers: [',
+          ..._bundleSlotListItem(appBarBlock, 'appBar', '      ')!,
+          '    ],',
+        ].join('\n');
+  final footers = _bundleSlotListItem(footerBlock, 'footer', '      ') == null
+      ? null
+      : [
+          '    footers: [',
+          ..._bundleSlotListItem(footerBlock, 'footer', '      ')!,
+          '    ],',
+        ].join('\n');
+  String? bodyExpr;
+  List<String> bodyComments = const [];
+  if (bodyBlock != null) {
+    final parts = _splitBundleSlotBlock(bodyBlock);
+    if (parts.widgets.isNotEmpty) {
+      var expr = parts.widgets.join('\n').trimRight();
+      if (expr.endsWith(',')) expr = expr.substring(0, expr.length - 1);
+      bodyExpr = expr;
+      bodyComments = [
+        '          // slot: body',
+        for (final c in parts.comments) '          $c',
+      ];
+    }
+  }
+  final bodyText = "Text(${_bundleStr(_bStr(props, 'body', 'Welcome'))})";
+  final hasBody = bodyExpr != null || flow.isNotEmpty;
+  final padded = !hasBody
+      ? '      child: $bodyText,'
+      : [
+          '      child: Column(',
+          '        mainAxisSize: MainAxisSize.min,',
+          '        crossAxisAlignment: CrossAxisAlignment.start,',
+          '        children: [',
+          ...bodyComments,
+          '          ${bodyExpr ?? bodyText},',
+          ..._spliceBundleKids(flow, '          '),
+          '        ],',
+          '      ),',
+        ].join('\n');
+  // Historical shape keeps `child: Padding(child: …)`; the slotless path
+  // above reproduces [_bundleScaffold] byte-identically (no `footers`).
+  return [
+    'SizedBox(',
+    '  height: 320,',
+    '  child: Scaffold(',
+    headers,
+    '    child: Padding(',
+    '      padding: const EdgeInsets.all(16),',
+    padded,
+    '    ),',
+    if (footers != null) footers,
     '  ),',
     '),',
   ];
@@ -2661,6 +2964,38 @@ List<String> _bundleStepper(Map<String, dynamic> props) {
   ];
 }
 
+List<String> _bundleNavigationBar(Map<String, dynamic> props) {
+  // Track FF4 (mirror of `_buildNavigationBar`): four destination labels plus
+  // the selected index (parsed leniently via `_bInt`, clamped 0..3 so
+  // hand-written docs never crash). Static snapshot of the catalog's
+  // stateful cell: the index renders statically with a no-op tap (the slider/
+  // tabs honesty rule). Icons mirror the catalog cell (`home`/`search`/
+  // `bookmark`/`person`); the screen imports material for them (see
+  // `_bundleNeedsMaterial`) and hides Flutter's own `NavigationBar` (see
+  // `_screenFlutterHideMaterial`) so the kit call site stays bare.
+  final labels = [
+    _bStr(props, 'tab1', 'Home'),
+    _bStr(props, 'tab2', 'Search'),
+    _bStr(props, 'tab3', 'Saved'),
+    _bStr(props, 'tab4', 'You'),
+  ];
+  final index = _bInt(props, 'index', 0, 0, 3);
+  const icons = ['home', 'search', 'bookmark', 'person'];
+  return [
+    'NavigationBar(',
+    '  index: $index,',
+    '  labelType: NavigationLabelType.all,',
+    '  alignment: NavigationBarAlignment.center,',
+    '  expands: true,',
+    '  onSelected: (_) {},',
+    '  children: [',
+    for (var i = 0; i < labels.length; i++)
+      '    NavigationItem(child: const Icon(Icons.${icons[i]}), label: Text(${_bundleStr(labels[i])})),',
+    '  ],',
+    '),',
+  ];
+}
+
 List<String> _bundleSlider(Map<String, dynamic> props) {
   final value = _bDouble(props, 'value', 0.6, 0.0, 1.0);
   return ['Slider(value: $value, onChanged: (v) {}),'];
@@ -3120,6 +3455,427 @@ List<String> _bundleFeatureCarousel(Map<String, dynamic> props) {
     "    FeatureCarouselItem(title: ${_bundleStr(_bStr(props, 'title2', 'Style Presets'))}, description: ${_bundleStr(_bStr(props, 'description2', 'Choose a curated style preset.'))}, icon: Icons.palette, accentColor: const Color(0xFF9B87FF)),",
     '  ],',
     '),',
+  ];
+}
+
+/// Track FF2 bundle emitters (mirror of the 28 newly-added catalog builders).
+/// Same honesty rules as the seed builders: no canvas blocks exist, so
+/// defaults are invented per builder (see `component_catalog.dart`); props
+/// read leniently so hand-written docs never crash; stateful cells render
+/// their initial value with a no-op callback.
+List<String> _bundlePhoneInput(Map<String, dynamic> props) {
+  final field = [
+    'ConstrainedBox(',
+    '  constraints: const BoxConstraints(minHeight: 48),',
+    '  child: PhoneInput(',
+    '    onChanged: (_) {},',
+    "    searchPlaceholder: Text(${_bundleStr(_bStr(props, 'searchHint', 'Search countries...'))}),",
+    '  ),',
+    '),',
+  ];
+  final label = _bStr(props, 'label', '');
+  if (label.isEmpty) return field;
+  return [
+    'Column(',
+    '  mainAxisSize: MainAxisSize.min,',
+    '  crossAxisAlignment: CrossAxisAlignment.start,',
+    '  children: [',
+    '    Text(${_bundleStr(label)}),',
+    '    const SizedBox(height: 8),',
+    '    ${field.first}',
+    ...field.skip(1).map((line) => '    $line'),
+    '  ],',
+    '),',
+  ];
+}
+
+List<String> _bundleChipInput(Map<String, dynamic> props) {
+  final chips = [
+    _bStr(props, 'chip1', 'Design'),
+    _bStr(props, 'chip2', ''),
+  ].where((c) => c.isNotEmpty).toList();
+  final lit = chips.isEmpty
+      ? 'const <String>[]'
+      : '[${chips.map(_bundleStr).join(', ')}]';
+  return [
+    'ChipInput<String>(',
+    '  chipBuilder: (context, chip) => Text(chip),',
+    '  onChipSubmitted: (value) => value.isEmpty ? null : value,',
+    '  initialChips: $lit,',
+    "  placeholder: Text(${_bundleStr(_bStr(props, 'placeholder', 'Add a tag'))}),",
+    '),',
+  ];
+}
+
+List<String> _bundleAutocomplete(Map<String, dynamic> props) {
+  final sugg = [
+    _bStr(props, 'suggestion1', 'Apple'),
+    _bStr(props, 'suggestion2', 'Apricot'),
+  ].where((s) => s.isNotEmpty).toList();
+  final lit = sugg.isEmpty
+      ? 'const <String>[]'
+      : '[${sugg.map(_bundleStr).join(', ')}]';
+  return [
+    'AutoComplete(',
+    '  suggestions: $lit,',
+    "  child: TextField(placeholder: Text(${_bundleStr(_bStr(props, 'placeholder', 'Search...'))})),",
+    '),',
+  ];
+}
+
+List<String> _bundleItemPicker(Map<String, dynamic> props) {
+  final value = _bStr(props, 'value', '');
+  return [
+    'ItemPicker<String>(',
+    "  items: ItemList([${_bundleStr(_bStr(props, 'option1', 'Option 1'))}, ${_bundleStr(_bStr(props, 'option2', 'Option 2'))}]),",
+    '  builder: (context, item) => Text(item),',
+    '  value: ${value.isEmpty ? 'null' : _bundleStr(value)},',
+    '  onChanged: (_) {},',
+    "  placeholder: Text(${_bundleStr(_bStr(props, 'placeholder', 'Select item'))}),",
+    '),',
+  ];
+}
+
+List<String> _bundleMultipleChoice(Map<String, dynamic> props) {
+  final options = [
+    _bStr(props, 'option1', 'Option A'),
+    _bStr(props, 'option2', 'Option B'),
+    _bStr(props, 'option3', 'Option C'),
+  ];
+  final chips = options.map((o) => "Text(${_bundleStr(o)})").join(', ');
+  if (props['mode'] == 'multiple') {
+    final set = [
+      _bStr(props, 'value', 'Option A'),
+      _bStr(props, 'value2', 'Option B'),
+    ].where((v) => v.isNotEmpty && options.contains(v)).map(_bundleStr).toList();
+    final lit = set.isEmpty ? 'const <String>{}' : '{${set.join(', ')}}';
+    return [
+      'MultipleAnswer<String>(',
+      '  value: $lit,',
+      '  onChanged: (_) {},',
+      '  child: Wrap(',
+      '    spacing: 8,',
+      '    runSpacing: 8,',
+      '    children: [$chips],',
+      '  ),',
+      '),',
+    ];
+  }
+  final value = _bStr(props, 'value', 'Option A');
+  return [
+    'MultipleChoice<String>(',
+    '  value: ${value.isEmpty ? 'null' : _bundleStr(value)},',
+    '  onChanged: (_) {},',
+    '  child: Wrap(',
+    '    spacing: 8,',
+    '    runSpacing: 8,',
+    '    children: [$chips],',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleObjectInput(Map<String, dynamic> props) {
+  final ctor = switch (props['mode']) {
+    'time' => 'TimeInput',
+    'duration' => 'DurationInput',
+    _ => 'DateInput',
+  };
+  final field = [
+    '$ctor(',
+    '  onChanged: (_) {},',
+    "  placeholder: Text(${_bundleStr(_bStr(props, 'placeholder', 'Select value'))}),",
+    '),',
+  ];
+  final label = _bStr(props, 'label', '');
+  if (label.isEmpty) return field;
+  return [
+    'Column(',
+    '  mainAxisSize: MainAxisSize.min,',
+    '  crossAxisAlignment: CrossAxisAlignment.start,',
+    '  children: [',
+    '    Text(${_bundleStr(label)}),',
+    '    const SizedBox(height: 6),',
+    '    ${field.first}',
+    ...field.skip(1).map((line) => '    $line'),
+    '  ],',
+    '),',
+  ];
+}
+
+List<String> _bundleTextFieldKind(Map<String, dynamic> props) {
+  // NOTE: `TextField` also exists in material — disambiguated via the
+  // `text_field` hide row (same trap as `Table`).
+  final field = [
+    'ConstrainedBox(',
+    '  constraints: const BoxConstraints(minHeight: 48),',
+    '  child: TextField(',
+    "    placeholder: Text(${_bundleStr(_bStr(props, 'placeholder', 'Type here'))}),",
+    '    enabled: ${!_bBool(props, 'disabled', false)},',
+    '    initialValue: ${_bStr(props, 'initialValue', '').isEmpty ? 'null' : _bundleStr(_bStr(props, 'initialValue', ''))},',
+    '  ),',
+    '),',
+  ];
+  final label = _bStr(props, 'label', '');
+  if (label.isEmpty) return field;
+  return [
+    'Column(',
+    '  mainAxisSize: MainAxisSize.min,',
+    '  crossAxisAlignment: CrossAxisAlignment.start,',
+    '  children: [',
+    '    Text(${_bundleStr(label)}),',
+    '    const SizedBox(height: 8),',
+    '    ${field.first}',
+    ...field.skip(1).map((line) => '    $line'),
+    '  ],',
+    '),',
+  ];
+}
+
+List<String> _bundleMarkdown(Map<String, dynamic> props) {
+  return [
+    'Markdown(data: ${_bundleStr(_bStr(props, 'data', '# Title\n\nSome **rich** text.'))}),',
+  ];
+}
+
+List<String> _bundleTextAnimate(Map<String, dynamic> props) {
+  return [
+    'StreamingText(text: ${_bundleStr(_bStr(props, 'text', 'Watch the words appear.'))}),',
+  ];
+}
+
+List<String> _bundleIcon(Map<String, dynamic> props) {
+  final size = _bDouble(props, 'size', 24.0, 12.0, 64.0);
+  final glyph = switch (props['name']) {
+    'heart' => 'Icons.favorite',
+    'home' => 'Icons.home',
+    'search' => 'Icons.search',
+    'settings' => 'Icons.settings',
+    'check' => 'Icons.check',
+    'info' => 'Icons.info',
+    'image' => 'Icons.image',
+    _ => 'Icons.star',
+  };
+  return [
+    'WrappedIcon(',
+    '  data: (context, theme) => IconThemeData(size: $size),',
+    '  child: Icon($glyph),',
+    '),',
+  ];
+}
+
+List<String> _bundleNavigationMenu(Map<String, dynamic> props) {
+  List<String> entry(String menu, String item, String detail) => [
+        '      NavigationMenuItem(',
+        '        content: NavigationMenuContentList(',
+        '          children: [',
+        '            NavigationMenuContent(',
+        '              title: Text(${_bundleStr(item)}),',
+        '              content: Text(${_bundleStr(detail)}),',
+        '            ),',
+        '          ],',
+        '        ),',
+        '        child: Text(${_bundleStr(menu)}),',
+        '      ),',
+      ];
+  return [
+    'SingleChildScrollView(',
+    '  scrollDirection: Axis.horizontal,',
+    '  child: NavigationMenu(',
+    '    children: [',
+    ...entry(
+      _bStr(props, 'menu1', 'Products'),
+      _bStr(props, 'item1', 'Web Apps'),
+      _bStr(props, 'detail1', 'Landing pages and dashboards.'),
+    ),
+    ...entry(
+      _bStr(props, 'menu2', 'Company'),
+      _bStr(props, 'item2', 'About'),
+      _bStr(props, 'detail2', 'Team, culture, and careers.'),
+    ),
+    '    ],',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleDropzone(Map<String, dynamic> props) {
+  return [
+    'FileDropzone(',
+    "  hint: Text(${_bundleStr(_bStr(props, 'hint', 'Drag files here'))}),",
+    '  actionLabel: ${_bundleStr(_bStr(props, 'action', 'Browse files'))},',
+    '  onPressed: () {},',
+    '),',
+  ];
+}
+
+List<String> _bundleBorderLoading(Map<String, dynamic> props) {
+  return [
+    'BorderLoading(',
+    '  child: Padding(',
+    '    padding: const EdgeInsets.all(12),',
+    "    child: Text(${_bundleStr(_bStr(props, 'label', 'Loading'))}),",
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleOverflowMarquee(Map<String, dynamic> props) {
+  return [
+    'OverflowMarquee(child: Text(${_bundleStr(_bStr(props, 'text', 'This text scrolls when it overflows its parent.'))})),',
+  ];
+}
+
+List<String> _bundleFocusOutline(Map<String, dynamic> props) {
+  return [
+    'FocusOutline(',
+    '  focused: ${_bBool(props, 'focused', true)},',
+    "  child: OutlineButton(onPressed: () {}, child: Text(${_bundleStr(_bStr(props, 'label', 'Focus me'))})),",
+    '),',
+  ];
+}
+
+List<String> _bundleSwitcher(Map<String, dynamic> props) {
+  final direction = switch (props['direction']) {
+    'right' => 'AxisDirection.right',
+    'up' => 'AxisDirection.up',
+    'down' => 'AxisDirection.down',
+    _ => 'AxisDirection.left',
+  };
+  return [
+    'SizedBox(',
+    '  height: 96,',
+    '  child: Switcher(',
+    '    direction: $direction,',
+    '    children: [',
+    "      Center(child: Text(${_bundleStr(_bStr(props, 'page1', 'Page 1'))})),",
+    "      Center(child: Text(${_bundleStr(_bStr(props, 'page2', 'Page 2'))})),",
+    '    ],',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleScrollable(Map<String, dynamic> props) {
+  return [
+    'SizedBox(',
+    '  height: 120,',
+    '  child: FadedScrollableViewport(',
+    '    child: SingleChildScrollView(',
+    '      child: Column(',
+    '        mainAxisSize: MainAxisSize.min,',
+    '        crossAxisAlignment: CrossAxisAlignment.start,',
+    '        children: [',
+    "          Text(${_bundleStr(_bStr(props, 'text1', 'First line of scrollable content.'))}),",
+    "          Text(${_bundleStr(_bStr(props, 'text2', 'Second line of scrollable content.'))}),",
+    "          Text(${_bundleStr(_bStr(props, 'text3', 'Third line of scrollable content.'))}),",
+    '        ],',
+    '      ),',
+    '    ),',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleStageContainer(Map<String, dynamic> props) {
+  return [
+    'StageContainer(',
+    "  builder: (context, padding) => Padding(padding: padding, child: Text(${_bundleStr(_bStr(props, 'label', 'Stage content'))})),",
+    '),',
+  ];
+}
+
+List<String> _bundleMediaQuery(Map<String, dynamic> props) {
+  final minWidth = _bDouble(props, 'minWidth', 0.0, 0.0, 2000.0);
+  return [
+    'MediaQueryVisibility(',
+    '  minWidth: $minWidth,',
+    "  child: Text(${_bundleStr(_bStr(props, 'label', 'Wide content'))}),",
+    "  alternateChild: Text(${_bundleStr(_bStr(props, 'alternate', 'Narrow content'))}),",
+    '),',
+  ];
+}
+
+List<String> _bundleScrollview(Map<String, dynamic> props) {
+  return [
+    'ScrollViewInterceptor(child: Text(${_bundleStr(_bStr(props, 'label', 'Middle-drag to scroll'))})),',
+  ];
+}
+
+List<String> _bundleHover(Map<String, dynamic> props) {
+  return [
+    'HoverActivity(onHover: () {}, child: Text(${_bundleStr(_bStr(props, 'label', 'Hover me'))})),',
+  ];
+}
+
+List<String> _bundlePatch(Map<String, dynamic> props) {
+  return [
+    'ClickDetector(onClick: (_) {}, child: Text(${_bundleStr(_bStr(props, 'label', 'Tap me'))})),',
+  ];
+}
+
+List<String> _bundleText(Map<String, dynamic> props) {
+  return [
+    'WrappedText(child: Text(${_bundleStr(_bStr(props, 'text', 'Styled text'))})),',
+  ];
+}
+
+List<String> _bundleFilterBar(Map<String, dynamic> props) {
+  return [
+    'FilterBar(',
+    '  state: const FilterState(),',
+    '  onStateChanged: (_) {},',
+    '  presentation: FilterBarPresentation.inline,',
+    '  searchPlaceholder: ${_bundleStr(_bStr(props, 'searchPlaceholder', 'Search'))},',
+    '),',
+  ];
+}
+
+List<String> _bundleFadeScroll(Map<String, dynamic> props) {
+  // Static snapshot of the catalog's fade-scroll cell: a shared inline
+  // `ScrollController` drives both the `FadeScroll` and its `ListView` (the
+  // catalog owns+disposes it; exported screens carry it inline — lift into
+  // state when adopting, like the stepper controller above).
+  return [
+    'SizedBox(',
+    '  height: 160,',
+    '  child: FadeScroll(',
+    '    controller: ScrollController(),',
+    '    child: ListView(',
+    '      children: [',
+    "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'row1', 'Row 1'))})),",
+    "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'row2', 'Row 2'))})),",
+    "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'row3', 'Row 3'))})),",
+    '      ],',
+    '    ),',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleResizable(Map<String, dynamic> props) {
+  return [
+    'SizedBox(',
+    '  height: 120,',
+    '  child: ResizablePanel.horizontal(',
+    '    children: [',
+    "      ResizablePane.flex(child: Center(child: Text(${_bundleStr(_bStr(props, 'pane1', 'Left pane'))}))),",
+    "      ResizablePane.flex(child: Center(child: Text(${_bundleStr(_bStr(props, 'pane2', 'Right pane'))}))),",
+    '    ],',
+    '  ),',
+    '),',
+  ];
+}
+
+List<String> _bundleSubfocus(Map<String, dynamic> props) {
+  return [
+    'SubFocus(builder: (context, state) => Text(${_bundleStr(_bStr(props, 'label', 'Focused scope'))})),',
+  ];
+}
+
+List<String> _bundleRepeatedAnimationBuilder(Map<String, dynamic> props) {
+  return [
+    'PulsingAnimation(child: Text(${_bundleStr(_bStr(props, 'label', 'Pulsing'))})),',
   ];
 }
 
@@ -3637,6 +4393,128 @@ List<List<String>> _bundleSlotBlocks(
   return blocks;
 }
 
+/// Track FF4 (per-slot emission for the multi-slot hosts in `kNodeSlots`):
+/// unindented statement lines for [node]'s [slotName] child (tap comments,
+/// tap wraps, and responsive wrappers preserved via [_writeBundleNode]), or
+/// null when unassigned, dangling, or emitting nothing (missing child →
+/// omit, never a crash). No `// slot:` trace here — callers add it at the
+/// splice site so list slots and single-widget params trace identically.
+List<String>? _bundleSingleSlotBlock(
+  ScreenDoc doc,
+  CanvasNode node,
+  String slotName,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  if (node.slotNodes.isEmpty) return null;
+  final id = node.slotNodes[slotName];
+  if (id == null) return null;
+  CanvasNode? child;
+  for (final n in doc.nodes) {
+    if (n.id == id) {
+      child = n;
+      break;
+    }
+  }
+  if (child == null) return null;
+  final lines = _bundleSubtreeLines(doc, child, routes, ids, visited);
+  if (lines.isEmpty) return null;
+  return lines;
+}
+
+/// Splits a raw slot block (see [_bundleSingleSlotBlock]) into leading `//`
+/// comment lines and the widget lines that follow.
+({List<String> comments, List<String> widgets}) _splitBundleSlotBlock(
+  List<String> block,
+) {
+  final comments = <String>[];
+  final widgets = <String>[];
+  var inComments = true;
+  for (final line in block) {
+    if (line.isEmpty) continue;
+    if (inComments && line.trimLeft().startsWith('//')) {
+      comments.add(line);
+    } else {
+      inComments = false;
+      widgets.add(line);
+    }
+  }
+  return (comments: comments, widgets: widgets);
+}
+
+/// Single-widget param lines for a named slot (see
+/// [_bundleSingleSlotBlock]): `// slot: <name>` trace plus tap comments
+/// above, then `<paramName>: <expr>,` where `<expr>` is the slot child's
+/// widget lines re-indented under [paramIndent] with the statement trailing
+/// comma stripped and re-added by the param. Returns null when absent
+/// (caller keeps the prop default, so slotless output stays byte-identical).
+List<String>? _bundleSingleParam(
+  List<String>? block,
+  String slotName,
+  String paramName,
+  String paramIndent,
+) {
+  if (block == null) return null;
+  final parts = _splitBundleSlotBlock(block);
+  if (parts.widgets.isEmpty) return null;
+  var expr = parts.widgets.join('\n').trimRight();
+  if (expr.endsWith(',')) expr = expr.substring(0, expr.length - 1);
+  final exprLines = expr.split('\n');
+  final out = <String>[
+    '$paramIndent// slot: $slotName',
+    for (final c in parts.comments) '$paramIndent$c',
+    '$paramIndent$paramName: ${exprLines.first}',
+    for (final line in exprLines.skip(1))
+      if (line.isNotEmpty) '$paramIndent  $line',
+  ];
+  out[out.length - 1] = '${out.last},';
+  return out;
+}
+
+/// List-slot item lines for `headers`/`footers` (see
+/// [_bundleSingleSlotBlock]): the slot child's statement lines (kept with
+/// their trailing comma) spliced as list elements under [itemIndent],
+/// traced by `// slot: <name>`. Returns null when absent.
+List<String>? _bundleSlotListItem(
+  List<String>? block,
+  String slotName,
+  String itemIndent,
+) {
+  if (block == null) return null;
+  final parts = _splitBundleSlotBlock(block);
+  if (parts.widgets.isEmpty) return null;
+  return [
+    '$itemIndent// slot: $slotName',
+    for (final c in parts.comments) '$itemIndent$c',
+    for (final line in parts.widgets)
+      if (line.isNotEmpty) '$itemIndent$line',
+  ];
+}
+
+/// Track FF4: unknown-slot blocks for a per-slot host — resolved slot
+/// children whose names are NOT in [known], each with its `// slot:` trace
+/// (see [_bundleSlotBlocks]). Unknown names cannot be produced via the
+/// editor (it throws), only via hand-written docs; they splice into the
+/// host's generic content region so no subtree is silently dropped.
+List<List<String>> _bundleUnknownSlotBlocks(
+  ScreenDoc doc,
+  CanvasNode node,
+  Set<String> known,
+  Map<String, String> routes,
+  Set<String> ids,
+  Set<String> visited,
+) {
+  final blocks = <List<String>>[];
+  for (final s in _bundleSlotKids(doc, node)) {
+    if (known.contains(s.slot)) continue;
+    final lines = _bundleSubtreeLines(doc, s.child, routes, ids, visited);
+    if (lines.isEmpty) continue;
+    blocks.add(['// slot: ${s.slot}', ...lines]);
+  }
+  return blocks;
+}
+
 /// Unindented statement lines for [node]'s full subtree (statement style,
 /// trailing commas), for splicing into container slots and tier-branch
 /// expressions. Recursion funnels through [_writeBundleNode], which is
@@ -3690,6 +4568,27 @@ void _writeBundleContainer(
   Set<String> visited,
 ) {
   rows.add('$indent${_bundleItemComment(item, routes, ids)}');
+  // Track FF4: `scaffold` splices each named slot into its distinct param
+  // (see `_bundleScaffoldWithSlots`); all other containers keep the DD
+  // collapse (slot blocks before flow blocks).
+  if (item.kind == 'scaffold') {
+    final flow = [
+      ..._bundleUnknownSlotBlocks(
+          doc, node, const {'appBar', 'body', 'footer'}, routes, ids, visited),
+      ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+    ];
+    final body = _bundleScaffoldWithSlots(
+      item.props,
+      flow,
+      _bundleSingleSlotBlock(doc, node, 'appBar', routes, ids, visited),
+      _bundleSingleSlotBlock(doc, node, 'body', routes, ids, visited),
+      _bundleSingleSlotBlock(doc, node, 'footer', routes, ids, visited),
+    );
+    for (final line in _bundleWrapTap(body, item, routes, ids)) {
+      rows.add('$indent$line');
+    }
+    return;
+  }
   // Track DD: slot blocks splice before flow blocks (named-slot collapse).
   final nested = [
     ..._bundleSlotBlocks(doc, node, routes, ids, visited),
@@ -3719,6 +4618,32 @@ void _writeBundleFallback(
   String indent,
   Set<String> visited,
 ) {
+  // Track FF4: single-item `basic`/`card_image` hosts with known slots carry
+  // those slots inside the chrome (see `_bundleBasicWithSlots`/
+  // `_bundleCardImageWithSlots`); flow children plus unknown slots stack
+  // below. All other leaves keep the DD collapse.
+  if (node.items.length == 1 &&
+      (node.items.single.kind == 'basic' ||
+          node.items.single.kind == 'card_image')) {
+    final kind = node.items.single.kind;
+    final known =
+        kind == 'basic' ? const {'leading', 'trailing'} : const {'image'};
+    var hasKnown = false;
+    for (final s in _bundleSlotKids(doc, node)) {
+      if (!known.contains(s.slot)) continue;
+      final block = _bundleSingleSlotBlock(
+          doc, node, s.slot, routes, ids, visited);
+      if (block != null) {
+        hasKnown = true;
+        break;
+      }
+    }
+    if (hasKnown) {
+      _writeBundleBasicOrCardImage(
+          rows, doc, node, kids, routes, ids, indent, visited);
+      return;
+    }
+  }
   // Track DD: slot blocks stack before flow blocks (named-slot collapse).
   final nested = [
     ..._bundleSlotBlocks(doc, node, routes, ids, visited),
@@ -3730,6 +4655,76 @@ void _writeBundleFallback(
     return;
   }
   for (final line in body) {
+    rows.add('$indent$line');
+  }
+}
+
+/// Track FF4: writes a single-item `basic`/`card_image` host whose known
+/// slots are present (see [_writeBasicOrCardImageNode] in
+/// `codegen_single.dart` for the single-file twin): the chrome carries the
+/// slot widgets inside with the host item's tap wrap; flow children plus
+/// unknown-slot blocks stack below in the fallback rhythm.
+void _writeBundleBasicOrCardImage(
+  List<String> rows,
+  ScreenDoc doc,
+  CanvasNode node,
+  List<CanvasNode> kids,
+  Map<String, String> routes,
+  Set<String> ids,
+  String indent,
+  Set<String> visited,
+) {
+  final item = node.items.single;
+  final List<String> chrome;
+  final Set<String> known;
+  if (item.kind == 'basic') {
+    known = const {'leading', 'trailing'};
+    chrome = _bundleBasicWithSlots(
+      item.props,
+      _bundleSingleSlotBlock(doc, node, 'leading', routes, ids, visited),
+      _bundleSingleSlotBlock(doc, node, 'trailing', routes, ids, visited),
+    );
+  } else {
+    known = const {'image'};
+    chrome = _bundleCardImageWithSlots(
+      item.props,
+      _bundleSingleSlotBlock(doc, node, 'image', routes, ids, visited),
+    );
+  }
+  final ownUnit = [
+    _bundleItemComment(item, routes, ids),
+    ..._bundleWrapTap(chrome, item, routes, ids),
+  ];
+  final nested = [
+    ..._bundleUnknownSlotBlocks(doc, node, known, routes, ids, visited),
+    ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+  ];
+  if (nested.isEmpty) {
+    for (final line in ownUnit) {
+      rows.add('$indent$line');
+    }
+    return;
+  }
+  final units = <List<String>>[ownUnit, ...nested];
+  final out = <String>[
+    'Column(',
+    '  mainAxisSize: MainAxisSize.min,',
+    '  crossAxisAlignment: CrossAxisAlignment.start,',
+    '  children: [',
+  ];
+  var first = true;
+  for (final unit in units) {
+    if (!first) out.add('    const SizedBox(height: 12),');
+    first = false;
+    for (final line in unit) {
+      if (line.isEmpty) continue;
+      out.add('    $line');
+    }
+  }
+  out
+    ..add('  ],')
+    ..add('),');
+  for (final line in out) {
     rows.add('$indent$line');
   }
 }
@@ -3834,6 +4829,97 @@ String _bundleBranchExpr(
   final slotBlocks = _bundleSlotBlocks(doc, node, routes, ids, visited);
   if (kids.isEmpty && slotBlocks.isEmpty) {
     return _bundleNodeExpr(items, routes, ids);
+  }
+  // Track FF4: per-slot branches carry the same distinct-param emission as
+  // the statement paths (tiers/taps preserved per level via the slot-block
+  // captures above).
+  if (items.length == 1 &&
+      !node.isRow &&
+      (items.single.kind == 'scaffold' ||
+          items.single.kind == 'basic' ||
+          items.single.kind == 'card_image')) {
+    final kind = items.single.kind;
+    if (kind == 'scaffold') {
+      final flow = [
+        ..._bundleUnknownSlotBlocks(
+            doc, node, const {'appBar', 'body', 'footer'}, routes, ids, visited),
+        ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+      ];
+      final lines = _bundleWrapTap(
+        _bundleScaffoldWithSlots(
+          items.single.props,
+          flow,
+          _bundleSingleSlotBlock(doc, node, 'appBar', routes, ids, visited),
+          _bundleSingleSlotBlock(doc, node, 'body', routes, ids, visited),
+          _bundleSingleSlotBlock(doc, node, 'footer', routes, ids, visited),
+        ),
+        items.single,
+        routes,
+        ids,
+      );
+      return _stripBundleTrailingComma(lines.join('\n'));
+    }
+    final known =
+        kind == 'basic' ? const {'leading', 'trailing'} : const {'image'};
+    var hasKnown = false;
+    for (final s in _bundleSlotKids(doc, node)) {
+      if (!known.contains(s.slot)) continue;
+      if (_bundleSingleSlotBlock(doc, node, s.slot, routes, ids, visited) !=
+          null) {
+        hasKnown = true;
+        break;
+      }
+    }
+    if (hasKnown) {
+      final List<String> chrome;
+      if (kind == 'basic') {
+        chrome = _bundleBasicWithSlots(
+          items.single.props,
+          _bundleSingleSlotBlock(doc, node, 'leading', routes, ids, visited),
+          _bundleSingleSlotBlock(doc, node, 'trailing', routes, ids, visited),
+        );
+      } else {
+        chrome = _bundleCardImageWithSlots(
+          items.single.props,
+          _bundleSingleSlotBlock(doc, node, 'image', routes, ids, visited),
+        );
+      }
+      final ownUnit = [
+        _bundleItemComment(items.single, routes, ids),
+        ..._bundleWrapTap(chrome, items.single, routes, ids),
+      ];
+      final nested = [
+        ..._bundleUnknownSlotBlocks(doc, node, known, routes, ids, visited),
+        ..._bundleNestedBlocks(doc, kids, routes, ids, visited),
+      ];
+      if (nested.isEmpty) {
+        // Single chrome expression (drop the doc comment for the expression
+        // form, like the container branch above — comments ride the statement
+        // paths via `_writeBundleBranch`).
+        final lines = _bundleWrapTap(chrome, items.single, routes, ids);
+        return _stripBundleTrailingComma(lines.join('\n'));
+      }
+      final units = <List<String>>[ownUnit, ...nested];
+      final out = <String>[
+        'Column(',
+        '  mainAxisSize: MainAxisSize.min,',
+        '  crossAxisAlignment: CrossAxisAlignment.start,',
+        '  children: [',
+      ];
+      var first = true;
+      for (final unit in units) {
+        if (!first) out.add('    const SizedBox(height: 12),');
+        first = false;
+        for (final line in unit) {
+          if (line.isEmpty) continue;
+          out.add('    $line');
+        }
+      }
+      out
+        ..add('  ],')
+        ..add('),');
+      return _stripBundleTrailingComma(out.join('\n'));
+    }
   }
   if (node.isRow) {
     final lines = <String>[];

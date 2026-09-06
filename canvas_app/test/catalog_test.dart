@@ -76,9 +76,40 @@ void main() {
         'feature_carousel',
         // Track Y1 addition (2026-09-06).
         'navigation_bar',
+        // Track FF2 additions (2026-09-06): placeholder blitz — the
+        // form/input family plus the bare-capable display/layout/utility
+        // batch (28 kinds).
+        'phone_input',
+        'chip_input',
+        'autocomplete',
+        'item_picker',
+        'multiple_choice',
+        'object_input',
+        'text_field',
+        'markdown',
+        'text_animate',
+        'icon',
+        'navigation_menu',
+        'dropzone',
+        'border_loading',
+        'overflow_marquee',
+        'focus_outline',
+        'switcher',
+        'scrollable',
+        'stage_container',
+        'media_query',
+        'scrollview',
+        'hover',
+        'patch',
+        'text',
+        'filter_bar',
+        'fade_scroll',
+        'resizable',
+        'subfocus',
+        'repeated_animation_builder',
       ]),
     );
-    expect(kCatalog, hasLength(69));
+    expect(kCatalog, hasLength(97));
     for (final entry in kCatalog) {
       expect(entry.label, isNotEmpty, reason: '${entry.kind} label');
       expect(entry.defaults, isNotEmpty, reason: '${entry.kind} defaults');
@@ -857,5 +888,161 @@ const Map<String, List<Map<String, Object?>>> kBlockSchemas = {
     {'name': 'tab3', 'type': 'string', 'default': 'Saved'},
     {'name': 'tab4', 'type': 'string', 'default': 'You'},
     {'name': 'index', 'type': 'int', 'default': 0},
+  ],
+  // No canvas blocks exist for these 28 kinds either (same pinned-kit scan —
+  // no `canvas` key on any of the 134 components), so these copies likewise
+  // mirror the invented catalog defaults until real blocks land.
+  // (Track FF2 addition, 2026-09-06.)
+  'phone_input': [
+    {'name': 'label', 'type': 'string', 'default': ''},
+    {'name': 'searchHint', 'type': 'string', 'default': 'Search countries...'},
+  ],
+  'chip_input': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Add a tag'},
+    {'name': 'chip1', 'type': 'string', 'default': 'Design'},
+    {'name': 'chip2', 'type': 'string', 'default': ''},
+  ],
+  'autocomplete': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Search...'},
+    {'name': 'suggestion1', 'type': 'string', 'default': 'Apple'},
+    {'name': 'suggestion2', 'type': 'string', 'default': 'Apricot'},
+  ],
+  'item_picker': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select item'},
+    {'name': 'option1', 'type': 'string', 'default': 'Option 1'},
+    {'name': 'option2', 'type': 'string', 'default': 'Option 2'},
+    {'name': 'value', 'type': 'string', 'default': ''},
+  ],
+  'multiple_choice': [
+    {
+      'name': 'mode',
+      'type': 'enum',
+      'enum': ['single', 'multiple'],
+      'default': 'single',
+    },
+    {'name': 'option1', 'type': 'string', 'default': 'Option A'},
+    {'name': 'option2', 'type': 'string', 'default': 'Option B'},
+    {'name': 'option3', 'type': 'string', 'default': 'Option C'},
+    {'name': 'value', 'type': 'string', 'default': 'Option A'},
+    {'name': 'value2', 'type': 'string', 'default': 'Option B'},
+  ],
+  'object_input': [
+    {
+      'name': 'mode',
+      'type': 'enum',
+      'enum': ['date', 'time', 'duration'],
+      'default': 'date',
+    },
+    {'name': 'placeholder', 'type': 'string', 'default': 'Select value'},
+    {'name': 'label', 'type': 'string', 'default': ''},
+  ],
+  'text_field': [
+    {'name': 'placeholder', 'type': 'string', 'default': 'Type here'},
+    {'name': 'label', 'type': 'string', 'default': ''},
+    {'name': 'disabled', 'type': 'bool', 'default': false},
+    {'name': 'initialValue', 'type': 'string', 'default': ''},
+  ],
+  'markdown': [
+    {'name': 'data', 'type': 'string', 'default': '# Title\n\nSome **rich** text.'},
+  ],
+  'text_animate': [
+    {'name': 'text', 'type': 'string', 'default': 'Watch the words appear.'},
+  ],
+  'icon': [
+    {
+      'name': 'name',
+      'type': 'enum',
+      'enum': [
+        'star',
+        'heart',
+        'home',
+        'search',
+        'settings',
+        'check',
+        'info',
+        'image',
+      ],
+      'default': 'star',
+    },
+    {'name': 'size', 'type': 'double', 'default': 24.0},
+  ],
+  'navigation_menu': [
+    {'name': 'menu1', 'type': 'string', 'default': 'Products'},
+    {'name': 'item1', 'type': 'string', 'default': 'Web Apps'},
+    {'name': 'detail1', 'type': 'string', 'default': 'Landing pages and dashboards.'},
+    {'name': 'menu2', 'type': 'string', 'default': 'Company'},
+    {'name': 'item2', 'type': 'string', 'default': 'About'},
+    {'name': 'detail2', 'type': 'string', 'default': 'Team, culture, and careers.'},
+  ],
+  'dropzone': [
+    {'name': 'hint', 'type': 'string', 'default': 'Drag files here'},
+    {'name': 'action', 'type': 'string', 'default': 'Browse files'},
+  ],
+  'border_loading': [
+    {'name': 'label', 'type': 'string', 'default': 'Loading'},
+  ],
+  'overflow_marquee': [
+    {
+      'name': 'text',
+      'type': 'string',
+      'default': 'This text scrolls when it overflows its parent.',
+    },
+  ],
+  'focus_outline': [
+    {'name': 'label', 'type': 'string', 'default': 'Focus me'},
+    {'name': 'focused', 'type': 'bool', 'default': true},
+  ],
+  'switcher': [
+    {
+      'name': 'direction',
+      'type': 'enum',
+      'enum': ['left', 'right', 'up', 'down'],
+      'default': 'left',
+    },
+    {'name': 'page1', 'type': 'string', 'default': 'Page 1'},
+    {'name': 'page2', 'type': 'string', 'default': 'Page 2'},
+  ],
+  'scrollable': [
+    {'name': 'text1', 'type': 'string', 'default': 'First line of scrollable content.'},
+    {'name': 'text2', 'type': 'string', 'default': 'Second line of scrollable content.'},
+    {'name': 'text3', 'type': 'string', 'default': 'Third line of scrollable content.'},
+  ],
+  'stage_container': [
+    {'name': 'label', 'type': 'string', 'default': 'Stage content'},
+  ],
+  'media_query': [
+    {'name': 'label', 'type': 'string', 'default': 'Wide content'},
+    {'name': 'alternate', 'type': 'string', 'default': 'Narrow content'},
+    {'name': 'minWidth', 'type': 'double', 'default': 0.0},
+  ],
+  'scrollview': [
+    {'name': 'label', 'type': 'string', 'default': 'Middle-drag to scroll'},
+  ],
+  'hover': [
+    {'name': 'label', 'type': 'string', 'default': 'Hover me'},
+  ],
+  'patch': [
+    {'name': 'label', 'type': 'string', 'default': 'Tap me'},
+  ],
+  'text': [
+    {'name': 'text', 'type': 'string', 'default': 'Styled text'},
+  ],
+  'filter_bar': [
+    {'name': 'searchPlaceholder', 'type': 'string', 'default': 'Search'},
+  ],
+  'fade_scroll': [
+    {'name': 'row1', 'type': 'string', 'default': 'Row 1'},
+    {'name': 'row2', 'type': 'string', 'default': 'Row 2'},
+    {'name': 'row3', 'type': 'string', 'default': 'Row 3'},
+  ],
+  'resizable': [
+    {'name': 'pane1', 'type': 'string', 'default': 'Left pane'},
+    {'name': 'pane2', 'type': 'string', 'default': 'Right pane'},
+  ],
+  'subfocus': [
+    {'name': 'label', 'type': 'string', 'default': 'Focused scope'},
+  ],
+  'repeated_animation_builder': [
+    {'name': 'label', 'type': 'string', 'default': 'Pulsing'},
   ],
 };

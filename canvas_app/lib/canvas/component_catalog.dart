@@ -3175,6 +3175,796 @@ Widget _buildFeatureCarousel(Map<String, dynamic> props) {
   );
 }
 
+/// Track FF2 builders (2026-09-06): placeholder-blitz kinds — the form/input
+/// family the user hit (`unknown: phone_input` triage screenshot) first.
+/// Same honesty rules as Tracks M/P: no canvas blocks exist in
+/// `components.json` for any of these, so defaults are invented and
+/// documented per builder; only bool/string/num/enum prop types already
+/// established by the seed kinds; theme-token styling only; never a
+/// `preview.dart` embed (those render full `Scaffold`s); never
+/// network/asset images.
+Widget _buildPhoneInput(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `PhoneInput` builds bare with all-optional params (the component's own
+  // preview is exactly `PhoneInput(onChanged: (_) {})` in a 320px box): the
+  // country selector defaults to United States internally and the number
+  // field starts empty. The optional `label` renders as a caption above
+  // (mirrors the input builder; `PhoneInput` takes no label param) and
+  // `searchHint` drives the country-search placeholder. `Country` /
+  // `PhoneNumber` stay kit-internal (unexported value types with no sane
+  // string-prop mapping), so canvas shows the empty field — typing,
+  // filtering, and country picking are runtime-only.
+  // Track Z2 beauty shell: the 48px floor mirrors the input builder (same
+  // touch-target brief); width stays parent-owned.
+  final label = (props['label'] ?? '') as String;
+  final searchHint = (props['searchHint'] ?? 'Search countries...') as String;
+  final field = ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 48),
+    child: shadcn.PhoneInput(
+      onChanged: (_) {},
+      searchPlaceholder: Text(searchHint),
+    ),
+  );
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 8),
+      field,
+    ],
+  );
+}
+
+/// Local controller ownership for the catalog chip input (builders are
+/// stateless). The kit factory `ChipEditingController(initialChips:)` writes
+/// the chip glyphs into the text but never populates the chip map, so
+/// factory-seeded chips render as invisible glyphs (no widget span — kit
+/// finding, reported); the public `chips` setter encodes AND maps, so the
+/// cell seeds through it exactly like the stepper cell owns its controller.
+class _ChipInputCell extends StatefulWidget {
+  final String placeholder;
+  final List<String> initialChips;
+
+  const _ChipInputCell({
+    required this.placeholder,
+    required this.initialChips,
+  });
+
+  @override
+  State<_ChipInputCell> createState() => _ChipInputCellState();
+}
+
+class _ChipInputCellState extends State<_ChipInputCell> {
+  late final shadcn.ChipEditingController<String> _controller =
+      shadcn.ChipEditingController<String>()..chips = widget.initialChips;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return shadcn.ChipInput<String>(
+      controller: _controller,
+      chipBuilder: (context, chip) => Text(chip),
+      onChipSubmitted: (value) => value.isEmpty ? null : value,
+      placeholder: Text(widget.placeholder),
+    );
+  }
+}
+
+Widget _buildChipInput(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`form/chip_input/preview.dart`: an `AutoComplete`
+  // wrapping a `ChipInput<String>` whose `chipBuilder` renders `Text(chip)`
+  // and whose `onChipSubmitted` prefixes `'@$value'`). The canvas-level
+  // `chip1` / `chip2` strings seed the cell controller (empty strings drop
+  // out, so a blank second chip renders the empty field exactly like the
+  // input builder's empty-label convention). Typing, tokenizing, and
+  // suggestion filtering are runtime-only.
+  final placeholder = (props['placeholder'] ?? 'Add a tag') as String;
+  final chip1 = (props['chip1'] ?? 'Design') as String;
+  final chip2 = (props['chip2'] ?? '') as String;
+  return _ChipInputCell(
+    placeholder: placeholder,
+    initialChips: [
+      for (final chip in [chip1, chip2])
+        if (chip.isNotEmpty) chip,
+    ],
+  );
+}
+
+Widget _buildAutocomplete(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`form/autocomplete/preview.dart`: an
+  // `AutoComplete` wrapping a `TextField`, filtering a fruit list on change).
+  // The real `AutoComplete` builds bare around `suggestions` + `child`; the
+  // suggestion popover opens on focus/typing at runtime, so canvas shows the
+  // field — the same honest-static convention as the tooltip catalog builder.
+  // The canvas-level `suggestion1` / `suggestion2` strings are the static
+  // suggestion list (empty strings drop out, so the popover never shows
+  // blanks).
+  final placeholder = (props['placeholder'] ?? 'Search...') as String;
+  final suggestion1 = (props['suggestion1'] ?? 'Apple') as String;
+  final suggestion2 = (props['suggestion2'] ?? 'Apricot') as String;
+  return shadcn.AutoComplete(
+    suggestions: [
+      for (final suggestion in [suggestion1, suggestion2])
+        if (suggestion.isNotEmpty) suggestion,
+    ],
+    child: shadcn.TextField(placeholder: Text(placeholder)),
+  );
+}
+
+Widget _buildItemPicker(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `ItemPicker<T>` (an `ObjectFormField` trigger like the form-field catalog
+  // builder) builds bare around the required `items` delegate + `builder`
+  // fn; the grid/list editor opens in a dialog/popover at runtime, so canvas
+  // shows the trigger — the same honest-static convention as the form-field
+  // catalog builder. The canvas-level `option1` / `option2` strings feed the
+  // static `ItemList`; `value` renders through `builder` when non-empty (same
+  // empty-means-null convention as the form-field builder).
+  final placeholder = (props['placeholder'] ?? 'Select item') as String;
+  final option1 = (props['option1'] ?? 'Option 1') as String;
+  final option2 = (props['option2'] ?? 'Option 2') as String;
+  final value = (props['value'] ?? '') as String;
+  return shadcn.ItemPicker<String>(
+    items: shadcn.ItemList([option1, option2]),
+    builder: (context, item) => Text(item),
+    value: value.isEmpty ? null : value,
+    onChanged: (_) {},
+    placeholder: Text(placeholder),
+  );
+}
+
+/// Local selection state for the catalog multiple choice (builders are
+/// stateless). Mirrors `_RadioGroupCell`: the single-select `MultipleChoice`
+/// owns the selected value, the multi-select `MultipleAnswer` owns the
+/// selected set — both render the same theme-token choice chips below.
+class _MultipleChoiceCell extends StatefulWidget {
+  final String mode;
+  final List<String> options;
+  final String initialSingle;
+  final Set<String> initialMulti;
+
+  const _MultipleChoiceCell({
+    required this.mode,
+    required this.options,
+    required this.initialSingle,
+    required this.initialMulti,
+  });
+
+  @override
+  State<_MultipleChoiceCell> createState() => _MultipleChoiceCellState();
+}
+
+class _MultipleChoiceCellState extends State<_MultipleChoiceCell> {
+  late String? _single = widget.initialSingle.isEmpty
+      ? null
+      : widget.initialSingle;
+  late Set<String> _multi = Set<String>.of(widget.initialMulti);
+
+  /// Theme-token choice chip (never hardcoded colors): the selected chip
+  /// inverts to the `foreground`/`background` pair, the unselected chip keeps
+  /// the ambient text behind a `mutedForeground` outline — the drawer /
+  /// scaffold `Theme.of` precedent, so every chrome/components combination
+  /// keeps contrast. Taps toggle through `Choice.choose` (single) or the
+  /// local set (multi); `Choice.getValue` is the selection source of truth
+  /// for the single variant, exactly like the component's own preview. The
+  /// chip owns a `Builder` so the tap context sits BELOW the
+  /// `MultipleChoice`/`MultipleAnswer` ancestor (`Choice.choose` looks the
+  /// `Data` scope up from the tap context — the cell context above it would
+  /// miss).
+  Widget _choice(String option, bool selected) {
+    return Builder(
+      builder: (context) {
+        final scheme = shadcn.Theme.of(context).colorScheme;
+        return GestureDetector(
+          onTap: () {
+            if (widget.mode == 'multiple') {
+              setState(() {
+                if (_multi.contains(option)) {
+                  _multi = Set<String>.of(_multi)..remove(option);
+                } else {
+                  _multi = Set<String>.of(_multi)..add(option);
+                }
+              });
+            } else {
+              shadcn.Choice.choose<String>(context, option);
+            }
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: selected ? scheme.foreground : null,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected ? scheme.foreground : scheme.mutedForeground,
+              ),
+            ),
+            child: Text(
+              option,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: selected ? scheme.background : null),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Track T (narrow-width): options ride a `Wrap`, so long labels flow
+    // instead of overflowing 320px viewports (each chip ellipsizes past its
+    // share, same loose-flex idiom as the radio-group builder).
+    if (widget.mode == 'multiple') {
+      return shadcn.MultipleAnswer<String>(
+        value: _multi,
+        onChanged: (v) => setState(() => _multi = Set<String>.of(v ?? const {})),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final option in widget.options)
+              _choice(option, _multi.contains(option)),
+          ],
+        ),
+      );
+    }
+    return shadcn.MultipleChoice<String>(
+      value: _single,
+      onChanged: (v) => setState(() => _single = v),
+      child: Builder(
+        builder: (context) {
+          final selected =
+              shadcn.Choice.getValue<String>(context)?.toSet() ?? const {};
+          return Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final option in widget.options)
+                _choice(option, selected.contains(option)),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+Widget _buildMultipleChoice(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`form/multiple_choice/preview.dart`: a
+  // single-select `MultipleChoice` row plus a multi-select `MultipleAnswer`
+  // row, both choice-chip `Wrap`s driven by the `Choice.getValue` /
+  // `Choice.choose` context API). The canvas-level `mode` string picks the
+  // variant (unknown falls back to single, same fallback idiom as the
+  // tracker builder); `value` is the single selection, `value` + `value2`
+  // seed the multi set (empties and unknowns drop out, never a crash).
+  final mode = (props['mode'] ?? 'single') as String;
+  final options = [
+    (props['option1'] ?? 'Option A') as String,
+    (props['option2'] ?? 'Option B') as String,
+    (props['option3'] ?? 'Option C') as String,
+  ];
+  final value = (props['value'] ?? 'Option A') as String;
+  final value2 = (props['value2'] ?? 'Option B') as String;
+  return _MultipleChoiceCell(
+    mode: mode,
+    options: options,
+    initialSingle: value,
+    initialMulti: {
+      for (final v in [value, value2])
+        if (v.isNotEmpty && options.contains(v)) v,
+    },
+  );
+}
+
+Widget _buildObjectInput(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `DateInput` / `TimeInput` / `DurationInput` (formatted-editor shells
+  // around the date/time pickers, all-optional past `onChanged`) build bare;
+  // the calendar/clock opens in the overlay at runtime, so canvas shows the
+  // inline formatted editor — the same honest-static convention as the
+  // date-picker catalog builder. The canvas-level `mode` string picks the
+  // editor (unknown falls back to date); the optional `label` renders as a
+  // caption above (mirrors the input builder).
+  final mode = (props['mode'] ?? 'date') as String;
+  final placeholder = (props['placeholder'] ?? 'Select value') as String;
+  final label = (props['label'] ?? '') as String;
+  final Widget field = switch (mode) {
+    'time' => shadcn.TimeInput(
+      onChanged: (_) {},
+      placeholder: Text(placeholder),
+    ),
+    'duration' => shadcn.DurationInput(
+      onChanged: (_) {},
+      placeholder: Text(placeholder),
+    ),
+    _ => shadcn.DateInput(
+      onChanged: (_) {},
+      placeholder: Text(placeholder),
+    ),
+  };
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 6),
+      field,
+    ],
+  );
+}
+
+/// Track FF2 builders, batch 2 (2026-09-06): display/utility/layout kinds
+/// with bare-capable kit widgets. Same honesty rules as batch 1.
+Widget _buildTextFieldKind(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented, mirroring the
+  // `input` catalog builder (the kit `TextField` IS the widget the input
+  // builder renders; this kind exposes its rich core: placeholder, label
+  // caption, initial value, and disabled state — popovers, autocomplete, and
+  // action features are runtime-only).
+  final placeholder = (props['placeholder'] ?? 'Type here') as String;
+  final label = (props['label'] ?? '') as String;
+  final disabled = (props['disabled'] ?? false) as bool;
+  final initialValue = (props['initialValue'] ?? '') as String;
+  final field = ConstrainedBox(
+    constraints: const BoxConstraints(minHeight: 48),
+    child: shadcn.TextField(
+      placeholder: Text(placeholder),
+      enabled: !disabled,
+      initialValue: initialValue.isEmpty ? null : initialValue,
+    ),
+  );
+  if (label.isEmpty) return field;
+  return Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(label),
+      const SizedBox(height: 8),
+      field,
+    ],
+  );
+}
+
+Widget _buildMarkdown(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: a short inline
+  // document. The real `Markdown` builds bare around the inline `data`
+  // string (`shrinkWrap` defaults to true, so unbounded canvas columns are
+  // safe); the `asset`/`file` named ctors are deliberately unused (asset and
+  // file sources have no canvas counterpart). Links, images, and disclosure
+  // interactions are runtime-only.
+  final data = (props['data'] ?? '# Title\n\nSome **rich** text.') as String;
+  return shadcn.Markdown(data: data);
+}
+
+Widget _buildTextAnimate(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: one static
+  // sentence. The real `StreamingText` builds bare around `text` and reveals
+  // it progressively (typewriter default); canvas shows the settled text
+  // after the reveal — stream updates, effects, and cursors are runtime-only.
+  final text = (props['text'] ?? 'Watch the words appear.') as String;
+  return shadcn.StreamingText(text: text);
+}
+
+/// Canvas-level icon names for the icon builder (material glyphs — the same
+/// `Icons.*` source every other catalog builder uses for chrome; unknown
+/// names fall back to `star` instead of crashing, same fallback idiom as the
+/// keyboard-shortcut parser).
+IconData _canvasIcon(String? name) {
+  return switch (name) {
+    'heart' => Icons.favorite,
+    'home' => Icons.home,
+    'search' => Icons.search,
+    'settings' => Icons.settings,
+    'check' => Icons.check,
+    'info' => Icons.info,
+    'image' => Icons.image,
+    _ => Icons.star,
+  };
+}
+
+Widget _buildIcon(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `WrappedIcon` builds bare around the `data` theme-builder fn + `child`;
+  // the canvas-level `name` string maps onto a material glyph and `size`
+  // wires into the `IconThemeData` the helper exists to resolve (parsed via
+  // `num`, clamped like the avatar builder's size). Color stays inherited so
+  // the surrounding theme owns it — never a hardcoded color.
+  final size = ((props['size'] as num?)?.toDouble() ?? 24.0).clamp(12.0, 64.0);
+  return shadcn.WrappedIcon(
+    data: (context, theme) => IconThemeData(size: size),
+    child: Icon(_canvasIcon(props['name'] as String?)),
+  );
+}
+
+Widget _buildNavigationMenu(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented from the
+  // component's own preview (`navigation/navigation_menu/preview.dart`: a
+  // Products/Company bar with content lists). The real `NavigationMenu`
+  // builds bare around `NavigationMenuItem`s (dropdowns open in the overlay
+  // at runtime, so canvas shows the bar itself — the menubar builder's
+  // honest-static precedent). Track T (narrow-width): the bar rides a
+  // horizontal scroll shell with NO fixed height — the bar keeps its intrinsic
+  // height, so short labels never scroll and long ones scroll instead of
+  // overflowing 320px viewports.
+  final menu1 = (props['menu1'] ?? 'Products') as String;
+  final item1 = (props['item1'] ?? 'Web Apps') as String;
+  final detail1 =
+      (props['detail1'] ?? 'Landing pages and dashboards.') as String;
+  final menu2 = (props['menu2'] ?? 'Company') as String;
+  final item2 = (props['item2'] ?? 'About') as String;
+  final detail2 = (props['detail2'] ?? 'Team, culture, and careers.') as String;
+  return SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: shadcn.NavigationMenu(
+      children: [
+        shadcn.NavigationMenuItem(
+          content: shadcn.NavigationMenuContentList(
+            children: [
+              shadcn.NavigationMenuContent(
+                title: Text(item1),
+                content: Text(detail1),
+              ),
+            ],
+          ),
+          child: Text(menu1),
+        ),
+        shadcn.NavigationMenuItem(
+          content: shadcn.NavigationMenuContentList(
+            children: [
+              shadcn.NavigationMenuContent(
+                title: Text(item2),
+                content: Text(detail2),
+              ),
+            ],
+          ),
+          child: Text(menu2),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildDropzone(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `FileDropzone` is all-optional and builds bare (`showDefaultContent`
+  // renders the themed icon + hint + action row); the canvas-level `hint` /
+  // `action` strings drive that default content and `onPressed` stays a
+  // no-op — the file dialog opens at runtime only.
+  final hint = (props['hint'] ?? 'Drag files here') as String;
+  final action = (props['action'] ?? 'Browse files') as String;
+  return shadcn.FileDropzone(
+    hint: Text(hint),
+    actionLabel: action,
+    onPressed: () {},
+  );
+}
+
+Widget _buildBorderLoading(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `BorderLoading` builds bare around the required `child` (the sweep
+  // gradient + tracer animate on a 1200ms loop at runtime); canvas wraps the
+  // canvas-level `label` text in the default padded ring.
+  final label = (props['label'] ?? 'Loading') as String;
+  return shadcn.BorderLoading(
+    child: Padding(
+      padding: const EdgeInsets.all(12),
+      child: Text(label),
+    ),
+  );
+}
+
+Widget _buildOverflowMarquee(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented from the
+  // component's own preview (`layout/overflow_marquee/preview.dart`: an
+  // `OverflowMarquee` around the "This text scrolls..." caption). The real
+  // widget builds bare around the required `child`; the loop only engages
+  // past overflow, so short canvas text renders statically and long text
+  // scrolls — no fixed shell needed either way.
+  final text =
+      (props['text'] ?? 'This text scrolls when it overflows its parent.')
+          as String;
+  return shadcn.OverflowMarquee(child: Text(text));
+}
+
+/// Track FF2 builders, batch 3 (2026-09-06): wrappers, viewports, and
+/// controllers. Same honesty rules as batch 1.
+Widget _buildFocusOutline(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `FocusOutline` builds bare around `child` + `focused`; canvas wraps an
+  // outline button (the tooltip builder's trigger precedent) with the ring
+  // forced on by default — the ring is the whole point of the kind.
+  final label = (props['label'] ?? 'Focus me') as String;
+  final focused = (props['focused'] ?? true) as bool;
+  return shadcn.FocusOutline(
+    focused: focused,
+    child: shadcn.OutlineButton(onPressed: () {}, child: Text(label)),
+  );
+}
+
+Widget _buildSwitcher(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two static
+  // pages. The real `Switcher` builds bare around `direction` + `children`
+  // (swipe animation at runtime; canvas shows the first page statically).
+  // The canvas-level `direction` string maps onto `AxisDirection` (unknown
+  // falls back to left); the fixed height mirrors the scaffold builder's
+  // fixed shell (the viewport needs bounded height, which root canvas columns
+  // do not provide).
+  final direction = switch (props['direction']) {
+    'right' => AxisDirection.right,
+    'up' => AxisDirection.up,
+    'down' => AxisDirection.down,
+    _ => AxisDirection.left,
+  };
+  final page1 = (props['page1'] ?? 'Page 1') as String;
+  final page2 = (props['page2'] ?? 'Page 2') as String;
+  return SizedBox(
+    height: 96,
+    child: shadcn.Switcher(
+      direction: direction,
+      children: [
+        Center(child: Text(page1)),
+        Center(child: Text(page2)),
+      ],
+    ),
+  );
+}
+
+Widget _buildScrollable(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: three
+  // sentence-long rows. The real `FadedScrollableViewport` builds bare
+  // (a `NotificationListener` + `ShaderMask` around any child); canvas pairs
+  // it with a `SingleChildScrollView` so the edge fades genuinely engage —
+  // the fixed height mirrors the scrollbar builder's fixed shell (the scroll
+  // view needs bounded height, which root canvas columns do not provide).
+  final text1 =
+      (props['text1'] ?? 'First line of scrollable content.') as String;
+  final text2 =
+      (props['text2'] ?? 'Second line of scrollable content.') as String;
+  final text3 = (props['text3'] ?? 'Third line of scrollable content.') as String;
+  return SizedBox(
+    height: 120,
+    child: shadcn.FadedScrollableViewport(
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [Text(text1), Text(text2), Text(text3)],
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildStageContainer(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented: one label. The
+  // real `StageContainer` builds bare around the required `builder` fn
+  // (`(context, padding) => Widget`); canvas renders the label in the
+  // breakpoint padding — breakpoint snapping follows the canvas width at
+  // runtime.
+  final label = (props['label'] ?? 'Stage content') as String;
+  return shadcn.StageContainer(
+    builder: (context, padding) =>
+        Padding(padding: padding, child: Text(label)),
+  );
+}
+
+Widget _buildMediaQuery(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented. The real
+  // `MediaQueryVisibility` builds bare (`MediaQuery.of` always exists on
+  // canvas); it shows `child` inside the width range and `alternateChild`
+  // outside it. The canvas-level `minWidth` number (default 0, i.e. the child
+  // always — null and 0 behave identically since widths are non-negative)
+  // previews the breakpoint: raise it past the canvas width to see the
+  // alternate content.
+  final label = (props['label'] ?? 'Wide content') as String;
+  final alternate = (props['alternate'] ?? 'Narrow content') as String;
+  final minWidth = ((props['minWidth'] as num?)?.toDouble() ?? 0.0).clamp(
+    0.0,
+    2000.0,
+  );
+  return shadcn.MediaQueryVisibility(
+    minWidth: minWidth,
+    child: Text(label),
+    alternateChild: Text(alternate),
+  );
+}
+
+Widget _buildScrollview(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `ScrollViewInterceptor` builds bare around the required `child`
+  // (middle-click drag only engages over a scrollable at runtime); canvas
+  // shows the label — the same honest-static wrapper convention as the hover
+  // catalog builder below.
+  final label = (props['label'] ?? 'Middle-drag to scroll') as String;
+  return shadcn.ScrollViewInterceptor(child: Text(label));
+}
+
+Widget _buildHover(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `HoverActivity` builds bare around the required `child` (all callbacks
+  // optional); canvas shows the label and no-ops hover timings — hover state
+  // only exists at runtime.
+  final label = (props['label'] ?? 'Hover me') as String;
+  return shadcn.HoverActivity(onHover: () {}, child: Text(label));
+}
+
+Widget _buildPatch(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `ClickDetector` builds bare around the required `child` (`onClick`
+  // optional); canvas shows the label and no-ops tap counting — consecutive
+  // taps only exist at runtime.
+  final label = (props['label'] ?? 'Tap me') as String;
+  return shadcn.ClickDetector(onClick: (_) {}, child: Text(label));
+}
+
+Widget _buildText(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `WrappedText` (the foundation of the fluent text-modifier API) builds
+  // bare around the required `child`; all style builders stay null, so the
+  // canvas-level `text` renders with ambient styling — modifiers compose at
+  // runtime.
+  final text = (props['text'] ?? 'Styled text') as String;
+  return shadcn.WrappedText(child: Text(text));
+}
+
+/// Local filter state for the catalog filter bar (builders are stateless).
+/// `FilterBar` asserts `controller != null || (state != null &&
+/// onChanged != null)`, so the cell owns a `FilterState` exactly like
+/// `_StepperCell` owns its controller.
+class _FilterBarCell extends StatefulWidget {
+  final String searchPlaceholder;
+
+  const _FilterBarCell({required this.searchPlaceholder});
+
+  @override
+  State<_FilterBarCell> createState() => _FilterBarCellState();
+}
+
+class _FilterBarCellState extends State<_FilterBarCell> {
+  shadcn.FilterState _state = const shadcn.FilterState();
+
+  @override
+  Widget build(BuildContext context) {
+    // `inline` presentation keeps the toolbar on canvas (the default
+    // `autoSheet` would move filters behind a sheet trigger at narrow
+    // widths); sort options stay empty and the date range stays off, so the
+    // node is the search row — chips, sorting, and sheets are runtime-only.
+    // Track T (narrow-width): the kit style floors the search field at
+    // 220px, which goes non-normalized (hard crash) in row slices and
+    // sub-500px viewports — including the standard 390px phone. The style
+    // override drops only that floor to 0 (flex sizing still stretches the
+    // field at normal widths, so rendering there is unchanged); every other
+    // metric stays kit-owned. Residual floor (~131px of fixed search-row
+    // chrome): tighter slices show an overflow stripe instead of crashing —
+    // a horizontal scroll shell cannot rescue it (the kit's internal flex
+    // rows reject unbounded width outright), documented.
+    return shadcn.FilterBar(
+      state: _state,
+      onStateChanged: (next) => setState(() => _state = next),
+      presentation: shadcn.FilterBarPresentation.inline,
+      searchPlaceholder: widget.searchPlaceholder,
+      style: const shadcn.FilterBarStyle(minSearchWidth: 0),
+    );
+  }
+}
+
+Widget _buildFilterBar(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. See
+  // [_FilterBarCell] for the state-ownership contract.
+  final searchPlaceholder = (props['searchPlaceholder'] ?? 'Search') as String;
+  return _FilterBarCell(searchPlaceholder: searchPlaceholder);
+}
+
+/// Local scroll-controller ownership for the catalog fade scroll (builders
+/// are stateless). Mirrors the component's own preview: a `ScrollController`
+/// created with the cell and disposed with it, shared by `FadeScroll` and
+/// its `ListView`.
+class _FadeScrollCell extends StatefulWidget {
+  final List<String> rows;
+
+  const _FadeScrollCell({required this.rows});
+
+  @override
+  State<_FadeScrollCell> createState() => _FadeScrollCellState();
+}
+
+class _FadeScrollCellState extends State<_FadeScrollCell> {
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Fixed shell mirrors the preview's 200x260 box (narrowed for canvas —
+    // the fades need bounded height, which root canvas columns do not
+    // provide).
+    return SizedBox(
+      height: 160,
+      child: shadcn.FadeScroll(
+        controller: _controller,
+        child: ListView(
+          controller: _controller,
+          children: [
+            for (final row in widget.rows)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(row),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _buildFadeScroll(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: three rows.
+  // See [_FadeScrollCell] for the controller-ownership contract.
+  final rows = [
+    (props['row1'] ?? 'Row 1') as String,
+    (props['row2'] ?? 'Row 2') as String,
+    (props['row3'] ?? 'Row 3') as String,
+  ];
+  return _FadeScrollCell(rows: rows);
+}
+
+Widget _buildResizable(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — defaults invented: two flex
+  // panes. The real `ResizablePanel.horizontal` builds bare around
+  // `ResizablePane` children (drag dividers at runtime); the fixed height
+  // mirrors the scaffold builder's fixed shell (the custom render layout
+  // needs bounded height, which root canvas columns do not provide), while
+  // the width stays parent-owned. Long pane labels wrap (default soft-wrap),
+  // so 320px viewports hold.
+  final pane1 = (props['pane1'] ?? 'Left pane') as String;
+  final pane2 = (props['pane2'] ?? 'Right pane') as String;
+  return SizedBox(
+    height: 120,
+    child: shadcn.ResizablePanel.horizontal(
+      children: [
+        shadcn.ResizablePane.flex(child: Center(child: Text(pane1))),
+        shadcn.ResizablePane.flex(child: Center(child: Text(pane2))),
+      ],
+    ),
+  );
+}
+
+Widget _buildSubfocus(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `SubFocus` builds bare around the required `builder` fn
+  // (`(context, state) => Widget`); canvas renders the label statically —
+  // hierarchical keyboard navigation only exists at runtime.
+  final label = (props['label'] ?? 'Focused scope') as String;
+  return shadcn.SubFocus(builder: (context, state) => Text(label));
+}
+
+Widget _buildRepeatedAnimationBuilder(Map<String, dynamic> props) {
+  // No canvas block in `components.json` — default invented. The real
+  // `PulsingAnimation` (the ready-to-use wrapper the utility component
+  // ships) builds bare around the required `child`, looping fade + scale on
+  // a 1200ms loop at runtime; canvas wraps the canvas-level `label` text.
+  // The raw `RepeatedAnimationBuilder` typedef (a value + builder fn) has no
+  // sane string-prop form, so the wrapper is the honest inline form.
+  final label = (props['label'] ?? 'Pulsing') as String;
+  return shadcn.PulsingAnimation(child: Text(label));
+}
+
 /// Seed entries. Labels mirror `components.json` descriptions.
 final List<CatalogEntry> kCatalog = [
   CatalogEntry(
@@ -3790,6 +4580,239 @@ final List<CatalogEntry> kCatalog = [
       'description2': 'Choose a curated style preset.',
     },
     build: _buildFeatureCarousel,
+  ),
+  // Track FF2 additions (2026-09-06): placeholder-blitz kinds — the
+  // form/input family first (phone/input traps from triage), then the
+  // bare-capable display/layout/utility batch. Labels mirror
+  // `components.json` descriptions (registry bridge test); defaults are
+  // invented and documented per builder above. Only bool/string/num/enum
+  // prop types already established by the seed kinds.
+  CatalogEntry(
+    kind: 'phone_input',
+    label:
+        'International phone number input with country selector and formatting helpers.',
+    defaults: const {'label': '', 'searchHint': 'Search countries...'},
+    build: _buildPhoneInput,
+  ),
+  CatalogEntry(
+    kind: 'chip_input',
+    label:
+        'Inline text input that converts typed tokens into chip widgets with removable buttons and autocomplete hooks.',
+    defaults: const {
+      'placeholder': 'Add a tag',
+      'chip1': 'Design',
+      'chip2': '',
+    },
+    build: _buildChipInput,
+  ),
+  CatalogEntry(
+    kind: 'autocomplete',
+    label:
+        'Autocomplete overlay for text inputs with keyboard navigation and theming.',
+    defaults: const {
+      'placeholder': 'Search...',
+      'suggestion1': 'Apple',
+      'suggestion2': 'Apricot',
+    },
+    build: _buildAutocomplete,
+  ),
+  CatalogEntry(
+    kind: 'item_picker',
+    label: 'Grid/list picker with selection chips, search, and in-place actions.',
+    defaults: const {
+      'placeholder': 'Select item',
+      'option1': 'Option 1',
+      'option2': 'Option 2',
+      'value': '',
+    },
+    build: _buildItemPicker,
+  ),
+  CatalogEntry(
+    kind: 'multiple_choice',
+    label: 'Choice widgets with single or multiple selection and form integration.',
+    defaults: const {
+      'mode': 'single',
+      'option1': 'Option A',
+      'option2': 'Option B',
+      'option3': 'Option C',
+      'value': 'Option A',
+      'value2': 'Option B',
+    },
+    build: _buildMultipleChoice,
+  ),
+  CatalogEntry(
+    kind: 'object_input',
+    label: 'Date, time, and duration inputs powered by formatted editors and pickers.',
+    defaults: const {
+      'mode': 'date',
+      'placeholder': 'Select value',
+      'label': '',
+    },
+    build: _buildObjectInput,
+  ),
+  CatalogEntry(
+    kind: 'text_field',
+    label: 'Text input with rich features, autocomplete, and actions.',
+    defaults: const {
+      'placeholder': 'Type here',
+      'label': '',
+      'disabled': false,
+      'initialValue': '',
+    },
+    build: _buildTextFieldKind,
+  ),
+  CatalogEntry(
+    kind: 'markdown',
+    label:
+        'Advanced markdown renderer with asset/file sources and optional streaming support.',
+    defaults: const {'data': '# Title\n\nSome **rich** text.'},
+    build: _buildMarkdown,
+  ),
+  CatalogEntry(
+    kind: 'text_animate',
+    label: 'Stream-aware animated text renderer for incremental updates.',
+    defaults: const {'text': 'Watch the words appear.'},
+    build: _buildTextAnimate,
+  ),
+  CatalogEntry(
+    kind: 'icon',
+    label: 'Theme-driven icon size/color helpers and WrappedIcon.',
+    defaults: const {'name': 'star', 'size': 24.0},
+    build: _buildIcon,
+  ),
+  CatalogEntry(
+    kind: 'navigation_menu',
+    label:
+        'Dropdown-style navigation menu with popovers, groups, and keyboard navigation.',
+    defaults: const {
+      'menu1': 'Products',
+      'item1': 'Web Apps',
+      'detail1': 'Landing pages and dashboards.',
+      'menu2': 'Company',
+      'item2': 'About',
+      'detail2': 'Team, culture, and careers.',
+    },
+    build: _buildNavigationMenu,
+  ),
+  CatalogEntry(
+    kind: 'dropzone',
+    label: 'Dropzone surface for file uploads.',
+    defaults: const {'hint': 'Drag files here', 'action': 'Browse files'},
+    build: _buildDropzone,
+  ),
+  CatalogEntry(
+    kind: 'border_loading',
+    label:
+        'Animated border loader wrapper (sweep/linear/radial gradients + tracer mode + circle/custom shapes).',
+    defaults: const {'label': 'Loading'},
+    build: _buildBorderLoading,
+  ),
+  CatalogEntry(
+    kind: 'overflow_marquee',
+    label:
+        'Smooth marquee for overflowing content with fade edges and looped timing controls.',
+    defaults: const {
+      'text': 'This text scrolls when it overflows its parent.',
+    },
+    build: _buildOverflowMarquee,
+  ),
+  CatalogEntry(
+    kind: 'focus_outline',
+    label: 'Keyboard focus visualization outline with theming support.',
+    defaults: const {'label': 'Focus me', 'focused': true},
+    build: _buildFocusOutline,
+  ),
+  CatalogEntry(
+    kind: 'switcher',
+    label: 'Swipeable viewport that animates between children along an axis.',
+    defaults: const {
+      'direction': 'left',
+      'page1': 'Page 1',
+      'page2': 'Page 2',
+    },
+    build: _buildSwitcher,
+  ),
+  CatalogEntry(
+    kind: 'scrollable',
+    label: 'Two-dimensional scrollable client and faded viewport utilities.',
+    defaults: const {
+      'text1': 'First line of scrollable content.',
+      'text2': 'Second line of scrollable content.',
+      'text3': 'Third line of scrollable content.',
+    },
+    build: _buildScrollable,
+  ),
+  CatalogEntry(
+    kind: 'stage_container',
+    label: 'Responsive container that snaps to breakpoint widths.',
+    defaults: const {'label': 'Stage content'},
+    build: _buildStageContainer,
+  ),
+  CatalogEntry(
+    kind: 'media_query',
+    label:
+        'Responsive helper that shows primary or alternate content based on width constraints.',
+    defaults: const {
+      'label': 'Wide content',
+      'alternate': 'Narrow content',
+      'minWidth': 0.0,
+    },
+    build: _buildMediaQuery,
+  ),
+  CatalogEntry(
+    kind: 'scrollview',
+    label: 'Middle-click drag scroll interceptor for desktop/web.',
+    defaults: const {'label': 'Middle-drag to scroll'},
+    build: _buildScrollview,
+  ),
+  CatalogEntry(
+    kind: 'hover',
+    label: 'Hover timing helpers plus lightweight state tracking widgets.',
+    defaults: const {'label': 'Hover me'},
+    build: _buildHover,
+  ),
+  CatalogEntry(
+    kind: 'patch',
+    label: 'Tracks consecutive taps and exposes click count details.',
+    defaults: const {'label': 'Tap me'},
+    build: _buildPatch,
+  ),
+  CatalogEntry(
+    kind: 'text',
+    label: 'Typography helpers and fluent text modifiers.',
+    defaults: const {'text': 'Styled text'},
+    build: _buildText,
+  ),
+  CatalogEntry(
+    kind: 'filter_bar',
+    label:
+        'Controlled filter toolbar for list/table pages with search, sort, chips, date range, and clear-all.',
+    defaults: const {'searchPlaceholder': 'Search'},
+    build: _buildFilterBar,
+  ),
+  CatalogEntry(
+    kind: 'fade_scroll',
+    label: 'Edge fade overlays for scrollable content.',
+    defaults: const {'row1': 'Row 1', 'row2': 'Row 2', 'row3': 'Row 3'},
+    build: _buildFadeScroll,
+  ),
+  CatalogEntry(
+    kind: 'resizable',
+    label: 'Resizable panels with draggable dividers.',
+    defaults: const {'pane1': 'Left pane', 'pane2': 'Right pane'},
+    build: _buildResizable,
+  ),
+  CatalogEntry(
+    kind: 'subfocus',
+    label: 'Hierarchical focus scope for keyboard navigation.',
+    defaults: const {'label': 'Focused scope'},
+    build: _buildSubfocus,
+  ),
+  CatalogEntry(
+    kind: 'repeated_animation_builder',
+    label: 'Looping animation builder with interpolated values.',
+    defaults: const {'label': 'Pulsing'},
+    build: _buildRepeatedAnimationBuilder,
   ),
 ];
 

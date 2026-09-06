@@ -433,6 +433,35 @@ void main() {
       'tab_list': 'navigation',
       'tab_pane': 'navigation',
       'stepper': 'navigation',
+      'navigation_bar': 'navigation',
+      'phone_input': 'form',
+      'chip_input': 'form',
+      'autocomplete': 'form',
+      'item_picker': 'form',
+      'multiple_choice': 'form',
+      'object_input': 'form',
+      'text_field': 'form',
+      'markdown': 'display',
+      'text_animate': 'display',
+      'icon': 'display',
+      'navigation_menu': 'navigation',
+      'dropzone': 'form',
+      'border_loading': 'display',
+      'overflow_marquee': 'layout',
+      'focus_outline': 'utility',
+      'switcher': 'navigation',
+      'scrollable': 'layout',
+      'stage_container': 'layout',
+      'media_query': 'layout',
+      'scrollview': 'control',
+      'hover': 'control',
+      'patch': 'control',
+      'text': 'display',
+      'filter_bar': 'layout',
+      'fade_scroll': 'layout',
+      'resizable': 'layout',
+      'subfocus': 'navigation',
+      'repeated_animation_builder': 'utility',
       'slider': 'form',
       'input_otp': 'form',
       'calendar': 'display',
@@ -665,6 +694,37 @@ void main() {
       'tab_list': 'tabs.TabItem(',
       'tab_pane': 'TabPane<String>(',
       'stepper': 'Stepper(',
+      'navigation_bar': 'NavigationBar(',
+      // Track FF2: the 28 newly-added catalog builders emit their real
+      // bodies (one token per kind proving the body rendered).
+      'phone_input': 'PhoneInput(',
+      'chip_input': 'ChipInput<String>(',
+      'autocomplete': 'AutoComplete(',
+      'item_picker': 'ItemPicker<String>(',
+      'multiple_choice': 'MultipleChoice<String>(',
+      'object_input': 'DateInput(',
+      'text_field': 'TextField(',
+      'markdown': 'Markdown(',
+      'text_animate': 'StreamingText(',
+      'icon': 'WrappedIcon(',
+      'navigation_menu': 'NavigationMenu(',
+      'dropzone': 'FileDropzone(',
+      'border_loading': 'BorderLoading(',
+      'overflow_marquee': 'OverflowMarquee(',
+      'focus_outline': 'FocusOutline(',
+      'switcher': 'Switcher(',
+      'scrollable': 'FadedScrollableViewport(',
+      'stage_container': 'StageContainer(',
+      'media_query': 'MediaQueryVisibility(',
+      'scrollview': 'ScrollViewInterceptor(',
+      'hover': 'HoverActivity(',
+      'patch': 'ClickDetector(',
+      'text': 'WrappedText(',
+      'filter_bar': 'FilterBar(',
+      'fade_scroll': 'FadeScroll(',
+      'resizable': 'ResizablePanel.horizontal(',
+      'subfocus': 'SubFocus(',
+      'repeated_animation_builder': 'PulsingAnimation(',
       'slider': 'Slider(',
       'input_otp': 'InputOTP(',
       'calendar': 'Calendar(',
@@ -689,7 +749,7 @@ void main() {
       'history': 'ColorHistoryGrid(',
       'feature_carousel': 'FeatureCardCarousel(',
     };
-    expect(tokens, hasLength(68));
+    expect(tokens, hasLength(97));
     for (final entry in tokens.entries) {
       final bundle = buildCleanBundle(
         _singleKindDoc(entry.key),
@@ -2107,6 +2167,491 @@ void main() {
       expect(screen, isNot(contains('CrossAxisAlignment.stretch')));
       expect(screen, isNot(contains('Expanded(')));
       expect(screen, isNot(contains('width:')));
+    });
+  });
+
+  group('Track FF4 codegen (navigation_bar + named slots)', () {
+    ScreenDoc ff4bDoc(List<Map<String, dynamic>> nodes) =>
+        ScreenDoc.fromJson({
+          'screens': [
+            {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+            {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+          ],
+          'nodes': nodes,
+          'theme': {
+            'paletteKey': 'slate',
+            'dark': false,
+            'shape': 'rounded',
+            'motion': 'standard',
+          },
+          'meta': {'title': 'FF4', 'brief': ''},
+        });
+
+    String ff4bScreen(ScreenDoc doc) =>
+        buildCleanBundle(doc, kTestSources).files['lib/ui/screens/home_screen.dart']!;
+
+    test('navigation_bar emits its static cell with clamped index', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'navigation_bar',
+              'tab1': 'Home',
+              'tab2': 'Search',
+              'tab3': 'Saved',
+              'tab4': 'You',
+              'index': 1,
+            },
+          ],
+        },
+      ]));
+      expect(screen, contains('NavigationBar('));
+      expect(screen, contains('NavigationItem('));
+      expect(screen, contains('NavigationLabelType.all'));
+      expect(screen, contains('Icons.search'));
+      expect(screen, contains('index: 1'));
+      expect(screen, contains("'Saved'"));
+      // Material for the icon chrome + the Flutter-name hide.
+      expect(screen, contains("import 'package:flutter/material.dart' hide"));
+      expect(screen, contains('NavigationBar'));
+    });
+
+    test('navigation_bar clamps out-of-range index', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'navigation_bar', 'index': 99},
+          ],
+        },
+      ]));
+      expect(screen, contains('index: 3'));
+    });
+
+    test('scaffold appBar slot replaces the default header', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'scaffold', 'title': 'My App'},
+          ],
+          'slotNodes': {'appBar': 'kid'},
+        },
+        {
+          'id': 'kid',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 100.0,
+          'items': [
+            {'id': 'ib', 'kind': 'button', 'label': 'Bar'},
+          ],
+        },
+      ]));
+      expect(screen, contains('// slot: appBar'));
+      expect(screen, contains('Bar'));
+      expect(screen, isNot(contains("AppBar(title: Text('My App'))")));
+      expect(screen, contains('headers: ['));
+    });
+
+    test('scaffold body shadows the prop, footer fills footers', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'scaffold', 'body': 'Welcome'},
+          ],
+          'slotNodes': {'body': 'kb', 'footer': 'kf'},
+        },
+        {
+          'id': 'kb',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 100.0,
+          'items': [
+            {'id': 'ib', 'kind': 'button', 'label': 'BodyW'},
+          ],
+        },
+        {
+          'id': 'kf',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 200.0,
+          'items': [
+            {'id': 'if', 'kind': 'button', 'label': 'FootW'},
+          ],
+        },
+      ]));
+      expect(screen, contains('// slot: body'));
+      expect(screen, contains('// slot: footer'));
+      expect(screen, contains('BodyW'));
+      expect(screen, contains('FootW'));
+      expect(screen, contains('footers: ['));
+    });
+
+    test('scaffold missing slot child is omitted with defaults', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'scaffold', 'title': 'T'},
+          ],
+          'slotNodes': {'appBar': 'ghost'},
+        },
+      ]));
+      expect(screen, isNot(contains('// slot:')));
+      expect(screen, contains("AppBar(title: Text('T'))"));
+    });
+
+    test('basic leading/trailing slots replace the bool chrome', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'basic', 'title': 'T'},
+          ],
+          'slotNodes': {'leading': 'kl', 'trailing': 'kt'},
+        },
+        {
+          'id': 'kl',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 100.0,
+          'items': [
+            {'id': 'il', 'kind': 'button', 'label': 'Lead'},
+          ],
+        },
+        {
+          'id': 'kt',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 200.0,
+          'items': [
+            {'id': 'it', 'kind': 'button', 'label': 'Trail'},
+          ],
+        },
+      ]));
+      expect(screen, contains('// slot: leading'));
+      expect(screen, contains('// slot: trailing'));
+      expect(screen, contains('Lead'));
+      expect(screen, contains('Trail'));
+    });
+
+    test('card_image image slot replaces the default art', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'card_image', 'title': 'CT'},
+          ],
+          'slotNodes': {'image': 'ki'},
+        },
+        {
+          'id': 'ki',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 100.0,
+          'items': [
+            {'id': 'ii', 'kind': 'button', 'label': 'Art'},
+          ],
+        },
+      ]));
+      expect(screen, contains('// slot: image'));
+      expect(screen, contains('Art'));
+      expect(screen, contains('CardImage('));
+    });
+
+    test('slotless scaffold/basic/card_image stay byte-identical', () {
+      ScreenDoc plain(String kind) => ScreenDoc.fromJson({
+            'screens': [
+              {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+            ],
+            'nodes': [
+              {
+                'id': 'n1',
+                'screenId': 's1',
+                'x': 0.0,
+                'y': 0.0,
+                'items': [
+                  {'id': 'i1', 'kind': kind},
+                ],
+              },
+            ],
+            'theme': {
+              'paletteKey': 'slate',
+              'dark': false,
+              'shape': 'rounded',
+              'motion': 'standard',
+            },
+            'meta': {'title': 'K', 'brief': ''},
+          });
+      ScreenDoc withEmpty(String kind) => ScreenDoc.fromJson({
+            'screens': [
+              {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+            ],
+            'nodes': [
+              {
+                'id': 'n1',
+                'screenId': 's1',
+                'x': 0.0,
+                'y': 0.0,
+                'items': [
+                  {'id': 'i1', 'kind': kind},
+                ],
+                'slotNodes': {},
+                'locked': false,
+              },
+            ],
+            'theme': {
+              'paletteKey': 'slate',
+              'dark': false,
+              'shape': 'rounded',
+              'motion': 'standard',
+            },
+            'meta': {'title': 'K', 'brief': ''},
+          });
+      for (final kind in ['scaffold', 'basic', 'card_image']) {
+        expect(
+          ff4bScreen(withEmpty(kind)),
+          ff4bScreen(plain(kind)),
+          reason: kind,
+        );
+      }
+    });
+
+    test('responsive + tap interplay on navigation_bar', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'hiddenOn': ['mobile'],
+          'breakpointValues': {
+            'desktop': {'index': 3},
+          },
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'navigation_bar',
+              'action': {'to': 's2', 'transition': 'slide'},
+            },
+          ],
+        },
+      ]));
+      expect(screen, contains('LayoutBuilder'));
+      expect(screen, contains("tier == 'mobile'"));
+      expect(screen, contains("tier == 'desktop'"));
+      expect(screen, contains('NavigationBar('));
+      expect(screen, contains('index: 3'));
+      expect(screen, contains("pushNamed('/done')"));
+    });
+
+    test('slotted tap child keeps its navigation inside the host slot', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'host',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'ih', 'kind': 'scaffold', 'title': 'T'},
+          ],
+          'slotNodes': {'body': 'kid'},
+        },
+        {
+          'id': 'kid',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 100.0,
+          'items': [
+            {
+              'id': 'ib',
+              'kind': 'button',
+              'label': 'Go',
+              'action': {'to': 's2', 'transition': 'fade'},
+            },
+          ],
+        },
+      ]));
+      expect(screen, contains('// slot: body'));
+      expect(screen, contains("pushNamed('/done')"));
+    });
+
+    test('FF2 bodies mirror catalog props, defaults, and edge handling', () {
+      String screenFor(String kind, [Map<String, dynamic> props = const {}]) {
+        final bundle = buildCleanBundle(_singleKindDoc(kind, props), kTestSources);
+        return bundle.files['lib/ui/screens/home_screen.dart']!;
+      }
+
+      // Phone input wires the label caption + country-search placeholder.
+      final phone = screenFor('phone_input', {'label': 'Phone', 'searchHint': 'Find'});
+      expect(phone, contains('PhoneInput('));
+      expect(phone, contains("'Phone'"));
+      expect(phone, contains("'Find'"));
+      expect(screenFor('phone_input'), contains("'Search countries...'"));
+      // Chip/autocomplete filter empties instead of crashing.
+      expect(
+        screenFor('chip_input', {'chip1': '', 'chip2': ''}),
+        contains('initialChips: const <String>[]'),
+      );
+      expect(
+        screenFor('autocomplete', {'suggestion1': '', 'suggestion2': ''}),
+        contains('suggestions: const <String>[]'),
+      );
+      // Item picker empty value renders unselected.
+      expect(screenFor('item_picker', {'value': ''}), contains('value: null,'));
+      expect(
+        screenFor('item_picker', {'value': 'Option 1'}),
+        contains("value: 'Option 1',"),
+      );
+      // Multiple choice unknown mode falls back to single; multi set drops
+      // unknowns.
+      expect(
+        screenFor('multiple_choice', {'mode': 'bogus'}),
+        contains('MultipleChoice<String>('),
+      );
+      expect(
+        screenFor('multiple_choice', {
+          'mode': 'multiple',
+          'value': 'Nope',
+          'value2': '',
+        }),
+        contains('value: const <String>{}'),
+      );
+      // Object input unknown mode falls back to date; label captions above.
+      expect(screenFor('object_input', {'mode': 'bogus'}), contains('DateInput('));
+      expect(screenFor('object_input', {'mode': 'time'}), contains('TimeInput('));
+      expect(
+        screenFor('object_input', {'label': 'L'}),
+        contains("'L'"),
+      );
+      // Text field mirrors the input honesty rule (empty = uncontrolled).
+      expect(screenFor('text_field'), contains('initialValue: null'));
+      expect(
+        screenFor('text_field', {'initialValue': 'V'}),
+        contains("initialValue: 'V'"),
+      );
+      // Numeric clamps mirror the catalog domains.
+      expect(screenFor('icon', {'size': 1000}), contains('size: 64.0'));
+      expect(screenFor('icon', {'name': 'bogus'}), contains('Icons.star'));
+      expect(screenFor('media_query', {'minWidth': 9999}), contains('minWidth: 2000.0'));
+      expect(screenFor('switcher', {'direction': 'bogus'}), contains('AxisDirection.left'));
+      // Enum fallbacks mirror the catalog.
+      expect(screenFor('object_input', {'mode': 'bogus'}), contains('DateInput('));
+      // Wrong-typed props fall back instead of crashing.
+      expect(screenFor('icon', {'size': 'x'}), contains('size: 24.0'));
+      expect(screenFor('text', {'text': 5}), contains("'Styled text'"));
+    });
+
+    test('FF2 screens wire material, extras, and hides', () {
+      String screenFor(String kind) {
+        final bundle = buildCleanBundle(_singleKindDoc(kind), kTestSources);
+        return bundle.files['lib/ui/screens/home_screen.dart']!;
+      }
+
+      // Icon bodies need material for `Icons.*`.
+      final icon = screenFor('icon');
+      expect(icon, contains("import 'package:flutter/material.dart';"));
+      expect(icon, contains('Icons.star'));
+      // Focus-outline bodies import the button barrel for `OutlineButton`.
+      final focus = buildCleanBundle(_singleKindDoc('focus_outline'), kWiringSources);
+      final focusScreen = focus.files['lib/ui/screens/home_screen.dart']!;
+      expect(focusScreen, contains('button/button.dart'));
+      // Autocomplete screens seed the text-field supplemental file.
+      final auto = buildCleanBundle(_singleKindDoc('autocomplete'), kWiringSources);
+      expect(
+        auto.files.keys.any((f) => f.endsWith('/text_field/text_field.dart')),
+        isTrue,
+      );
+      // Text-field + material disambiguates the Flutter `TextField`.
+      final tf = buildCleanBundle(
+        ScreenDoc.fromJson({
+          'screens': [
+            {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          ],
+          'nodes': [
+            {
+              'id': 'n1',
+              'screenId': 's1',
+              'x': 0.0,
+              'y': 0.0,
+              'items': [
+                {'id': 'i1', 'kind': 'text_field'},
+                {'id': 'i2', 'kind': 'basic'},
+              ],
+            },
+          ],
+          'theme': {
+            'paletteKey': 'slate',
+            'dark': false,
+            'shape': 'rounded',
+            'motion': 'standard',
+          },
+          'meta': {'title': 'T', 'brief': ''},
+        }),
+        kWiringSources,
+      );
+      expect(
+        tf.files['lib/ui/screens/home_screen.dart']!,
+        contains('hide'),
+      );
+      expect(
+        tf.files['lib/ui/screens/home_screen.dart']!,
+        contains('TextField'),
+      );
+    });
+
+    test('responsive + tap interplay on an FF2 kind (icon)', () {
+      final screen = ff4bScreen(ff4bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'hiddenOn': ['mobile'],
+          'breakpointValues': {
+            'desktop': {'size': 48},
+          },
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'icon',
+              'name': 'star',
+              'size': 24,
+              'action': {'to': 's2', 'transition': 'slide'},
+            },
+          ],
+        },
+      ]));
+      expect(screen, contains('LayoutBuilder'));
+      expect(screen, contains("tier == 'mobile'"));
+      expect(screen, contains("tier == 'desktop'"));
+      expect(screen, contains('WrappedIcon('));
+      expect(screen, contains('size: 48.0'));
+      expect(screen, contains("pushNamed('/done')"));
     });
   });
 }

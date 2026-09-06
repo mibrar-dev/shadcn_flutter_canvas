@@ -284,6 +284,17 @@ class DesignCanvas extends StatefulWidget {
   /// other kind becomes a leaf with one item parented to [parentId] (row,
   /// container, or — via the model, though the surface never targets one —
   /// leaf, whose children render with the below-fallback).
+  ///
+  /// FF1 drop-into-slot: a leaf drop onto a host with an EMPTY compatible
+  /// slot fills it ([dropSlotForNewChild]: `body` for scaffolds, `content`
+  /// for single-content hosts, first-empty otherwise) instead of plain
+  /// parenting; an occupied slot, a locked host, or a `row` drop keeps the
+  /// plain-parent path above. The slot edge is written into the SAME
+  /// [CanvasStore.replaceDoc] commit as the new node, so one undo step
+  /// removes both. Slot validation mirrors [CanvasStore.setSlotChild] but
+  /// never throws mid-drag: the rule only yields known slots on unlocked
+  /// same-screen hosts for a fresh (cycle-impossible) child, and any residual
+  /// failure falls back to plain parenting.
   String onAccept(
     String kind,
     Offset offset, {
@@ -353,6 +364,7 @@ class DesignCanvas extends StatefulWidget {
       fallback = _containerIndexForOffset(store.doc, groupParent, offset);
     }
     final at = (index ?? fallback).clamp(0, groupLength);
+    final doc = store.doc;
     final node = CanvasNode(
       id: store.uid(),
       screenId: targetScreen,
@@ -361,12 +373,62 @@ class DesignCanvas extends StatefulWidget {
       items: [item],
       parentId: groupParent,
     );
-    final doc = store.doc;
+    // FF1 drop-into-slot (see the method docs): resolve the empty-slot
+    // assignment BEFORE the commit; rows never slot (structural strip).
+    String? slot;
+    if (groupParent != null) {
+      try {
+        slot = dropSlotForNewChild(doc.nodes, groupParent);
+      } catch (_) {
+        slot = null;
+      }
+    }
     final next = List.of(doc.nodes)
       ..insert(
         _docIndexForGroupIndex(doc, targetScreen, groupParent, at),
         node,
       );
+    if (slot != null) {
+      // Same-commit slot edge (atomic undo): rebuild the host with the new
+      // entry. Infallible by construction (known slot, same-screen unlocked
+      // host, fresh child), but never throws mid-drag — a failure keeps the
+      // plain parenting above.
+      try {
+        final hostIndex = next.indexWhere((n) => n.id == groupParent);
+        if (hostIndex >= 0) {
+          final host = next[hostIndex];
+          if (!host.locked && !host.slotNodes.containsKey(slot)) {
+            next[hostIndex] = CanvasNode(
+              id: host.id,
+              screenId: host.screenId,
+              x: host.x,
+              y: host.y,
+              items: host.items,
+              parentId: host.parentId,
+              isRow: host.isRow,
+              gap: host.gap,
+              mainAxis: host.mainAxis,
+              crossAxis: host.crossAxis,
+              expand: host.expand,
+              flex: host.flex,
+              w: host.w,
+              h: host.h,
+              hiddenOn: Set<String>.from(host.hiddenOn),
+              breakpointValues: {
+                for (final entry in host.breakpointValues.entries)
+                  entry.key: Map<String, dynamic>.from(entry.value),
+              },
+              slots: Map<String, String>.from(host.slots),
+              slotNodes: Map<String, String>.from(host.slotNodes)
+                ..[slot] = node.id,
+              locked: host.locked,
+            );
+          }
+        }
+      } catch (_) {
+        // Plain parenting stands.
+      }
+    }
     store.replaceDoc(
       ScreenDoc(
         screens: List.of(doc.screens),

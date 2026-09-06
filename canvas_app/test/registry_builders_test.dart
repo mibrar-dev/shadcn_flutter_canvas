@@ -64,6 +64,40 @@ const _kTrackMKinds = [
   'slider',
 ];
 
+/// The 28 Track FF2 kinds: the form/input family the user hit
+/// (`unknown: phone_input` triage screenshot) plus the bare-capable
+/// display/layout/utility batch.
+const _kTrackFF2Kinds = [
+  'phone_input',
+  'chip_input',
+  'autocomplete',
+  'item_picker',
+  'multiple_choice',
+  'object_input',
+  'text_field',
+  'markdown',
+  'text_animate',
+  'icon',
+  'navigation_menu',
+  'dropzone',
+  'border_loading',
+  'overflow_marquee',
+  'focus_outline',
+  'switcher',
+  'scrollable',
+  'stage_container',
+  'media_query',
+  'scrollview',
+  'hover',
+  'patch',
+  'text',
+  'filter_bar',
+  'fade_scroll',
+  'resizable',
+  'subfocus',
+  'repeated_animation_builder',
+];
+
 /// The 17 Track J kinds: `basic`, `card_image`, `scaffold` (triage priority)
 /// plus the palette-visible batch.
 const _kNewKinds = [
@@ -2512,13 +2546,10 @@ void main() {
       // canvasReady false, so the U1 fallback must NOT promote them to
       // 'canvas-ready coming soon' cards — canvas keeps unknown + X exactly
       // as before U1. (`navigation_bar` left this list in Track Y1
-      // (2026-09-06): it now bridges to a real catalog builder.)
+      // (2026-09-06), `markdown`/`text`/`autocomplete`/`switcher` in Track
+      // FF2 (2026-09-06): they now bridge to real catalog builders.)
       const placeholders = [
-        'markdown',
         'spinner',
-        'text',
-        'autocomplete',
-        'switcher',
       ];
       for (final kind in placeholders) {
         expect(findEntry(kind), isNull, reason: kind);
@@ -2869,6 +2900,839 @@ void main() {
           expect(find.text('BB trail'), findsNothing);
         }
       });
+    });
+  });
+
+/// FF2 loop pump: [_pump] plus a markdown settle. Markdown parses in an
+/// isolate behind a progressive-chunk `Timer.periodic`, so a plain pump
+/// leaves a pending timer that trips the test binding's teardown invariant —
+/// settling drains it (every other FF2 builder is timer-clean on plain
+/// pumps, pinned by the per-kind tests below).
+Future<void> _pumpFF2(
+  WidgetTester tester,
+  String kind,
+  Map<String, dynamic> props,
+) async {
+  await _pump(tester, buildCatalogItem(kind, props));
+  if (kind == 'markdown') await tester.pumpAndSettle();
+}
+
+  group('track FF2 wiring', () {
+    test('all new kinds are catalog entries bridged by the registry', () {
+      expect(_kTrackFF2Kinds, hasLength(28));
+      for (final kind in _kTrackFF2Kinds) {
+        final entry = findEntry(kind);
+        expect(entry, isNotNull, reason: 'no catalog entry $kind');
+        expect(entry!.defaults, isNotEmpty, reason: '$kind defaults');
+        final reg = findRegistryEntry(kind);
+        expect(reg, isNotNull, reason: 'no registry entry $kind');
+        expect(reg!.canvasReady, isTrue, reason: kind);
+        expect(reg.label, entry.label, reason: kind);
+      }
+    });
+
+    testWidgets('new builders never render the unknown-kind fallback', (
+      tester,
+    ) async {
+      for (final kind in _kTrackFF2Kinds) {
+        await _pumpFF2(tester, kind, const {});
+        expect(find.text('unknown: $kind'), findsNothing, reason: kind);
+        expect(find.text('canvas-ready coming soon'), findsNothing);
+      }
+    });
+
+    testWidgets('new builders tolerate empty props (defaults kick in)', (
+      tester,
+    ) async {
+      for (final kind in _kTrackFF2Kinds) {
+        await _pumpFF2(
+          tester,
+          kind,
+          Map<String, dynamic>.of(findEntry(kind)!.defaults),
+        );
+      }
+      for (final kind in _kTrackFF2Kinds) {
+        await _pumpFF2(tester, kind, const {});
+      }
+    });
+  });
+
+  group('phone_input', () {
+    testWidgets('defaults render the real PhoneInput (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('phone_input', {}), dark: dark);
+        expect(find.byType(shadcn.PhoneInput), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Work phone', 'searchHint': 'Find country'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('phone_input', props), dark: dark);
+        expect(find.byType(shadcn.PhoneInput), findsOneWidget);
+        expect(find.text('Work phone'), findsOneWidget);
+      }
+    });
+  });
+
+  group('chip_input', () {
+    testWidgets('defaults seed the first chip (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('chip_input', {}), dark: dark);
+        // Chips embed as span children one frame after attach.
+        await tester.pump();
+        expect(
+          find.byType(shadcn.ChipInput<String>),
+          findsOneWidget,
+        );
+        expect(find.text('Design'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'placeholder': 'Add attendee',
+        'chip1': 'Ada',
+        'chip2': 'Grace',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('chip_input', props), dark: dark);
+        await tester.pump();
+        expect(find.text('Ada'), findsOneWidget);
+        expect(find.text('Grace'), findsOneWidget);
+      }
+    });
+  });
+
+  group('autocomplete', () {
+    testWidgets('defaults render the field (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('autocomplete', {}), dark: dark);
+        expect(find.byType(shadcn.AutoComplete), findsOneWidget);
+        expect(find.byType(shadcn.TextField), findsOneWidget);
+        expect(find.text('Search...'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'placeholder': 'Pick a fruit',
+        'suggestion1': 'Mango',
+        'suggestion2': 'Melon',
+      };
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('autocomplete', props),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.AutoComplete), findsOneWidget);
+        expect(find.text('Pick a fruit'), findsOneWidget);
+      }
+    });
+  });
+
+  group('item_picker', () {
+    testWidgets('defaults render the trigger (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('item_picker', {}), dark: dark);
+        expect(
+          find.byType(shadcn.ItemPicker<String>),
+          findsOneWidget,
+        );
+        expect(find.text('Select item'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'placeholder': 'Pick a color',
+        'option1': 'Red',
+        'option2': 'Blue',
+        'value': 'Blue',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('item_picker', props), dark: dark);
+        expect(find.text('Blue'), findsOneWidget);
+      }
+    });
+  });
+
+  group('multiple_choice', () {
+    testWidgets('defaults render single-select chips (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('multiple_choice', {}),
+          dark: dark,
+        );
+        expect(
+          find.byType(shadcn.MultipleChoice<String>),
+          findsOneWidget,
+        );
+        expect(find.text('Option A'), findsOneWidget);
+        expect(find.text('Option B'), findsOneWidget);
+        expect(find.text('Option C'), findsOneWidget);
+      }
+    });
+
+    testWidgets('taps switch the single selection (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('multiple_choice', {}),
+          dark: dark,
+        );
+        await tester.tap(find.text('Option B'));
+        await tester.pump();
+        expect(find.byType(shadcn.MultipleChoice<String>), findsOneWidget);
+      }
+    });
+
+    testWidgets('multiple mode renders the answer set (light + dark)', (
+      tester,
+    ) async {
+      const props = {
+        'mode': 'multiple',
+        'option1': 'Apple',
+        'option2': 'Banana',
+        'option3': 'Orange',
+        'value': 'Apple',
+        'value2': 'Orange',
+      };
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('multiple_choice', props),
+          dark: dark,
+        );
+        expect(
+          find.byType(shadcn.MultipleAnswer<String>),
+          findsOneWidget,
+        );
+        expect(find.text('Apple'), findsOneWidget);
+        expect(find.text('Banana'), findsOneWidget);
+        expect(find.text('Orange'), findsOneWidget);
+      }
+    });
+  });
+
+  group('object_input', () {
+    testWidgets('defaults render the date editor (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('object_input', {}), dark: dark);
+        expect(find.byType(shadcn.DateInput), findsOneWidget);
+      }
+    });
+
+    testWidgets('time and duration modes (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('object_input', {
+            'mode': 'time',
+            'placeholder': 'Alarm',
+            'label': 'Wake up',
+          }),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.TimeInput), findsOneWidget);
+        expect(find.text('Wake up'), findsOneWidget);
+        await _pump(
+          tester,
+          buildCatalogItem('object_input', {
+            'mode': 'duration',
+            'placeholder': 'Length',
+          }),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.DurationInput), findsOneWidget);
+      }
+    });
+  });
+
+  group('text_field', () {
+    testWidgets('defaults render the rich field (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text_field', {}), dark: dark);
+        expect(find.byType(shadcn.TextField), findsOneWidget);
+        expect(find.text('Type here'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'placeholder': 'Nickname',
+        'label': 'Profile',
+        'disabled': false,
+        'initialValue': 'Ada',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text_field', props), dark: dark);
+        expect(find.byType(shadcn.TextField), findsOneWidget);
+        expect(find.text('Profile'), findsOneWidget);
+      }
+    });
+  });
+
+  group('markdown', () {
+    testWidgets('defaults render inline markdown (light + dark)', (
+      tester,
+    ) async {
+      // Async parse: the document settles after attach.
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('markdown', {}), dark: dark);
+        await tester.pumpAndSettle();
+        expect(find.byType(shadcn.Markdown), findsOneWidget);
+        expect(
+          find.textContaining('Title', findRichText: true),
+          findsWidgets,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'data': '# Hello\n\nCanvas *markdown* here.',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('markdown', props), dark: dark);
+        await tester.pumpAndSettle();
+        expect(find.byType(shadcn.Markdown), findsOneWidget);
+        expect(
+          find.textContaining('Hello', findRichText: true),
+          findsWidgets,
+        );
+      }
+    });
+  });
+
+  group('text_animate', () {
+    testWidgets('defaults render the streaming text (light + dark)', (
+      tester,
+    ) async {
+      // Progressive reveal: only the widget type pins (the full sentence
+      // settles after the animation, never on the first frame).
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text_animate', {}), dark: dark);
+        expect(find.byType(shadcn.StreamingText), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'text': 'Typing out loud.'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('text_animate', props),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.StreamingText), findsOneWidget);
+      }
+    });
+  });
+
+  group('icon', () {
+    testWidgets('defaults render the wrapped star (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('icon', {}), dark: dark);
+        expect(find.byType(shadcn.WrappedIcon), findsOneWidget);
+        expect(find.byIcon(Icons.star), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'name': 'heart', 'size': 32.0};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('icon', props), dark: dark);
+        expect(find.byType(shadcn.WrappedIcon), findsOneWidget);
+        expect(find.byIcon(Icons.favorite), findsOneWidget);
+      }
+    });
+  });
+
+  group('navigation_menu', () {
+    testWidgets('defaults render the menu bar (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('navigation_menu', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.NavigationMenu), findsOneWidget);
+        expect(find.text('Products'), findsOneWidget);
+        expect(find.text('Company'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'menu1': 'Docs',
+        'item1': 'Guide',
+        'detail1': 'Start here.',
+        'menu2': 'Blog',
+        'item2': 'News',
+        'detail2': 'Latest posts.',
+      };
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('navigation_menu', props),
+          dark: dark,
+        );
+        expect(find.text('Docs'), findsOneWidget);
+        expect(find.text('Blog'), findsOneWidget);
+      }
+    });
+  });
+
+  group('dropzone', () {
+    testWidgets('defaults render the drop surface (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('dropzone', {}), dark: dark);
+        expect(find.byType(shadcn.FileDropzone), findsOneWidget);
+        expect(find.text('Browse files'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'hint': 'Drop photos', 'action': 'Choose photos'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('dropzone', props), dark: dark);
+        expect(find.byType(shadcn.FileDropzone), findsOneWidget);
+        expect(find.text('Choose photos'), findsOneWidget);
+      }
+    });
+  });
+
+  group('border_loading', () {
+    testWidgets('defaults render the ring (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('border_loading', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.BorderLoading), findsOneWidget);
+        expect(find.text('Loading'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Syncing'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('border_loading', props),
+          dark: dark,
+        );
+        expect(find.text('Syncing'), findsOneWidget);
+      }
+    });
+  });
+
+  group('overflow_marquee', () {
+    testWidgets('defaults render the marquee (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('overflow_marquee', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.OverflowMarquee), findsOneWidget);
+        expect(
+          find.text('This text scrolls when it overflows its parent.'),
+          findsOneWidget,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'text': 'Breaking news ticker'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('overflow_marquee', props),
+          dark: dark,
+        );
+        expect(find.text('Breaking news ticker'), findsOneWidget);
+      }
+    });
+  });
+
+  group('focus_outline', () {
+    testWidgets('defaults render the ringed button (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('focus_outline', {}), dark: dark);
+        expect(find.byType(shadcn.FocusOutline), findsOneWidget);
+        expect(find.text('Focus me'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Search box', 'focused': false};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('focus_outline', props),
+          dark: dark,
+        );
+        expect(find.text('Search box'), findsOneWidget);
+      }
+    });
+  });
+
+  group('switcher', () {
+    testWidgets('defaults render the first page (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('switcher', {}), dark: dark);
+        expect(find.byType(shadcn.Switcher), findsOneWidget);
+        expect(find.text('Page 1'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'direction': 'up',
+        'page1': 'Cover',
+        'page2': 'Back',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('switcher', props), dark: dark);
+        expect(find.byType(shadcn.Switcher), findsOneWidget);
+        expect(find.text('Cover'), findsOneWidget);
+      }
+    });
+  });
+
+  group('scrollable', () {
+    testWidgets('defaults render the faded viewport (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('scrollable', {}), dark: dark);
+        expect(find.byType(shadcn.FadedScrollableViewport), findsOneWidget);
+        expect(
+          find.text('First line of scrollable content.'),
+          findsOneWidget,
+        );
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {
+        'text1': 'Alpha',
+        'text2': 'Beta',
+        'text3': 'Gamma',
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('scrollable', props), dark: dark);
+        expect(find.text('Alpha'), findsOneWidget);
+        expect(find.text('Gamma'), findsOneWidget);
+      }
+    });
+  });
+
+  group('stage_container', () {
+    testWidgets('defaults render the stage (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('stage_container', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.StageContainer), findsOneWidget);
+        expect(find.text('Stage content'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Hero section'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('stage_container', props),
+          dark: dark,
+        );
+        expect(find.text('Hero section'), findsOneWidget);
+      }
+    });
+  });
+
+  group('media_query', () {
+    testWidgets('defaults show the in-range child (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('media_query', {}), dark: dark);
+        expect(find.byType(shadcn.MediaQueryVisibility), findsOneWidget);
+        expect(find.text('Wide content'), findsOneWidget);
+      }
+    });
+
+    testWidgets('a tall breakpoint shows the alternate (light + dark)', (
+      tester,
+    ) async {
+      const props = {
+        'label': 'Desktop',
+        'alternate': 'Mobile',
+        'minWidth': 2000.0,
+      };
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('media_query', props), dark: dark);
+        expect(find.text('Mobile'), findsOneWidget);
+        expect(find.text('Desktop'), findsNothing);
+      }
+    });
+  });
+
+  group('scrollview', () {
+    testWidgets('defaults render the interceptor (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('scrollview', {}), dark: dark);
+        expect(find.byType(shadcn.ScrollViewInterceptor), findsOneWidget);
+        expect(find.text('Middle-drag to scroll'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Drag canvas'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('scrollview', props), dark: dark);
+        expect(find.text('Drag canvas'), findsOneWidget);
+      }
+    });
+  });
+
+  group('hover', () {
+    testWidgets('defaults render the hover surface (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('hover', {}), dark: dark);
+        expect(find.byType(shadcn.HoverActivity), findsOneWidget);
+        expect(find.text('Hover me'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Hover the card'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('hover', props), dark: dark);
+        expect(find.text('Hover the card'), findsOneWidget);
+      }
+    });
+  });
+
+  group('patch', () {
+    testWidgets('defaults render the click surface (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('patch', {}), dark: dark);
+        expect(find.byType(shadcn.ClickDetector), findsOneWidget);
+        expect(find.text('Tap me'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Double-tap me'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('patch', props), dark: dark);
+        expect(find.text('Double-tap me'), findsOneWidget);
+      }
+    });
+  });
+
+  group('text', () {
+    testWidgets('defaults render the wrapped text (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text', {}), dark: dark);
+        expect(find.byType(shadcn.WrappedText), findsOneWidget);
+        expect(find.text('Styled text'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'text': 'Hello, canvas'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('text', props), dark: dark);
+        expect(find.text('Hello, canvas'), findsOneWidget);
+      }
+    });
+  });
+
+  group('filter_bar', () {
+    testWidgets('defaults render the search row (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('filter_bar', {}), dark: dark);
+        expect(find.byType(shadcn.FilterBar), findsOneWidget);
+        expect(find.text('Search'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'searchPlaceholder': 'Filter orders'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('filter_bar', props), dark: dark);
+        expect(find.byType(shadcn.FilterBar), findsOneWidget);
+        expect(find.text('Filter orders'), findsOneWidget);
+      }
+    });
+  });
+
+  group('fade_scroll', () {
+    testWidgets('defaults render the faded list (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('fade_scroll', {}), dark: dark);
+        expect(find.byType(shadcn.FadeScroll), findsOneWidget);
+        expect(find.text('Row 1'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'row1': 'Apples', 'row2': 'Oranges', 'row3': 'Pears'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('fade_scroll', props), dark: dark);
+        expect(find.text('Apples'), findsOneWidget);
+        expect(find.text('Pears'), findsOneWidget);
+      }
+    });
+  });
+
+  group('resizable', () {
+    testWidgets('defaults render two panes (light + dark)', (tester) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('resizable', {}), dark: dark);
+        expect(find.byType(shadcn.ResizablePanel), findsOneWidget);
+        expect(find.text('Left pane'), findsOneWidget);
+        expect(find.text('Right pane'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'pane1': 'Editor', 'pane2': 'Preview'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('resizable', props), dark: dark);
+        expect(find.text('Editor'), findsOneWidget);
+        expect(find.text('Preview'), findsOneWidget);
+      }
+    });
+  });
+
+  group('subfocus', () {
+    testWidgets('defaults render the scope child (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('subfocus', {}), dark: dark);
+        expect(find.byType(shadcn.SubFocus), findsOneWidget);
+        expect(find.text('Focused scope'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'Form section'};
+      for (final dark in [false, true]) {
+        await _pump(tester, buildCatalogItem('subfocus', props), dark: dark);
+        expect(find.text('Form section'), findsOneWidget);
+      }
+    });
+  });
+
+  group('repeated_animation_builder', () {
+    testWidgets('defaults render the pulse wrapper (light + dark)', (
+      tester,
+    ) async {
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('repeated_animation_builder', {}),
+          dark: dark,
+        );
+        expect(find.byType(shadcn.PulsingAnimation), findsOneWidget);
+        expect(find.text('Pulsing'), findsOneWidget);
+      }
+    });
+
+    testWidgets('representative props (light + dark)', (tester) async {
+      const props = {'label': 'New badge'};
+      for (final dark in [false, true]) {
+        await _pump(
+          tester,
+          buildCatalogItem('repeated_animation_builder', props),
+          dark: dark,
+        );
+        expect(find.text('New badge'), findsOneWidget);
+      }
+    });
+  });
+
+  // Track FF2 narrow smoke (2026-09-06): every new builder must survive a
+  // 320px viewport (direct + tight row slice) since the shared narrow suite
+  // cannot list them until the coordinator updates its pins (reported).
+  group('track FF2 narrow 320px smoke', () {
+    testWidgets('every FF2 kind survives 320px', (tester) async {
+      tester.view.physicalSize = const Size(320, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+      for (final kind in _kTrackFF2Kinds) {
+        await _pumpFF2(tester, kind, const {});
+        expect(tester.takeException(), isNull, reason: '$kind defaults 320');
+        await _pumpFF2(
+          tester,
+          kind,
+          Map<String, dynamic>.of(findEntry(kind)!.defaults),
+        );
+        expect(
+          tester.takeException(),
+          isNull,
+          reason: '$kind explicit-defaults 320',
+        );
+        // Narrow row child: tight 320px slice of a Row (the command-shell
+        // precedent) — the builder must survive unbounded-height slices too.
+        await _pump(
+          tester,
+          Row(
+            children: [Expanded(child: buildCatalogItem(kind, const {}))],
+          ),
+        );
+        if (kind == 'markdown') await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull, reason: '$kind row-slice 320');
+      }
     });
   });
 }

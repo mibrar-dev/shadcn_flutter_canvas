@@ -25,7 +25,7 @@ void main() {
       }
     });
 
-    test('all 69 catalog kinds are covered', () {
+    test('all 97 catalog kinds are covered', () {
       const expected = {
         'button',
         'card',
@@ -98,6 +98,36 @@ void main() {
         'hsv',
         'history',
         'feature_carousel',
+        // Track FF2 additions (2026-09-06): covered via the derived
+        // `kInspectorSchemas` (built from `kPropSchemas`, no inspector edit).
+        'phone_input',
+        'item_picker',
+        'chip_input',
+        'autocomplete',
+        'multiple_choice',
+        'object_input',
+        'text_field',
+        'text',
+        'icon',
+        'navigation_menu',
+        'dropzone',
+        'border_loading',
+        'overflow_marquee',
+        'focus_outline',
+        'switcher',
+        'scrollable',
+        'stage_container',
+        'media_query',
+        'scrollview',
+        'hover',
+        'patch',
+        'filter_bar',
+        'fade_scroll',
+        'resizable',
+        'subfocus',
+        'repeated_animation_builder',
+        'markdown',
+        'text_animate',
         // Track Y1 addition (2026-09-06): covered via the derived
         // `kInspectorSchemas` (built from `kPropSchemas`, no inspector edit).
         'navigation_bar',

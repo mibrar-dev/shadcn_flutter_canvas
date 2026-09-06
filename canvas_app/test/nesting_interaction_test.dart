@@ -436,8 +436,12 @@ void main() {
       await gesture.moveTo(cardCenter);
       await tester.pump();
 
-      // The container hover shows the index line (horizontal for containers).
-      expect(find.byKey(kFlowInsertLineKey), findsOneWidget);
+      // FF1 (drop-into-slot): card1's `content` slot is empty, so the hover
+      // previews the slot assignment (ghost in the slot) INSTEAD of the
+      // flow index line — the landing ignores the index, so the line hides.
+      // The ghost pin lives in `drop_slots_test.dart` (slot ghost preview).
+      expect(find.byKey(kFlowInsertLineKey), findsNothing);
+      expect(find.byKey(kDropPreviewKey), findsOneWidget);
 
       await gesture.up();
       await tester.pumpAndSettle();
@@ -446,6 +450,13 @@ void main() {
         (n) => n.items.any((i) => i.kind == 'badge'),
       );
       expect(badge.parentId, 'card1');
+      // ... and fills the empty slot in the same commit.
+      expect(
+        store.doc.nodes
+            .singleWhere((n) => n.id == 'card1')
+            .slotNodes['content'],
+        badge.id,
+      );
       expect(find.byKey(kFlowInsertLineKey), findsNothing);
     });
   });

@@ -203,6 +203,75 @@ const Map<String, Map<String, dynamic>> _representativeProps = {
     'tab4': 'You',
     'index': 1,
   },
+  // Track FF2 additions (2026-09-06).
+  'phone_input': {'label': 'Phone', 'searchHint': 'Pick a country'},
+  'item_picker': {
+    'placeholder': 'Choose',
+    'option1': 'Red',
+    'option2': 'Blue',
+    'value': 'Red',
+  },
+  'chip_input': {
+    'placeholder': 'Tags',
+    'chip1': 'Flutter',
+    'chip2': 'Dart',
+  },
+  'autocomplete': {
+    'placeholder': 'Type a fruit',
+    'suggestion1': 'Banana',
+    'suggestion2': 'Berry',
+  },
+  'multiple_choice': {
+    'mode': 'multiple',
+    'option1': 'A',
+    'option2': 'B',
+    'option3': 'C',
+    'value': 'A',
+    'value2': 'B',
+  },
+  'object_input': {
+    'mode': 'time',
+    'placeholder': 'Pick a time',
+    'label': 'Alarm',
+  },
+  'text_field': {
+    'placeholder': 'Nickname',
+    'label': 'Name',
+    'disabled': false,
+    'initialValue': 'Ada',
+  },
+  'text': {'text': 'Hello narrow'},
+  'icon': {'name': 'heart', 'size': 32.0},
+  'navigation_menu': {
+    'menu1': 'Docs',
+    'item1': 'Guide',
+    'detail1': 'Start here.',
+    'menu2': 'Team',
+    'item2': 'About',
+    'detail2': 'Who we are.',
+  },
+  'dropzone': {'hint': 'Drop it', 'action': 'Select'},
+  'border_loading': {'label': 'Working'},
+  'overflow_marquee': {'text': 'Scrolling headline text here.'},
+  'focus_outline': {'label': 'Press me', 'focused': false},
+  'switcher': {'direction': 'up', 'page1': 'One', 'page2': 'Two'},
+  'scrollable': {'text1': 'A', 'text2': 'B', 'text3': 'C'},
+  'stage_container': {'label': 'On stage'},
+  'media_query': {
+    'label': 'Wide layout',
+    'alternate': 'Slim layout',
+    'minWidth': 200.0,
+  },
+  'scrollview': {'label': 'Drag to pan'},
+  'hover': {'label': 'Hover target'},
+  'patch': {'label': 'Double tap'},
+  'filter_bar': {'searchPlaceholder': 'Filter items'},
+  'fade_scroll': {'row1': 'Alpha', 'row2': 'Beta', 'row3': 'Gamma'},
+  'resizable': {'pane1': 'Nav', 'pane2': 'Content'},
+  'subfocus': {'label': 'Scope two'},
+  'repeated_animation_builder': {'label': 'Beat'},
+  'markdown': {'data': '# Hi\n\nSome *narrow* text.'},
+  'text_animate': {'text': 'Typing it out.'},
 };
 
 /// String prop keys that are enums/hex (not free text) — the long-text stress
@@ -297,6 +366,10 @@ Future<void> _pumpBothLayouts(
     dark: dark,
     reason: '$kind $set dark=$dark direct',
   );
+  // Markdown parses in an isolate behind a progressive-chunk timer: a plain
+  // pump leaves it pending and trips the binding teardown invariant, so
+  // settle after markdown pumps (same idiom as registry_builders_test).
+  if (kind == 'markdown') await tester.pumpAndSettle();
   // Narrow row child: catches unbounded-width crashes (Track M `command`
   // shell precedent) — the builder must survive a tight 320px slice of a Row.
   await _pumpChecked(
@@ -305,6 +378,9 @@ Future<void> _pumpBothLayouts(
     dark: dark,
     reason: '$kind $set dark=$dark row-expanded',
   );
+  // Markdown's isolate-parse timer from the LAST pump is still pending at
+  // test end — settle once here (covers all three pumps above).
+  if (kind == 'markdown') await tester.pumpAndSettle();
 }
 
 void main() {

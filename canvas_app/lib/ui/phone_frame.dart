@@ -12,8 +12,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 
 import 'package:canvas_app/canvas/component_catalog.dart';
+import 'package:canvas_app/canvas/canvas_store.dart' show dropSlotForNewChild;
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
@@ -368,6 +370,154 @@ const ValueKey<String> kFlowInsertLineKey =
 /// while a palette drag hovers a container/row/root target.
 const ValueKey<String> kDropPreviewKey = ValueKey<String>('drop-preview');
 
+/// FF1 fill-or-shrink chrome for widgets spliced into builder-owned slots.
+///
+/// Kit shrink-wrap chrome (the toast `Row(min)`, the refresh-trigger list
+/// shell) measures content with an UNBOUNDED max width; answering
+/// `double.infinity` there detonates layout (`BoxConstraints forces an
+/// infinite width`), so a drop parented under such a host crashed instead of
+/// rendering. Finite incoming keeps today's fill (exactly `maxWidth`,
+/// byte-identical paint); unbounded incoming falls back to [looseWidth]
+/// (rows pass the stage width — flex cells need a finite bound even when
+/// loose, an unbounded `Row` with `Flexible` children throws) or pins to
+/// the child's own intrinsic width when null (a plain loosen lets the inner
+/// stretch content fill the inner max clamp, and width-deriving ancestors
+/// adopt that width — re-tightening wider every pass until the clamp).
+///
+/// A [LayoutBuilder] can NOT do this job: it reports intrinsics from its
+/// last layout's constraints, so inside a width-deriving stretch parent
+/// (the toast message `Column`, which re-tightens children to its own
+/// width) the reported width ratchets up to the inner clamp and the toast
+/// overflows. This box reports pure child intrinsics (the [RenderProxyBox]
+/// defaults — never layout-derived), so width-deriving ancestors converge
+/// instead of ratcheting. Builder files are off-limits, hence this
+/// renderer-level guard.
+class _FillOrShrink extends SingleChildRenderObjectWidget {
+  /// Exact width pin (Track U2 fixed-`w`), constrained by the incoming max
+  /// exactly like a `SizedBox` pin. Null = fill-or-shrink below.
+  final double? fixedWidth;
+
+  /// Finite bound used when the incoming max width is unbounded. Null =
+  /// pin to the child's intrinsic width (see the class docs).
+  final double? looseWidth;
+
+  const _FillOrShrink({required super.child, this.fixedWidth, this.looseWidth});
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderFillOrShrink()
+        ..fixedWidth = fixedWidth
+        ..looseWidth = looseWidth;
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    covariant _RenderFillOrShrink renderObject,
+  ) {
+    renderObject
+      ..fixedWidth = fixedWidth
+      ..looseWidth = looseWidth;
+  }
+}
+
+class _RenderFillOrShrink extends RenderProxyBox {
+  double? fixedWidth;
+  double? looseWidth;
+
+  /// Intrinsic-width pin for unbounded incoming (see [performLayout]).
+  double _intrinsicPin(RenderBox child) {
+    final w = child.getMaxIntrinsicWidth(double.infinity);
+    return w.isFinite ? w : 0.0;
+  }
+
+  @override
+  void performLayout() {
+    final child = this.child;
+    if (child == null) {
+      size = constraints.smallest;
+      return;
+    }
+    if (fixedWidth != null) {
+      // Pin constrained by the incoming max (the oversized-pin shrink rule).
+      final w = constraints.maxWidth.isFinite
+          ? math.min(fixedWidth!, constraints.maxWidth)
+          : fixedWidth!;
+      child.layout(
+        constraints.copyWith(minWidth: w, maxWidth: w),
+        parentUsesSize: true,
+      );
+      size = constraints.constrain(Size(w, child.size.height));
+      return;
+    }
+    if (constraints.maxWidth.isFinite) {
+      child.layout(
+        constraints.copyWith(minWidth: constraints.maxWidth),
+        parentUsesSize: true,
+      );
+      size = Size(constraints.maxWidth, child.size.height);
+      return;
+    }
+    if (looseWidth != null) {
+      child.layout(
+        constraints.copyWith(minWidth: looseWidth, maxWidth: looseWidth),
+        parentUsesSize: true,
+      );
+      size = constraints.constrain(Size(looseWidth!, child.size.height));
+      return;
+    }
+    // Unbounded and no finite fallback: pin to the child's own intrinsic
+    // width. A plain loosen lets the inner stretch content fill the inner
+    // max clamp, and width-deriving ancestors (the toast message `Column`)
+    // adopt that width — which re-tightens the child wider on the next pass
+    // until the clamp, overflowing the ancestor. The intrinsic pin keeps
+    // layout == intrinsic-derived, so such ancestors converge instead of
+    // ratcheting. Measured-then-pinned costs one extra intrinsic pass, and
+    // only on this rare path.
+    final w = _intrinsicPin(child);
+    child.layout(
+      constraints.copyWith(minWidth: w, maxWidth: w),
+      parentUsesSize: true,
+    );
+    size = constraints.constrain(Size(w, child.size.height));
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final child = this.child;
+    if (child == null) return constraints.smallest;
+    if (fixedWidth != null) {
+      final w = constraints.maxWidth.isFinite
+          ? math.min(fixedWidth!, constraints.maxWidth)
+          : fixedWidth!;
+      final h = child
+          .getDryLayout(constraints.copyWith(minWidth: w, maxWidth: w))
+          .height;
+      return constraints.constrain(Size(w, h));
+    }
+    if (constraints.maxWidth.isFinite) {
+      final h = child
+          .getDryLayout(constraints.copyWith(minWidth: constraints.maxWidth))
+          .height;
+      return Size(constraints.maxWidth, h);
+    }
+    if (looseWidth != null) {
+      final h = child
+          .getDryLayout(
+            constraints.copyWith(minWidth: looseWidth, maxWidth: looseWidth),
+          )
+          .height;
+      return constraints.constrain(Size(looseWidth!, h));
+    }
+    // Intrinsic pin, mirroring [performLayout] (see the note there).
+    final w = child.getMaxIntrinsicWidth(double.infinity);
+    final pin = w.isFinite ? w : 0.0;
+    final h = child
+        .getDryLayout(constraints.copyWith(minWidth: pin, maxWidth: pin))
+        .height;
+    return constraints.constrain(Size(pin, h));
+  }
+}
+
 /// Intrinsically-sized kinds: fixed-geometry widgets (avatar circle, pills,
 /// dots, ratings) that must keep their natural size left-aligned instead of
 /// stretching full-bleed. Stretching them (Track Z1's rule applied blindly)
@@ -569,6 +719,21 @@ ValueKey<String> resizeHandleKey(String nodeId, String edge) =>
 ValueKey<String> resizeReadoutKey(String nodeId) =>
     ValueKey<String>('resize-readout:$nodeId');
 
+/// Maps a [_flowHit] child index into a rendered-splice index: the hit
+/// counts every visible `parentId` child, but slot-assigned children are
+/// withheld from the splice (slot wins — see [_slotWidgets]) while still
+/// occupying hit positions. Only spliced kids before the hit advance the
+/// position, so the ghost and the landing agree when a host mixes slot and
+/// flow children (FF1 occupied-slot fallback). Clamped into range.
+int _spliceIndex(List<String> flowIds, Set<String> splicedIds, int hitIndex) {
+  var at = 0;
+  final end = hitIndex.clamp(0, flowIds.length);
+  for (var i = 0; i < end; i++) {
+    if (splicedIds.contains(flowIds[i])) at++;
+  }
+  return at;
+}
+
 /// Insertion index for [pointerMain] (pointer position along a container's
 /// main axis, in screen-local logical px) given the container's
 /// [childCenters] along the same axis in flow (doc) order: the first index
@@ -608,6 +773,9 @@ class _FlowHit {
 /// In-chrome drop-preview target (Track D3): the hovered flow target plus the
 /// dragged kind, resolved from the SAME [_FlowHit] as the landing path so the
 /// ghost and the drop agree on parent + index. Null while no drag hovers.
+/// FF1: when the hovered host has an empty compatible slot, [_buildContainer]
+/// previews the ghost INSIDE that slot (and the index line hides) — still
+/// resolved from this same spec, so ghost and landing keep agreeing.
 typedef _DropGhostSpec = ({String? parentId, int index, String kind});
 
 /// Screen background for [screen] inside the inner components-themed canvas.
@@ -1372,6 +1540,24 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                           kind: dragKind,
                         )
                       : null;
+              // FF1 slot preview (mirrors [_buildContainer]'s ghost routing
+              // so the insert line and the ghost agree): when the hover
+              // would land in an empty slot, the flow index line hides —
+              // the landing ignores the index, so the line would lie. Never
+              // throws mid-drag; a failure keeps the line.
+              String? slotPreview;
+              if (hoverHit?.parentId != null &&
+                  dragKind != null &&
+                  dragKind != 'row') {
+                try {
+                  slotPreview = dropSlotForNewChild(
+                    widget.nodes,
+                    hoverHit!.parentId!,
+                  );
+                } catch (_) {
+                  slotPreview = null;
+                }
+              }
               // A hovered container-or-row carries its own wash; otherwise the
               // whole screen washes while a drag hovers it.
               final hoveringTarget = hoverHit?.parentId != null;
@@ -1484,8 +1670,10 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                     ),
                   // 2px index line spanning the hovered container's cross
                   // axis. Gated on `candidate` via `hover`, so it vanishes
-                  // on drop/leave with the guides.
-                  if (hoverHit != null) _buildInsertLine(hoverHit, colors),
+                  // on drop/leave with the guides. Hidden while an FF1 slot
+                  // preview is active (see [slotPreview] above).
+                  if (hoverHit != null && slotPreview == null)
+                    _buildInsertLine(hoverHit, colors),
                   if (guides.x != null)
                     Positioned(
                       key: kDragGuideVerticalKey,
@@ -1567,8 +1755,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         _buildNodeWidget(root, colors, {root.id}, ghost: ghost),
     ];
     if (ghost != null && ghost.parentId == null) {
+      // Hit-space → splice-space mapping (see [_spliceIndex]): the root hit
+      // counts every root, the column only renders non-slot roots.
+      final flowIds = [
+        for (final n in widget.nodes)
+          if (n.parentId == null) n.id,
+      ];
+      final splicedIds = {for (final root in roots) root.id};
       items.insert(
-        ghost.index.clamp(0, items.length),
+        _spliceIndex(flowIds, splicedIds, ghost.index)
+            .clamp(0, items.length),
         _DropGhostBox(colors: colors, kind: ghost.kind),
       );
     }
@@ -1828,8 +2024,15 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           ),
       ];
       if (rowGhost != null) {
+        // Hit-space → splice-space mapping (see [_spliceIndex]).
+        final flowIds = [
+          for (final n in _visibleNodes)
+            if (n.parentId == node.id) n.id,
+        ];
+        final splicedIds = {for (final kid in kids) kid.id};
         cells.insert(
-          rowGhost.index.clamp(0, cells.length),
+          _spliceIndex(flowIds, splicedIds, rowGhost.index)
+              .clamp(0, cells.length),
           Flexible(
             child: _DropGhostBox(
               colors: colors,
@@ -1872,12 +2075,16 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           // drill-out fires exactly once per tap and locked rows stay
           // silent); the detector stays for tap semantics only.
           onTap: () {},
-          child: Container(
+          child: _FillOrShrink(
+            fixedWidth: _effW(node),
+            looseWidth: _innerWidth,
+            child: Container(
           key: _flowKey(node.id),
           // Track U2: a fixed `w` pins the container (cells share the pinned
           // width); auto keeps full-bleed. A fixed `h` pins the body height;
-          // auto stays intrinsic.
-          width: _effW(node) ?? double.infinity,
+          // auto stays intrinsic. FF1: under shrink-wrap chrome (see
+          // [_FillOrShrink]) an auto row caps at the stage width — flex cells
+          // need a finite bound even when loose.
           padding: const EdgeInsets.all(4),
           decoration: node.id == widget.selectedNodeId
               ? BoxDecoration(
@@ -1889,6 +2096,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 )
               : null,
           child: applyNodeSizeValues(null, _effH(node), body),
+            ),
             ),
           ),
         ),
@@ -1950,13 +2158,15 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// content clamp) around [content]. Keeps nested nodes' tap/selection/clamp
   /// semantics identical to roots — the "same builder path" rule.
   ///
-  /// Track Z1 full-bleed: `width: double.infinity` so the chrome fills its
-  /// parent in LOOSE contexts too (nested inside catalog builder slots whose
-  /// inner `Column(start)` — builder-owned, untouched here — would otherwise
-  /// shrink-wrap the child to intrinsic). In TIGHT parents (root flow
-  /// stretch, fallback stretch, row flex shares) the width is already tight
-  /// so behavior is identical; fixed-w keeps pixels because the inner
-  /// [applyNodeSizeValues] [SizedBox] wins and left-aligns.
+  /// Track Z1 full-bleed: fills the parent in LOOSE contexts too (nested
+  /// inside catalog builder slots whose inner `Column(start)` — builder-owned,
+  /// untouched here — would otherwise shrink-wrap the child to intrinsic) —
+  /// EXCEPT shrink-wrap chrome itself (see [_FillOrShrink]): under an
+  /// unbounded width the chrome shrink-wraps to content instead of demanding
+  /// infinity. In TIGHT parents (root flow stretch, fallback stretch, row
+  /// flex shares) the width is already tight so behavior is identical;
+  /// fixed-w keeps pixels because the inner [applyNodeSizeValues] [SizedBox]
+  /// wins and left-aligns.
   Widget _nodeChrome(CanvasNode node, EditorColors colors, Widget content) {
     return _withHandles(
       node,
@@ -1969,9 +2179,9 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
           // Single-path selection (see [_buildLeaf]): side-effect-free so
           // drill-out fires exactly once per tap.
           onTap: () {},
-          child: Container(
+          child: _FillOrShrink(
+            child: Container(
             key: _flowKey(node.id),
-            width: double.infinity,
             padding: const EdgeInsets.all(4),
             decoration: node.id == widget.selectedNodeId
                 ? BoxDecoration(
@@ -2017,7 +2227,8 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                         _effH(node),
                         content,
                       ),
-                    ),
+                      ),
+            ),
             ),
           ),
         ),
@@ -2032,15 +2243,21 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// recursively) and stack vertically with [kFlowScreenGap] separators.
   ///
   /// Track Z1 full-bleed: the children column stretches so nested children
-  /// fill the container width (with [_nodeChrome]'s `double.infinity` the
-  /// fill holds even inside builder-owned `start` slots).
+  /// fill the container width (the [_nodeChrome] fill holds even inside
+  /// builder-owned `start` slots; shrink-wrap chrome excepted — see
+  /// [_chromeWidth]).
   ///
   /// Track AA slots: every item (the container chrome AND the below-stacked
   /// rest) builds with this node's [_slotWidgets] spread over its props.
   ///
-  /// D3 drop preview: when [ghost] targets this container, the ghost splices
-  /// into the slot's child list at the hover index, so it renders inside the
-  /// real chrome with the catalog's own separators.
+  /// D3 drop preview: when [ghost] targets this container AND the FF1
+  /// drop-into-slot rule would assign an empty slot
+  /// ([dropSlotForNewChild]), the ghost renders INSIDE that slot region
+  /// (injected as the slot value, so the builder's own chrome highlights
+  /// it) instead of splicing into the child list — previewing exactly what
+  /// the landing commits. Otherwise the ghost splices into the slot's child
+  /// list at the hover index as before. `row` drags never slot-preview (the
+  /// landing parents them), matching the landing path kind for kind.
   Widget _buildContainer(
     CanvasNode node,
     EditorColors colors,
@@ -2050,14 +2267,35 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   }) {
     final next = {...ancestors, node.id};
     final items = _nodeItems(node);
-    final slots = _slotWidgets(node, colors, ancestors, ghost: ghost);
+    final slots = Map<String, Widget>.of(
+      _slotWidgets(node, colors, ancestors, ghost: ghost),
+    );
     final builtKids = <Widget>[
       for (final kid in kids)
         _buildNodeWidget(kid, colors, next, ghost: ghost),
     ];
-    if (ghost != null && ghost.parentId == node.id) {
+    // FF1 slot preview (never throws mid-drag: the rule is pure, and any
+    // residual failure keeps the classic child splice below).
+    String? slotPreview;
+    if (ghost != null && ghost.parentId == node.id && ghost.kind != 'row') {
+      try {
+        slotPreview = dropSlotForNewChild(widget.nodes, node.id);
+      } catch (_) {
+        slotPreview = null;
+      }
+    }
+    if (slotPreview != null) {
+      slots[slotPreview] = _DropGhostBox(colors: colors, kind: ghost!.kind);
+    } else if (ghost != null && ghost.parentId == node.id) {
+      // Hit-space → splice-space mapping (see [_spliceIndex]).
+      final flowIds = [
+        for (final n in _visibleNodes)
+          if (n.parentId == node.id) n.id,
+      ];
+      final splicedIds = {for (final kid in kids) kid.id};
       builtKids.insert(
-        ghost.index.clamp(0, builtKids.length),
+        _spliceIndex(flowIds, splicedIds, ghost.index)
+            .clamp(0, builtKids.length),
         _DropGhostBox(colors: colors, kind: ghost.kind),
       );
     }
@@ -2184,9 +2422,12 @@ class _DropGhostBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: Container(
+      child: _FillOrShrink(
+        child: Container(
         key: kDropPreviewKey,
-        width: horizontal ? null : double.infinity,
+        // FF1: fill-or-shrink (see [_FillOrShrink]) so a slot-preview ghost
+        // inside shrink-wrap chrome sizes to its label instead of crashing.
+        // Row strips keep the finite-share path via [horizontal].
         constraints: BoxConstraints(
           minHeight: 56,
           minWidth: horizontal ? 96 : 0,
@@ -2205,6 +2446,7 @@ class _DropGhostBox extends StatelessWidget {
             ),
           ),
         ),
+        ),
       ),
     );
   }
@@ -2220,8 +2462,10 @@ class _EmptyRowPlaceholder extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
+    return _FillOrShrink(
+      child: Container(
+      // FF1: fill-or-shrink (see [_FillOrShrink]) — an empty row nested in
+      // shrink-wrap chrome sizes to its label instead of crashing.
       constraints: const BoxConstraints(minHeight: 64),
       child: CustomPaint(
         painter: _DashedOutline(
@@ -2238,6 +2482,7 @@ class _EmptyRowPlaceholder extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

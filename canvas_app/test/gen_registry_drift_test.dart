@@ -82,14 +82,14 @@ void main() {
       );
     });
 
-    test('pinned counts: 68 bridges + 10 bare builders + row + 1 frozen-track exemption = 80 ready', () {
-      expect(gen.bridgeKindsForTest, hasLength(68));
+    test('pinned counts: 96 bridges + 10 bare builders + row + 1 frozen-track exemption = 108 ready', () {
+      expect(gen.bridgeKindsForTest, hasLength(96));
       expect(gen.readyKindsForTest, hasLength(10));
-      expect(kCatalog, hasLength(69));
+      expect(kCatalog, hasLength(97));
       expect(kFrozenTrackKinds, <String>{'navigation_bar'});
       expect(
         [for (final e in kRegistry) if (e.canvasReady) e.kind],
-        hasLength(80),
+        hasLength(108),
       );
     });
   });

@@ -363,7 +363,7 @@ void main() {
 
     test('bridge: every catalog kind is canvas-ready with a matching label',
         () {
-      expect(kCatalog, hasLength(69));
+      expect(kCatalog, hasLength(97));
       for (final entry in kCatalog) {
         final reg = findRegistryEntry(entry.kind);
         expect(reg, isNotNull, reason: 'no registry entry ${entry.kind}');
@@ -380,8 +380,9 @@ void main() {
           if (entry.canvasReady) entry.kind,
       ];
       expect(ready.length, greaterThanOrEqualTo(25));
-      // Pinned: 69 bridged + 10 hand-verified + the row pseudo-kind.
-      expect(ready.length, 80);
+      // Pinned: 96 bridged + 10 hand-verified + the row pseudo-kind
+      // + 1 frozen-track exemption (navigation_bar).
+      expect(ready.length, 108);
     });
 
     test('hidden utilities stay covered but leave the palette', () {
@@ -460,6 +461,10 @@ void main() {
             home: Scaffold(body: Builder(builder: entry.build)),
           ),
         );
+        // Markdown parses in an isolate behind a progressive-chunk timer —
+        // settle so no pending timer trips teardown (registry_builders_test
+        // `_pumpFF2` idiom).
+        if (entry.kind == 'markdown') await tester.pumpAndSettle();
       }
     });
 

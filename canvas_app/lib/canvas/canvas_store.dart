@@ -52,6 +52,48 @@ const _kNodeSlots = <String, List<String>>{
   'basic': ['leading', 'trailing'],
 };
 
+/// FF1 drop-into-slot rule (single source of truth for the drop landing in
+/// `design_canvas.dart` and the ghost preview in `phone_frame.dart`).
+///
+/// Returns the EMPTY slot a freshly-dropped leaf should fill on [hostId], or
+/// null when the drop must parent as a plain child instead. Rule (UX: a
+/// generic palette drop is body/content material, never chrome):
+/// * `scaffold` → `body` only (an occupied body never spills into `appBar` —
+///   header-ish chrome — or `footer`; those keep their roles).
+/// * single-slot hosts (`card`/`dialog`/… → `content`, `card_image` →
+///   `image`) → that slot when empty.
+/// * multi-slot hosts (`basic` → `leading`/`trailing`) → first empty slot in
+///   declared order.
+/// * null (plain parenting) when the host is unknown, locked (assigning
+///   would throw in [CanvasStore.setSlotChild] — the drop must never crash),
+///   a row (structural: rows keep their strip), slot-less, or fully occupied.
+///
+/// Pure over [nodes] (reads host kind/slotNodes only); never throws.
+String? dropSlotForNewChild(List<CanvasNode> nodes, String hostId) {
+  CanvasNode? host;
+  for (final n in nodes) {
+    if (n.id == hostId) {
+      host = n;
+      break;
+    }
+  }
+  if (host == null || host.locked) return null;
+  final kind =
+      host.isRow ? 'row' : (host.items.isEmpty ? '' : host.items.first.kind);
+  final slots = _kNodeSlots[kind];
+  if (slots == null || slots.isEmpty) return null;
+  if (kind == 'scaffold') {
+    return host.slotNodes.containsKey('body') ? null : 'body';
+  }
+  if (slots.length == 1) {
+    return host.slotNodes.containsKey(slots.first) ? null : slots.first;
+  }
+  for (final slot in slots) {
+    if (!host.slotNodes.containsKey(slot)) return slot;
+  }
+  return null;
+}
+
 /// Minimal listener registry mirroring Flutter's `ChangeNotifier` API.
 class ChangeNotifier {
   final List<void Function()> _listeners = [];

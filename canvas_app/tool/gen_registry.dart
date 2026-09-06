@@ -3,7 +3,7 @@
 // Reads `components.json` (id + description + category per component) and
 // emits one [RegistryEntry] per kit component id plus the `row` pseudo-kind.
 // Entry builders are NOT generated from previews (previews render full
-// `Scaffold`s — see component_catalog.dart): the 68 catalog kinds bridge to
+// `Scaffold`s — see component_catalog.dart): the 96 catalog kinds bridge to
 // `buildCatalogWithDefaults`, 10 hand-verified EASY kinds get bare-widget
 // builders (sources embedded below, each verified by grepping the kit
 // `_impl/` sources for a ctor taking only string/num/bool/enum/child
@@ -56,7 +56,7 @@ const _hiddenUtilities = <String>{
   'wrapper',
 };
 
-/// The 51 catalog kinds: registry builders delegate to
+/// The 96 catalog kinds: registry builders delegate to
 /// `catalog.buildCatalogWithDefaults` (no duplication).
 const _bridgeKinds = <String>{
   'button',
@@ -133,6 +133,36 @@ const _bridgeKinds = <String>{
   'hsv',
   'history',
   'feature_carousel',
+  // Track FF2 additions (2026-09-06): hand-built catalog builders bridged
+  // in component_registry.dart; listed here so a regen byte-preserves them.
+  'phone_input',
+  'item_picker',
+  'chip_input',
+  'autocomplete',
+  'multiple_choice',
+  'object_input',
+  'text_field',
+  'text',
+  'icon',
+  'navigation_menu',
+  'dropzone',
+  'border_loading',
+  'overflow_marquee',
+  'focus_outline',
+  'switcher',
+  'scrollable',
+  'stage_container',
+  'media_query',
+  'scrollview',
+  'hover',
+  'patch',
+  'filter_bar',
+  'fade_scroll',
+  'resizable',
+  'subfocus',
+  'repeated_animation_builder',
+  'markdown',
+  'text_animate',
 };
 
 /// Hand-verified EASY kinds with real bare-widget builders below
@@ -529,7 +559,7 @@ void main(List<String> args) {
     ..writeln('//')
     ..writeln('// One entry per kit component id plus the `row` pseudo-kind.')
     ..writeln('// `canvasReady` is true only where a real bare-widget builder')
-    ..writeln('// exists: the 68 catalog kinds bridge to')
+    ..writeln('// exists: the 96 catalog kinds bridge to')
     ..writeln('// `catalog.buildCatalogWithDefaults` (no duplication), the 10')
     ..writeln('// hand-verified EASY kinds below build real widgets, and the')
     ..writeln('// `row` pseudo-kind renders its structural Row (rows carry no')
