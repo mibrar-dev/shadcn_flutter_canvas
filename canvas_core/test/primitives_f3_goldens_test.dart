@@ -59,7 +59,7 @@ ScreenDoc _primDoc(
   });
 }
 
-/// The emitted screen body with the 6-space screen indent stripped, so
+/// The emitted screen body with the 8-space screen indent stripped, so
 /// expectations read at depth 0. Also pins the canonical-indentation
 /// invariant (gate 3): every body line carries the screen indent.
 String _bundleBodyOf(ScreenDoc doc) {
@@ -74,9 +74,9 @@ String _bundleBodyOf(ScreenDoc doc) {
   expect(lines.sublist(lines.length - footer.length), footer);
   final body = lines.sublist(start + 1, lines.length - footer.length);
   for (final line in body) {
-    expect(line.startsWith('      '), isTrue, reason: 'indent: $line');
+    expect(line.startsWith('        '), isTrue, reason: 'indent: $line');
   }
-  return body.map((l) => l.substring(6)).join('\n');
+  return body.map((l) => l.substring(8)).join('\n');
 }
 
 ScreenDoc _fixtureDoc() => ScreenDoc.fromJson(
@@ -143,7 +143,7 @@ void main() {
             },
           },
         })),
-        contains('  color: Theme.of(context).colorScheme.primary,\n'),
+        contains('Container(color: Theme.of(context).colorScheme.primary),'),
       );
     });
 
@@ -197,9 +197,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('column', {})),
         "// column 'column'.\n"
-        'Column(\n'
-        '  children: [],\n'
-        '),',
+        'Column(children: []),',
       );
     });
 
@@ -243,9 +241,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('row', {})),
         "// row 'row'.\n"
-        'Row(\n'
-        '  children: [],\n'
-        '),',
+        'Row(children: []),',
       );
     });
 
@@ -271,9 +267,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('stack', {})),
         "// stack 'stack'.\n"
-        'Stack(\n'
-        '  children: [],\n'
-        '),',
+        'Stack(children: []),',
       );
     });
 
@@ -303,9 +297,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('padding', {})),
         "// padding 'padding'.\n"
-        'Padding(\n'
-        '  padding: const EdgeInsets.all(16),\n'
-        '),',
+        'Padding(padding: const EdgeInsets.all(16)),',
       );
       expect(
         _bundleBodyOf(_primDoc('padding', {'padding': 24}, ['A'])),
@@ -344,9 +336,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('align', {})),
         "// align 'align'.\n"
-        'Align(\n'
-        '  alignment: Alignment.center,\n'
-        '),',
+        'Align(alignment: Alignment.center),',
       );
       expect(
         _bundleBodyOf(_primDoc('align', {
@@ -365,9 +355,7 @@ void main() {
       expect(
         _bundleBodyOf(_primDoc('expanded', {})),
         "// expanded 'expanded'.\n"
-        'Expanded(\n'
-        '  child: SizedBox.shrink(),\n'
-        '),',
+        'Expanded(child: SizedBox.shrink()),',
       );
     });
 

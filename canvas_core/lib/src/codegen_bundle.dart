@@ -502,6 +502,45 @@ const _kinds = <String, _KindSpec>{
   'locale_utils': _KindSpec('{installPath}/components/utility/locale_utils/',
       ['util'],
       {}, []),
+  // Track H (H-FINAL-2): `alpha` + `color` + `eye_dropper` + `formatter` +
+  // `sortable` are real kit components (utility/form/overlay/layout barrels),
+  // not dangling ids — named in the kit `dependsOn` of `color_picker`
+  // (`alpha`, `color`, `eye_dropper`, `formatter`), `color_input`
+  // (`color`, `eye_dropper`), `history`/`hsl`/`hsv` (`alpha`), and
+  // `tabs`/`tab_pane` (`sortable`). Same one-row treatment as `async` /
+  // `locale_utils` above: specs derived from the shipped bodies (all parts
+  // carry no imports of their own). `alpha.dart` imports only
+  // `package:flutter/widgets.dart`; `color.dart` (+ its twelve
+  // `_impl/core|utils/*` parts) only `dart:math` + Flutter libs;
+  // `formatter.dart` (+ its seven `_impl/utils/*` parts) only `dart:math`,
+  // `package:expressions` (the kit's own `expressions: ^0.2.5+2`
+  // constraint, see the Track G2 note above) and `flutter/services.dart`.
+  // `eye_dropper.dart` (+ its eight `_impl/*` parts) additionally imports
+  // `package:data_widget` and relatively references the `history` barrel
+  // plus the `shared/primitives/text.dart`, `shared/theme/theme.dart` and
+  // `shared/utils/color_extensions.dart` helpers, so `shared` is
+  // `['color_extensions', 'text', 'theme']` and `dependsOn` is `['history']`
+  // (verbatim policy — the edge the shipped body carries).
+  // `sortable.dart` (+ its sixteen `_impl/*` parts) imports
+  // `package:data_widget` and the `shared/utils/constants.dart` +
+  // `shared/utils/util.dart` helpers, so `shared` is
+  // `['constants', 'util']`. All five ship the default `<kind>.dart` barrel
+  // (verified keys in the embedded source map — no `_barrelFile` entry).
+  'alpha': _KindSpec('{installPath}/components/utility/alpha/',
+      [],
+      {}, []),
+  'color': _KindSpec('{installPath}/components/utility/color/',
+      [],
+      {}, []),
+  'eye_dropper': _KindSpec('{installPath}/components/overlay/eye_dropper/',
+      ['color_extensions', 'text', 'theme'],
+      {'data_widget': '^0.0.2'}, ['history']),
+  'formatter': _KindSpec('{installPath}/components/form/formatter/',
+      [],
+      {'expressions': '^0.2.5+2'}, []),
+  'sortable': _KindSpec('{installPath}/components/layout/sortable/',
+      ['constants', 'util'],
+      {'data_widget': '^0.0.2'}, []),
 };
 
 const _installPath = '{installPath}/';
@@ -1043,9 +1082,9 @@ String _screenFile(ScreenDoc doc, CanvasScreen screen, List<String> kinds) {
   for (final node in nodes) {
     // Fresh ancestor path per root (roots are disjoint subtrees; corrupt
     // cycles are unreachable from roots but guarded anyway).
-    _writeBundleNode(rows, doc, node, routes, ids, '      ', <String>{});
+    _writeBundleNode(rows, doc, node, routes, ids, '        ', <String>{});
   }
-  if (rows.isEmpty) rows.add('      // (empty screen).');
+  if (rows.isEmpty) rows.add('        // (empty screen).');
   final barrels = usedKinds.isEmpty ? '// (no known components on this screen).' : [for (final k in usedKinds) '// - $k -> ${_barrel(k)}'].join('\n');
   final cls = _pascalName(screen.name);
   // Flutter import surface for this screen (kind-based, deterministic):
@@ -1152,7 +1191,7 @@ $ignoreLine// Screen: ${screen.name} (id: ${screen.id}). Component bodies ship
 // separately under lib/ui/shadcn/ — wire them here:
 $barrels
 $flutterLine
-${extraImports}${kitImports}
+${extraImports}${kitImports.isEmpty ? '' : '\n'}${kitImports}
 /// ${screen.name} screen.
 ///
 /// Vanilla [StatefulWidget] with no store dependency: bring your own state
@@ -1306,7 +1345,8 @@ String _bundleActionMethods(
         fields: _bundleStateFields,
         routeOf: (to) => ids.contains(to) ? routes[to] : null,
       )) {
-        buf.writeln('  $line');
+        // [emitStepStatements] already carries the 4-space method-body base.
+        buf.writeln(line);
       }
       buf
         ..writeln('  }')
@@ -1383,9 +1423,13 @@ List<String> _bundleWrapTap(
   }
   final route = ids.contains(action.to) ? routes[action.to] : null;
   if (route == null) return body;
+  // The `onTap` line always overflows 80 columns with the route plus the
+  // transition trailer, so the arrow value rides the hanging indent (+4
+  // from `onTap:`) instead of joining it — the canonical split.
   return [
     'GestureDetector(',
-    "  onTap: () => Navigator.of(context).pushNamed('$route'), // transition: ${action.transition}",
+    '  onTap: () =>',
+    "      Navigator.of(context).pushNamed('$route'), // transition: ${action.transition}",
     '  child: ${body.first}',
     for (final line in body.skip(1)) '  $line',
     '),',
@@ -2558,7 +2602,14 @@ List<String> _bundleKeyboardShortcut(Map<String, dynamic> props) {
       _bundleShortcutKeys(_bStr(props, 'keys', 'Ctrl+K')).join(', ');
   return [
     'KeyboardShortcutDisplayMapper(',
-    '  child: KeyboardDisplay(keys: [$keys]),',
+    ..._bundleFittedCall(
+      '  child: KeyboardDisplay(keys: [$keys]),',
+      [
+        '  child: KeyboardDisplay(',
+        '    keys: [$keys],',
+        '  ),',
+      ],
+    ),
     '),',
   ];
 }
@@ -3305,10 +3356,15 @@ List<String> _bundleForm(
     // Track C3 slot: inner Column after the field layout, before submit.
     ..._spliceBundleKids(nested, '      '),
     '      const SizedBox(height: 16),',
-    '      PrimaryButton(',
-    '        onPressed: () {},',
-    "        child: Text(${_bundleStr(_bStr(props, 'submitLabel', 'Submit'))}),",
-    '      ),',
+    ..._bundleFittedCall(
+      "      PrimaryButton(onPressed: () {}, child: Text(${_bundleStr(_bStr(props, 'submitLabel', 'Submit'))})),",
+      [
+        '      PrimaryButton(',
+        '        onPressed: () {},',
+        "        child: Text(${_bundleStr(_bStr(props, 'submitLabel', 'Submit'))}),",
+        '      ),',
+      ],
+    ),
     '    ],',
     '  ),',
     '),',
@@ -3726,35 +3782,107 @@ List<String> _bundleTextFieldKind(Map<String, dynamic> props) {
 /// ([g3BundleLines] — same program the page walker emits, adapted to bundle
 /// body lines). The wrappers own no props logic; defaults, leniency, and
 /// clamping live in the emitter.
+/// Joins an adapter's split calls back to one line, bottom-up, wherever the
+/// joined form fits (the formatter joins fittable blocks, so the legacy
+/// adapter must emit them joined — same program, whitespace only). Groups
+/// that stay split keep the adapter's canonical-relative layout. The `emit/`
+/// AST logic is untouched; only this bundle-side line layout adapts.
+List<String> _bundleJoinedCall(List<String> lines) {
+  var out = [...lines];
+  var changed = true;
+  while (changed) {
+    changed = false;
+    for (var i = out.length - 1; i >= 0; i--) {
+      final joined = _bundleJoinGroup(out, i);
+      if (joined != null) {
+        out = joined;
+        changed = true;
+      }
+    }
+  }
+  return out;
+}
+
+/// Joins the call group opening at [out] line [i] when its lines form one
+/// flat argument group whose joined call fits (see [_bundleFittedCall]).
+/// Returns the spliced lines, or null to leave the group split.
+List<String>? _bundleJoinGroup(List<String> out, int i) {
+  final head = out[i];
+  final headTrimmed = head.trimLeft();
+  if (!headTrimmed.endsWith('(') || headTrimmed.startsWith('//')) {
+    return null;
+  }
+  final indent = head.substring(0, head.length - headTrimmed.length);
+  // The group's close: first line back at the opener's indent.
+  var close = -1;
+  for (var j = i + 1; j < out.length; j++) {
+    final line = out[j];
+    final trimmed = line.trimLeft();
+    final lineIndent = line.substring(0, line.length - trimmed.length);
+    if (lineIndent == indent && (trimmed == '),' || trimmed == ')')) {
+      close = j;
+      break;
+    }
+    if (lineIndent.length <= indent.length) return null;
+  }
+  if (close == -1) return null;
+  final args = <String>[];
+  for (final line in out.sublist(i + 1, close)) {
+    final arg = line.trimLeft();
+    if (arg.startsWith('//') ||
+        arg.endsWith('(') ||
+        arg.endsWith('[') ||
+        arg.endsWith('{') ||
+        arg == '),' ||
+        arg == ')' ||
+        arg == '],' ||
+        arg == ']' ||
+        arg == '},' ||
+        arg == '}') {
+      return null;
+    }
+    args.add(arg);
+  }
+  if (args.isEmpty) return null;
+  if (args.last.endsWith(',')) {
+    args[args.length - 1] =
+        args.last.substring(0, args.last.length - 1);
+  }
+  final single =
+      '$indent$headTrimmed${args.join(' ')}${out[close].trimLeft()}';
+  if (single.trimLeft().length > 72) return null;
+  return [...out.sublist(0, i), single, ...out.sublist(close + 1)];
+}
+
 List<String> _bundleChip(CanvasItem item) =>
-    g3BundleLines(const ChipEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const ChipEmitter(), item));
 
 List<String> _bundleAlert(CanvasItem item) =>
-    g3BundleLines(const AlertEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const AlertEmitter(), item));
 
-List<String> _bundleCircularProgress(CanvasItem item) =>
-    g3BundleLines(const CircularProgressEmitter(), item);
+List<String> _bundleCircularProgress(CanvasItem item) => _bundleJoinedCall(
+    g3BundleLines(const CircularProgressEmitter(), item));
 
-List<String> _bundleLinearProgress(CanvasItem item) =>
-    g3BundleLines(const LinearProgressEmitter(), item);
+List<String> _bundleLinearProgress(CanvasItem item) => _bundleJoinedCall(
+    g3BundleLines(const LinearProgressEmitter(), item));
 
 List<String> _bundleTripleDots(CanvasItem item) =>
-    g3BundleLines(const TripleDotsEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const TripleDotsEmitter(), item));
 
 List<String> _bundleDotIndicator(CanvasItem item) =>
-    g3BundleLines(const DotIndicatorEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const DotIndicatorEmitter(), item));
 
 List<String> _bundleEmptyState(CanvasItem item) =>
-    g3BundleLines(const EmptyStateEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const EmptyStateEmitter(), item));
 
 List<String> _bundleCodeSnippet(CanvasItem item) =>
-    g3BundleLines(const CodeSnippetEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const CodeSnippetEmitter(), item));
 
 List<String> _bundleNumberTicker(CanvasItem item) =>
-    g3BundleLines(const NumberTickerEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const NumberTickerEmitter(), item));
 
 List<String> _bundleTextArea(CanvasItem item) =>
-    g3BundleLines(const TextAreaEmitter(), item);
+    _bundleJoinedCall(g3BundleLines(const TextAreaEmitter(), item));
 
 List<String> _bundleMarkdown(Map<String, dynamic> props) {
   return [
@@ -4110,6 +4238,14 @@ double? _bundlePrimDim(Object? value) => primDim(value);
 /// Flex prop clamped to ≥ 1 (Flutter asserts positive).
 int _bundlePrimFlex(Object? value) => primFlex(value);
 
+/// Single-line call when it fits the screen body depth (the formatter joins
+/// fittable blocks, so the emitter must emit them joined), else the split
+/// [lines]. The 72-column budget fits the shallow screen indent with room
+/// for the statement comma; deeper sites with near-budget calls re-split
+/// (the G2 `code_builder` migration removes the depth guess structurally).
+List<String> _bundleFittedCall(String single, List<String> split) =>
+    single.length <= 72 ? [single] : split;
+
 /// `child:` arg lines for single-slot primitives (COMPOSITION.md §2.1): no
 /// block → [] (caller omits, or substitutes); one block → `child:` inline
 /// with leading `//` comment lines hoisted above (a comment cannot follow
@@ -4162,7 +4298,7 @@ List<String> _bundlePrimChildLines(List<String> block) {
   }
   out.add('  child: ${rest.first}');
   for (var i = 1; i < rest.length; i++) {
-    var line = '    ${rest[i]}';
+    var line = '  ${rest[i]}';
     if (i == rest.length - 1 && !line.trimRight().endsWith(',')) {
       line = '$line,';
     }
@@ -4236,6 +4372,20 @@ List<String> _bundleContainer(
   }
   out.addAll(_bundlePrimChildArg(nested));
   if (out.length == 1) return ['Container(),'];
+  // Childless scalar-only containers stay single-line when the joined call
+  // fits (the formatter joins fittable blocks — see [_bundleFittedCall]);
+  // decoration blocks always stay split.
+  if (nested.isEmpty &&
+      border == null &&
+      radius == null &&
+      shadows == null &&
+      gradient == null) {
+    final args = [for (final line in out.sublist(1)) line.trimLeft()];
+    args[args.length - 1] =
+        args.last.substring(0, args.last.length - 1);
+    final single = 'Container(${args.join(' ')}),';
+    if (single.length <= 72) return [single];
+  }
   out.add('),');
   return out;
 }
@@ -4250,7 +4400,17 @@ List<String> _bundleColumn(
   final cross = _bundlePrimCrossAxis(props['crossAxis']);
   if (cross != null) out.add('  crossAxisAlignment: $cross,');
   if (nested.isEmpty) {
-    out.add('  children: [],');
+    // Childless primitives stay single-line when the joined call fits
+    // (the formatter joins fittable blocks — see [_bundleFittedCall]).
+    final args = [
+      if (main != null) 'mainAxisAlignment: $main',
+      if (cross != null) 'crossAxisAlignment: $cross',
+      'children: []',
+    ];
+    return _bundleFittedCall(
+      'Column(${args.join(', ')}),',
+      ['Column(', for (final a in args) '  $a,', '),'],
+    );
   } else {
     out.addAll(_bundlePrimChildren(nested, _bundlePrimGap(props, 12.0), true));
   }
@@ -4268,7 +4428,17 @@ List<String> _bundleRowKind(
   final cross = _bundlePrimCrossAxis(props['crossAxis']);
   if (cross != null) out.add('  crossAxisAlignment: $cross,');
   if (nested.isEmpty) {
-    out.add('  children: [],');
+    // Childless primitives stay single-line when the joined call fits
+    // (see [_bundleColumn]).
+    final args = [
+      if (main != null) 'mainAxisAlignment: $main',
+      if (cross != null) 'crossAxisAlignment: $cross',
+      'children: []',
+    ];
+    return _bundleFittedCall(
+      'Row(${args.join(', ')}),',
+      ['Row(', for (final a in args) '  $a,', '),'],
+    );
   } else {
     out.addAll(_bundlePrimChildren(nested, _bundlePrimGap(props, 8.0), false));
   }
@@ -4290,7 +4460,17 @@ List<String> _bundleStack(
   };
   if (fit != null) out.add('  fit: $fit,');
   if (nested.isEmpty) {
-    out.add('  children: [],');
+    // Childless primitives stay single-line when the joined call fits
+    // (see [_bundleColumn]).
+    final args = [
+      if (alignment != null) 'alignment: $alignment',
+      if (fit != null) 'fit: $fit',
+      'children: []',
+    ];
+    return _bundleFittedCall(
+      'Stack(${args.join(', ')}),',
+      ['Stack(', for (final a in args) '  $a,', '),'],
+    );
   } else {
     out.add('  children: [');
     for (final block in nested) {
@@ -4310,6 +4490,14 @@ List<String> _bundlePadding(
   List<List<String>> nested = const [],
 ]) {
   final padding = _bundlePrimEdge(props['padding']) ?? 'const EdgeInsets.all(16)';
+  if (nested.isEmpty) {
+    // Childless primitives stay single-line when the joined call fits
+    // (see [_bundleColumn]).
+    return _bundleFittedCall(
+      'Padding(padding: $padding),',
+      ['Padding(', '  padding: $padding,', '),'],
+    );
+  }
   return [
     'Padding(',
     '  padding: $padding,',
@@ -4331,9 +4519,15 @@ List<String> _bundleAlign(
   Map<String, dynamic> props, [
   List<List<String>> nested = const [],
 ]) {
+  final alignment =
+      _bundlePrimAlign(props['alignment']) ?? 'Alignment.center';
+  if (nested.isEmpty) {
+    // Childless primitives stay single-line (see [_bundleColumn]).
+    return ['Align(alignment: $alignment),'];
+  }
   return [
     'Align(',
-    '  alignment: ${_bundlePrimAlign(props['alignment']) ?? 'Alignment.center'},',
+    '  alignment: $alignment,',
     ..._bundlePrimChildArg(nested),
     '),',
   ];
@@ -4344,13 +4538,14 @@ List<String> _bundleExpanded(
   List<List<String>> nested = const [],
 ]) {
   final flex = _bundlePrimFlex(props['flex']);
+  if (nested.isEmpty) {
+    // Childless primitives stay single-line (see [_bundleColumn]).
+    if (flex == 1) return ['Expanded(child: SizedBox.shrink()),'];
+    return ['Expanded(flex: $flex, child: SizedBox.shrink()),'];
+  }
   final out = <String>['Expanded('];
   if (flex != 1) out.add('  flex: $flex,');
-  out.addAll(
-    _bundlePrimChildArg(
-      nested.isEmpty ? const [['SizedBox.shrink(),']] : nested,
-    ),
-  );
+  out.addAll(_bundlePrimChildArg(nested));
   out.add('),');
   return out;
 }
@@ -4646,10 +4841,16 @@ void _writeBundleSizedBox(
   rows.add('$indent    children: [');
   if (h != null) {
     rows.add('$indent      Expanded(');
-    rows.add('$indent        child: ${inner.first}');
-    for (final line in inner.skip(1)) {
-      rows.add('$indent        $line');
+    final childLines = [
+      '$indent        child: ${inner.first}',
+      for (final line in inner.skip(1)) '$indent        $line',
+    ];
+    // Statement position: the spliced branch expression keeps its trailing
+    // comma ([_bundleSizedInnerExpr] strips it for the expression form).
+    if (!childLines.last.trimRight().endsWith(',')) {
+      childLines[childLines.length - 1] = '${childLines.last},';
     }
+    rows.addAll(childLines);
     rows.add('$indent      ),');
   } else {
     for (var i = 0; i < inner.length; i++) {
@@ -4804,10 +5005,11 @@ void _writeBundleResponsiveNode(
     ..add('$indent// responsive ($summary)')
     ..add('${indent}LayoutBuilder(')
     ..add('$indent  builder: (context, constraints) {')
-    ..add(
-      "$indent    final tier = constraints.maxWidth >= 1024 "
-      "? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';",
-    );
+    ..add('$indent    final tier = constraints.maxWidth >= 1024')
+    ..add("$indent        ? 'desktop'")
+    ..add('$indent        : constraints.maxWidth >= 600')
+    ..add("$indent        ? 'tablet'")
+    ..add("$indent        : 'mobile';");
   if (hidden.isNotEmpty) {
     final cond = hidden.map((t) => "tier == '$t'").join(' || ');
     rows.add('$indent    if ($cond) return const SizedBox.shrink();');
@@ -4981,7 +5183,7 @@ List<String>? _bundleSingleParam(
     for (final c in parts.comments) '$paramIndent$c',
     '$paramIndent$paramName: ${exprLines.first}',
     for (final line in exprLines.skip(1))
-      if (line.isNotEmpty) '$paramIndent  $line',
+      if (line.isNotEmpty) '$paramIndent$line',
   ];
   out[out.length - 1] = '${out.last},';
   return out;
@@ -5311,10 +5513,22 @@ void _writeBundleBranch(
     rows.add('$indent${_bundleItemComment(item, routes, ids)}');
   }
   final expr = _bundleBranchExpr(doc, node, items, routes, ids, visited);
-  final prefix = guard == null ? 'return ' : 'if ($guard) return ';
   final lines = [
     for (final line in expr.split('\n')) if (line.isNotEmpty) line,
   ];
+  // A split branch expression never rides the `if` line: canonical Dart
+  // breaks the guard first, then the `return` carries the block at +2
+  // (single-line branches keep the historical joined form).
+  if (guard != null && lines.length > 1) {
+    rows.add('${indent}if ($guard)');
+    rows.add('$indent  return ${lines.first}');
+    for (var i = 1; i < lines.length; i++) {
+      final tail = i == lines.length - 1 ? ';' : '';
+      rows.add('$indent  ${lines[i]}$tail');
+    }
+    return;
+  }
+  final prefix = guard == null ? 'return ' : 'if ($guard) return ';
   for (var i = 0; i < lines.length; i++) {
     final tail = i == lines.length - 1 ? ';' : '';
     if (i == 0) {
@@ -5666,7 +5880,7 @@ void _writeBundleResponsiveRowChild(
     child,
     routes,
     ids,
-    '$indent    ',
+    '$indent      ',
     visited,
   );
   rows.add('$indent),');

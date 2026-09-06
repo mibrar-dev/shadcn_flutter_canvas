@@ -97,7 +97,7 @@ ScreenDoc _doc(
   });
 }
 
-/// Legacy bundle body at depth 0 (mirrors the F3 harness: 6-space screen
+/// Legacy bundle body at depth 0 (mirrors the F3 harness: 8-space screen
 /// indent stripped; canonical-indentation invariant re-pinned here).
 String _legacyBodyOf(ScreenDoc doc) {
   final bundle = buildCleanBundle(doc, const {});
@@ -111,7 +111,7 @@ String _legacyBodyOf(ScreenDoc doc) {
   expect(lines.sublist(lines.length - footer.length), footer);
   return lines
       .sublist(start + 1, lines.length - footer.length)
-      .map((l) => l.substring(6))
+      .map((l) => l.substring(8))
       .join('\n');
 }
 

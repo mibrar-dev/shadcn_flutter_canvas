@@ -79,7 +79,7 @@ String _fixtureExpected(String name) {
   return lines.sublist(lib + 1).join('\n').trimLeft();
 }
 
-/// The emitted bundle screen body with the 6-space screen indent stripped
+/// The emitted bundle screen body with the 8-space screen indent stripped
 /// (the F3 harness: also pins the canonical-indentation invariant).
 String _bundleBodyOf(ScreenDoc doc) {
   final bundle = buildCleanBundle(doc, const {});
@@ -93,9 +93,9 @@ String _bundleBodyOf(ScreenDoc doc) {
   expect(lines.sublist(lines.length - footer.length), footer);
   final body = lines.sublist(start + 1, lines.length - footer.length);
   for (final line in body) {
-    expect(line.startsWith('      '), isTrue, reason: 'indent: $line');
+    expect(line.startsWith('        '), isTrue, reason: 'indent: $line');
   }
-  return body.map((l) => l.substring(6)).join('\n');
+  return body.map((l) => l.substring(8)).join('\n');
 }
 
 String _bundleScreenOf(ScreenDoc doc) {
@@ -335,10 +335,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('dot_indicator', {'index': 9, 'length': 3})),
         "// dot_indicator 'dot_indicator' (index 9, length 3).\n"
-        'DotIndicator(\n'
-        '  index: 2,\n'
-        '  length: 3,\n'
-        '),',
+        'DotIndicator(index: 2, length: 3),',
       );
     });
 
@@ -362,10 +359,7 @@ void main() {
       expect(
         _bundleBodyOf(_doc('number_ticker', const {})),
         "// number_ticker 'number_ticker'.\n"
-        'NumberTicker(\n'
-        '  number: 42,\n'
-        '  formatter: (v) => v.toStringAsFixed(0),\n'
-        '),',
+        'NumberTicker(number: 42, formatter: (v) => v.toStringAsFixed(0)),',
       );
     });
 
@@ -373,16 +367,13 @@ void main() {
       expect(
         _bundleBodyOf(_doc('text_area', {'placeholder': 'Bio'})),
         "// text_area 'Bio'.\n"
-        'TextArea(\n'
-        "  placeholder: Text('Bio'),\n"
-        '  enabled: true,\n'
-        '),',
+        "TextArea(placeholder: Text('Bio'), enabled: true),",
       );
       expect(
         _bundleBodyOf(
           _doc('text_area', {'placeholder': 'Bio', 'disabled': true}),
         ),
-        contains('enabled: false,'),
+        contains('enabled: false)'),
       );
     });
   });
