@@ -29,7 +29,10 @@ import 'package:flutter/material.dart';
 /// Right aside with Design, Code, Prompt, and Audit tabs.
 ///
 /// The shell integrator places this in the fixed-width right column:
-/// `SizedBox(width: EditorMetrics.promptPanelWidth, child: RightAside(...))`.
+/// `SizedBox(width: EditorMetrics.ffInspectorWidth, child: RightAside(...))`.
+/// The Design tab hosts the FF6 grouped [InspectorPanel] (collapsible
+/// Layout / Style / Content / State sections); the Code tab keeps the
+/// read-only [CodePeek] mount (BUILD_SPEC §9.2-5c, unchanged).
 class RightAside extends StatelessWidget {
   const RightAside({
     super.key,
@@ -73,7 +76,10 @@ class RightAside extends StatelessWidget {
     final colors = EditorTheme.of(context);
     return Container(
       width: double.infinity,
-      color: colors.surface,
+      // FF6 grouped-properties host (BUILD_SPEC §9.2-5a): the FF side-panel
+      // background token, so the inspector reads as the FlutterFlow
+      // properties column under both chrome modes.
+      color: colors.panelBg,
       child: _RightAsideBody(
         store: store,
         nodeId: nodeId,

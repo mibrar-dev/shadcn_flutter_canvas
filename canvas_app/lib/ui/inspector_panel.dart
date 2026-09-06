@@ -2428,36 +2428,49 @@ class _InspectorPanelState extends State<InspectorPanel> {
     );
   }
 
+  /// FF6 grouped properties (BUILD_SPEC §9.2-5a): the flat schema-order prop
+  /// list re-hosted as one collapsible section per spec group
+  /// (Layout / Style / Content / State — the capitalized group ids the
+  /// polish tests pin, so no group is renamed).
+  ///
+  /// RE-HOST, not rewrite: every group keeps its schema order, every editor
+  /// keeps its key (`i1/<prop>`, `radius-all`, `border-width`,
+  /// `gradient-add`, `shadow-add`, …) and its `patchItem`/`clearItemProps`
+  /// store path from F4 — only the section chrome is new. Sections start
+  /// expanded, so the eager layout (every editor mounted up front — see the
+  /// NOTE on the schema branch in [build]) is preserved and every finder
+  /// sees the whole panel.
   List<Widget> _rows(
     CanvasItem item,
     List<PropSpec> schema,
     Map<String, dynamic>? kindDefaults,
   ) {
-    final rows = <Widget>[];
-    var lastGroup = '';
+    final groups = <String>[];
+    final byGroup = <String, List<PropSpec>>{};
     for (final spec in schema) {
-      if (spec.group != lastGroup) {
-        lastGroup = spec.group;
-        rows.add(
-          Padding(
-            // The first header sits directly under the badge row (no top
-            // inset); later headers separate from the previous editor.
-            padding: EdgeInsets.only(
-              top: rows.isEmpty ? 0 : _kInspectorGap,
-              bottom: _kInspectorGap,
-            ),
-            child: Text(_groupTitle(spec.group), style: EditorType.sectionHeader),
-          ),
-        );
+      if (!byGroup.containsKey(spec.group)) {
+        byGroup[spec.group] = [];
+        groups.add(spec.group);
       }
-      rows.add(
-        Padding(
-          padding: const EdgeInsets.only(bottom: _kInspectorGap),
-          child: _editor(item, spec, kindDefaults),
-        ),
-      );
+      byGroup[spec.group]!.add(spec);
     }
-    return rows;
+    return [
+      for (var i = 0; i < groups.length; i++) ...[
+        if (i > 0) const SizedBox(height: EditorMetrics.panelInset),
+        _InspectorGroupSection(
+          key: ValueKey('inspector-group-${groups[i]}'),
+          title: _groupTitle(groups[i]),
+          headerKey: ValueKey('inspector-group-header-${groups[i]}'),
+          children: [
+            for (final spec in byGroup[groups[i]]!)
+              Padding(
+                padding: const EdgeInsets.only(bottom: _kInspectorGap),
+                child: _editor(item, spec, kindDefaults),
+              ),
+          ],
+        ),
+      ],
+    ];
   }
 
   Widget _editor(
@@ -2677,6 +2690,80 @@ class _InspectorPanelState extends State<InspectorPanel> {
           ),
         ],
       ),
+    );
+  }
+}
+
+/// FF6 group-chevron glyph size: one step below the empty-state icon above,
+/// a single named constant per the no-magic-numbers rule.
+const double _kGroupChevronSize = 20.0;
+
+/// FF6 collapsible grouped-properties section (BUILD_SPEC §9.2-5a).
+///
+/// One section per spec group: a header row (chevron + group title in
+/// [EditorColors.groupHeaderFg]) over that group's re-hosted editors. Starts
+/// expanded so the panel keeps its eager layout (every editor mounted up
+/// front); tapping the header collapses just this group while the rest stay
+/// mounted. Pure chrome state — the expansion flag never touches the store,
+/// so undo/redo are unaffected.
+class _InspectorGroupSection extends StatefulWidget {
+  /// Capitalized group title (`Content`, `Style`, … — see [_groupTitle]).
+  final String title;
+
+  /// Stable header key (`inspector-group-header-<group>`) for tests/taps.
+  final ValueKey<String> headerKey;
+
+  /// The group's re-hosted editor rows (built by [_rows], keys unchanged).
+  final List<Widget> children;
+
+  const _InspectorGroupSection({
+    super.key,
+    required this.title,
+    required this.headerKey,
+    required this.children,
+  });
+
+  @override
+  State<_InspectorGroupSection> createState() => _InspectorGroupSectionState();
+}
+
+class _InspectorGroupSectionState extends State<_InspectorGroupSection> {
+  bool _expanded = true;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          key: widget.headerKey,
+          behavior: HitTestBehavior.opaque,
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Row(
+            children: [
+              Icon(
+                _expanded ? Icons.expand_more : Icons.chevron_right,
+                size: _kGroupChevronSize,
+                color: colors.groupHeaderFg,
+              ),
+              const SizedBox(width: _kInspectorGap),
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: EditorType.sectionHeader.copyWith(
+                    color: colors.groupHeaderFg,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_expanded) ...[
+          const SizedBox(height: _kInspectorGap),
+          ...widget.children,
+        ],
+      ],
     );
   }
 }

@@ -393,9 +393,22 @@ class PropSlotEditor extends StatelessWidget {
 /// Parses the same shapes as the catalog builders (tagged envelope, raw num,
 /// raw `{l,t,r,b}` map; absent/unparseable → zeros) and always writes the
 /// canonical raw `{l,t,r,b}` map — builders and both codegen emitters read
-/// it back identically. Four compact labeled steppers (left/top/right/
-/// bottom), reusing [PropNumberEditor] so stepping/clamping/typing behave
-/// exactly like every other number prop.
+/// it back identically (the emitters collapse uniform maps to `.all` /
+/// `.symmetric` per §6.1, so this editor never writes envelopes).
+/// Four compact labeled steppers (left/top/right/bottom), reusing
+/// [PropNumberEditor] so stepping/clamping/typing behave exactly like every
+/// other number prop.
+///
+/// FF6 (BUILD_SPEC §9.2-5b): an `All` stepper below the four sides plus a
+/// uniformity/symmetry readout (`All sides equal` / `Symmetric sides` /
+/// `Mixed sides`). The `All` row uses icon steppers (never text `+`/`-`,
+/// the `_nodeSizeRow` precedent in `inspector_panel.dart`) and its readout
+/// shows the shared value only while uniform, `Mixed` otherwise — so the
+/// per-side `+` steppers keep their tree order AND no numeric readout is
+/// ever duplicated (see `f4_primitive_editors_test.dart`, which taps the
+/// first `+` and pins a unique `8`). Stepping `All` writes a uniform map
+/// seeded from the left value (mixed re-unforms — the same documented
+/// compromise as [PropBorderRadiusEditor]'s `radius-all`).
 class PropEdgeInsetsEditor extends StatelessWidget {
   final Map<String, double> value;
   final ValueChanged<Map<String, double>> onChanged;
@@ -436,7 +449,7 @@ class PropEdgeInsetsEditor extends StatelessWidget {
           Row(
             children: [
               SizedBox(
-                width: 64,
+                width: _kEdgeLabelWidth,
                 child: Text(labels[sides[i]]!, style: EditorType.tileLabel),
               ),
               Expanded(
@@ -451,8 +464,72 @@ class PropEdgeInsetsEditor extends StatelessWidget {
             ],
           ),
         ],
+        const SizedBox(height: _kEditorGap),
+        Builder(
+          builder: (context) {
+            final l = value['l'] ?? 0;
+            final t = value['t'] ?? 0;
+            final r = value['r'] ?? 0;
+            final b = value['b'] ?? 0;
+            final uniform = l == t && t == r && r == b;
+            Map<String, double> all(double v) => {'l': v, 't': v, 'r': v, 'b': v};
+            return Row(
+              children: [
+                const SizedBox(
+                  width: _kEdgeLabelWidth,
+                  child: Text('All', style: EditorType.tileLabel),
+                ),
+                shadcn.OutlineButton(
+                  key: const ValueKey('edge-all-dec'),
+                  size: shadcn.ButtonSize.small,
+                  onPressed: l <= 0
+                      ? null
+                      : () => onChanged(
+                            all((l - _kEdgeAllStep)
+                                .clamp(0.0, double.infinity)
+                                .toDouble()),
+                          ),
+                  child: const Icon(Icons.remove, size: _kEdgeIconSize),
+                ),
+                SizedBox(
+                  width: _kEdgeAllValueWidth,
+                  child: Text(
+                    uniform ? _formatNumber(l, false) : 'Mixed',
+                    key: const ValueKey('edge-all-value'),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                shadcn.OutlineButton(
+                  key: const ValueKey('edge-all-inc'),
+                  size: shadcn.ButtonSize.small,
+                  onPressed: () => onChanged(all(l + _kEdgeAllStep)),
+                  child: const Icon(Icons.add, size: _kEdgeIconSize),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: _kEditorGap),
+        Text(
+          _symmetryLabel(value),
+          key: const ValueKey('edge-symmetry'),
+          style: EditorType.tileLabel,
+        ),
       ],
     );
+  }
+
+  /// Uniformity/symmetry readout for the four sides: uniform (all equal)
+  /// collapses to `.all` downstream, left==right && top==bottom collapses
+  /// to `.symmetric`, anything else stays an explicit `fromLTRB`.
+  static String _symmetryLabel(Map<String, double> value) {
+    final l = value['l'] ?? 0;
+    final t = value['t'] ?? 0;
+    final r = value['r'] ?? 0;
+    final b = value['b'] ?? 0;
+    if (l == t && t == r && r == b) return 'All sides equal';
+    if (l == r && t == b) return 'Symmetric sides';
+    return 'Mixed sides';
   }
 }
 
@@ -1100,6 +1177,22 @@ class PropShadowEditor extends StatelessWidget {
     );
   }
 }
+
+/// Side-label width for the [PropEdgeInsetsEditor] rows (left/top/right/
+/// bottom plus the FF6 `All` row): a single named constant per the
+/// no-magic-numbers rule.
+const double _kEdgeLabelWidth = 64.0;
+
+/// FF6 `All`-row step (matches the per-side step above) and readout width
+/// (mirrors the zoom/size readout role — see `EditorMetrics.zoomLabelWidth`
+/// and the inspector's own gap-value width).
+const double _kEdgeAllStep = 4.0;
+const double _kEdgeAllValueWidth = 48.0;
+
+/// Icon-stepper glyph size for the FF6 `All` row (the `_nodeSizeRow`
+/// precedent in `inspector_panel.dart` uses text-free icon steppers so the
+/// row-gap `find.text('+')` suites keep their unique match).
+const double _kEdgeIconSize = 16.0;
 
 /// Caption width for the composite Track F4 editors above (border width,
 /// radius corners, shadow numerics): one step wider than the edge-insets
