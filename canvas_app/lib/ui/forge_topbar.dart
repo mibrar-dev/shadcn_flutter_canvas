@@ -6,7 +6,7 @@
 /// screen list + add + inline rename + delete — the tab strip is gone),
 /// undo/redo icon buttons, Open icon, the embedded device strip
 /// ([DevicePickerEmbed]) and zoom strip ([ZoomControlsEmbed]), and the
-/// Preview / Export Flutter pill actions.
+/// Run / Deploy pill actions.
 ///
 /// Stateless vs the store: screens arrive as [ForgeScreenTab] props mapped by
 /// the shell from `store.doc.screens`, device/zoom arrive as shell-owned
@@ -20,10 +20,9 @@
 /// delete/undo/redo/preview/export/open), the inline-rename empty-guard, the
 /// dangling-edit fallback, the single `Icons.add` add affordance and the
 /// single active-screen `Icons.close` delete affordance (shell tests address
-/// both by icon). The Preview/Export pill *labels* are also kept: the Run/
-/// Deploy rename (§9.1) moves to the FF7 cutover together with the
-/// `app_smoke_test.dart` expectations (out of this wave's allowlist); the
-/// pill *tooltips* already carry the Run/Deploy names.
+/// both by icon). The pill *labels* read Run/Deploy per §9.1 (callbacks stay
+/// `onPreview`/`onExport`); the pill *tooltips* already carry the Run/Deploy
+/// names.
 ///
 /// Token rule: chrome reads [EditorColors]/[EditorType] only — no hex
 /// literals — except [_kStatusDot], which FORGE.md §3 pins APPROXIMATE
@@ -109,10 +108,10 @@ class ForgeTopbar extends StatefulWidget {
   /// Redo. Null renders the disabled state (`store.canRedo` gating).
   final VoidCallback? onRedo;
 
-  /// Preview pill (Run): the shell enters the preview player.
+  /// Run pill: the shell enters the preview player.
   final VoidCallback onPreview;
 
-  /// Export pill (Deploy): the shell opens the existing export dialog.
+  /// Deploy pill: the shell opens the existing export dialog.
   final VoidCallback onExport;
 
   /// Folder icon: the shell opens the existing open dialog (FORGE.md §1-1g:
@@ -325,7 +324,7 @@ class _ForgeTopbarState extends State<ForgeTopbar> {
           ],
           const Spacer(),
           _actionPill(
-            label: 'Preview',
+            label: 'Run',
             icon: Icons.play_arrow,
             tooltip: 'Run preview',
             background: colors.onSurface,
@@ -334,7 +333,7 @@ class _ForgeTopbarState extends State<ForgeTopbar> {
           ),
           const SizedBox(width: _kTopbarActionGap),
           _actionPill(
-            label: 'Export Flutter',
+            label: 'Deploy',
             icon: Icons.download,
             tooltip: 'Deploy / export project',
             background: colors.accent,
@@ -516,7 +515,7 @@ class _ForgeTopbarState extends State<ForgeTopbar> {
     );
   }
 
-  /// Zones 5–6: pill action buttons (Preview = near-black pill, Export =
+  /// Zones 5–6: pill action buttons (Run = near-black pill, Deploy =
   /// accent-blue pill, white text + icon). Custom skin per FORGE.md §1
   /// ("REBUILD button skin", logic kept): kit buttons follow the component
   /// theme, not these editor tokens — same custom-chrome exception class as

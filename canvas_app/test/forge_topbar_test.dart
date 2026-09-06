@@ -2,9 +2,9 @@
 /// topbar + page dropdown tests.
 ///
 /// Covers the topbar zones (logo, project pill, page dropdown, undo/redo,
-/// Preview, Export — plus the §1-1g Open icon): the dropdown lists pages
+/// Run, Deploy — plus the §1-1g Open icon): the dropdown lists pages
 /// from props, select/add/rename/delete callbacks, undo/redo disabled
-/// states, Preview/Export/Open call-through, and the device/zoom embed
+/// states, Run/Deploy/Open call-through, and the device/zoom embed
 /// wiring (hidden when unwired, live when wired). Also pins the three
 /// additive Y2 tokens (`accent`/`onAccent`/`danger`) in both chrome modes;
 /// the pre-existing values stay guarded by `light_theme_test.dart` and the
@@ -140,8 +140,8 @@ void main() {
       // (inactive pages live in the popup, not in the bar).
       expect(find.text('Home'), findsOneWidget);
       expect(find.text('Search'), findsNothing);
-      expect(find.text('Preview'), findsOneWidget);
-      expect(find.text('Export Flutter'), findsOneWidget);
+      expect(find.text('Run'), findsOneWidget);
+      expect(find.text('Deploy'), findsOneWidget);
       // Open icon (FORGE.md §1-1g) survives as a small topbar icon.
       expect(find.byIcon(Icons.folder_open), findsOneWidget);
     });
@@ -271,7 +271,7 @@ void main() {
   });
 
   group('action call-through', () {
-    testWidgets('Preview, Export, and Open delegate to shell callbacks',
+    testWidgets('Run, Deploy, and Open delegate to shell callbacks',
         (tester) async {
       useReferenceViewport(tester);
       var previews = 0;
@@ -286,9 +286,9 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.text('Preview'));
+      await tester.tap(find.text('Run'));
       await tester.pump();
-      await tester.tap(find.text('Export Flutter'));
+      await tester.tap(find.text('Deploy'));
       await tester.pump();
       await tester.tap(find.byIcon(Icons.folder_open));
       await tester.pump();

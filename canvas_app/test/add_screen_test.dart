@@ -1,5 +1,6 @@
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
+import 'package:canvas_app/ui/editor_buttons.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
 import 'package:canvas_app/ui/phone_frame.dart';
 import 'package:flutter/material.dart';
@@ -20,10 +21,14 @@ void main() {
     expect(find.byType(PhoneFrame), findsOneWidget);
     // Y6: the old floating-toolbar add glyph is gone; "+" lives in the Forge
     // topbar tabs row (kit tooltip 'Add screen', invisible to find.byTooltip).
+    // FF7: the spec'd topbar zoom-in button reuses the add glyph, so scope
+    // the tap to the page selector's 'Add screen' button.
     await tester.tap(
       find.descendant(
         of: find.byType(ForgeTopbar),
-        matching: find.byIcon(Icons.add),
+        matching: find.byWidgetPredicate(
+          (w) => w is EditorIconButton && w.tooltip == 'Add screen',
+        ),
       ),
     );
     await tester.pump();

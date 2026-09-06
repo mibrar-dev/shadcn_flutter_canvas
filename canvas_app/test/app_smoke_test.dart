@@ -58,13 +58,11 @@ void main() {
         findsNothing);
     expect(find.byKey(const ValueKey('forge-left-theme-disclosure')),
         findsNothing);
-    // The Export action lives in the Forge topbar (not in a floating bar).
-    // NOTE (FF7 deferred rename): the pills still read `Preview` /
-    // `Export Flutter` — the Run/Deploy rename needs a `forge_topbar.dart`
-    // edit (frozen, FF3-owned; its own test pins the old labels), so it
-    // rides the next topbar wave with its test updates.
+    // The actions live in the Forge topbar (not in a floating bar): the
+    // pills read `Run` / `Deploy` per spec §9.1 (callbacks stay
+    // `onPreview`/`onExport`).
     expect(find.byType(ForgeTopbar), findsOneWidget);
-    expect(find.text('Export Flutter'), findsOneWidget);
+    expect(find.text('Deploy'), findsOneWidget);
   });
 
   testWidgets('inspector tab shows the empty hint with no selection',
@@ -91,18 +89,18 @@ void main() {
     expect(find.text('Select an item to edit its props'), findsOneWidget);
   });
 
-  testWidgets('preview pill swaps editor for preview player', (tester) async {
+  testWidgets('run pill swaps editor for preview player', (tester) async {
     useReferenceViewport(tester);
     await tester.pumpWidget(
       MaterialApp(home: EditorShell(store: CanvasStore())),
     );
     await tester.pump();
-    // Y6: Preview lives in the Forge topbar pill (black pill, white text +
+    // Y6: Run lives in the Forge topbar pill (black pill, white text +
     // play icon) — the old floating-toolbar play glyph is gone.
     await tester.tap(
       find.descendant(
         of: find.byType(ForgeTopbar),
-        matching: find.text('Preview'),
+        matching: find.text('Run'),
       ),
     );
     await tester.pump();

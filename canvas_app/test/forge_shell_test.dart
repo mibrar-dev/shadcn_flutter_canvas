@@ -1,17 +1,18 @@
-/// Y6 cutover shell assembly (FORGE.md §5) with the Track CC sidebar revert:
-/// topbar + header + selection toolbar + inspector coexist with the restored
-/// classic icon rail + parts palette; inspector Duplicate/Delete hit the
-/// store, and Layers + the Color/Shape/Type/Motion theme panels live behind
-/// the rail.
+/// FF7 cutover shell assembly (FORGE.md §5): topbar + header + selection
+/// toolbar + inspector coexist with the FF rail + panel host; inspector
+/// Duplicate/Delete hit the store, and Layers + the Color/Shape/Type/Motion
+/// theme panels live behind the rail.
 library;
 
 import 'package:canvas_app/canvas/canvas_store.dart';
 import 'package:canvas_app/main.dart';
 import 'package:canvas_app/ui/canvas_toolbar.dart';
 import 'package:canvas_app/ui/design_canvas.dart';
+import 'package:canvas_app/ui/device_picker.dart';
+import 'package:canvas_app/ui/ff_nav_rail.dart';
+import 'package:canvas_app/ui/ff_panel_host.dart';
 import 'package:canvas_app/ui/forge_canvas_header.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
-import 'package:canvas_app/ui/icon_rail.dart';
 import 'package:canvas_app/ui/layers_panel.dart';
 import 'package:canvas_app/ui/parts_palette.dart';
 import 'package:canvas_app/ui/right_aside.dart';
@@ -34,31 +35,35 @@ Future<void> _pumpShell(WidgetTester tester, CanvasStore store) async {
   await tester.pumpAndSettle();
 }
 
-/// Taps a classic rail item by glyph, scoped to the rail (the rail tips are
-/// kit tooltips, invisible to `find.byTooltip`; palette tiles may reuse the
-/// glyph — the pre-Forge shell test idiom).
+/// Taps an FF rail destination by glyph, scoped to the rail (rail tips are
+/// kit tooltips, invisible to `find.byTooltip`; panel tiles may reuse the
+/// glyph — the FF7 successor of the pre-Forge shell test idiom).
 Future<void> _tapRail(WidgetTester tester, IconData icon) async {
   await tester.tap(
     find.descendant(
-      of: find.byType(EditorIconRail),
+      of: find.byType(FfNavRail),
       matching: find.byIcon(icon),
     ),
   );
   await tester.pumpAndSettle();
 }
 void main() {
-  group('Y6 shell assembly', () {
-    testWidgets('all forge pieces + classic rail coexist; pills gone',
+  group('FF7 shell assembly', () {
+    testWidgets('all forge pieces mount in the ff7 shell; pills gone',
         (tester) async {
       await _pumpShell(tester, CanvasStore());
 
       expect(find.byType(ForgeTopbar), findsOneWidget);
+      expect(find.byType(FfNavRail), findsOneWidget);
+      expect(find.byType(FfPanelHost), findsOneWidget);
       expect(find.byType(ForgeCanvasHeader), findsOneWidget);
-      expect(find.byType(EditorIconRail), findsOneWidget);
-      expect(find.byType(PartsPalette), findsOneWidget);
+      // Tree is the default destination: the layers panel mounts and the
+      // palette stays hidden (offstage in the panel host's IndexedStack).
+      expect(find.byType(LayersPanel), findsOneWidget);
+      expect(find.byType(PartsPalette), findsNothing);
       expect(find.byType(DesignCanvas), findsOneWidget);
       expect(find.byType(RightAside), findsOneWidget);
-      // Zoom lives inside the header now (no bottom-right mount).
+      // Zoom lives in the header pill and the topbar embed.
       expect(
         find.descendant(
           of: find.byType(ForgeCanvasHeader),
@@ -66,12 +71,14 @@ void main() {
         ),
         findsOneWidget,
       );
+      expect(find.byType(ZoomControlsEmbed), findsOneWidget);
+      expect(find.byType(DevicePickerEmbed), findsOneWidget);
       // Old always-visible toolbar is removed; the Forge selection toolbar
       // hides without a selection.
       expect(find.byType(CanvasToolbar), findsNothing);
       expect(find.byKey(kForgeSelectionToolbarKey), findsNothing);
-      // Track CC revert: the classic rail owns the left column — the Forge
-      // Library|Layers pills + the Theme disclosure are gone.
+      // The FF rail owns the left column — the Forge Library|Layers pills +
+      // the Theme disclosure are gone.
       expect(find.byKey(const ValueKey('forge-left-pill-library')),
           findsNothing);
       expect(find.byKey(const ValueKey('forge-left-pill-layers')),
@@ -83,10 +90,26 @@ void main() {
     testWidgets('header shows breadcrumb + zoom + device', (tester) async {
       await _pumpShell(tester, CanvasStore());
 
-      // Default doc: title Untitled, first screen Screen 1, zoom 79%.
+      // Default doc: title Untitled, first screen Screen 1. The zoom
+      // readout renders twice — once in the header pill, once in the
+      // topbar embed — both wired to the shell zoom.
       expect(find.text('Untitled'), findsWidgets);
       expect(find.text('Screen 1'), findsWidgets);
-      expect(find.text('79%'), findsOneWidget);
+      expect(find.text('79%'), findsNWidgets(2));
+      expect(
+        find.descendant(
+          of: find.byType(ForgeCanvasHeader),
+          matching: find.text('79%'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byType(ForgeTopbar),
+          matching: find.text('79%'),
+        ),
+        findsOneWidget,
+      );
       // Compact device strip glyphs render in the header.
       expect(
         find.descendant(
@@ -109,8 +132,8 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      // Select via the rail's Layers item (pills are gone with the revert).
-      await _tapRail(tester, Icons.layers);
+      // Tree (Layers) is the default rail destination, so the row is
+      // already visible — no rail tap needed.
       await tester.tap(find.text('Button · $nodeId'));
       await tester.pumpAndSettle();
 
@@ -138,7 +161,8 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      await _tapRail(tester, Icons.layers);
+      // Tree (Layers) is the default rail destination, so the row is
+      // already visible — no rail tap needed.
       await tester.tap(find.text('Button · $nodeId'));
       await tester.pumpAndSettle();
       expect(find.byKey(kForgeSelectionToolbarKey), findsOneWidget);
@@ -174,7 +198,8 @@ void main() {
       );
       await _pumpShell(tester, store);
 
-      await _tapRail(tester, Icons.layers);
+      // Tree (Layers) is the default rail destination, so the row is
+      // already visible — no rail tap needed.
       // Select the second (frontmost) node, then move it up one slot.
       await tester.tap(find.text('Button · $second'));
       await tester.pumpAndSettle();
@@ -208,29 +233,27 @@ void main() {
     testWidgets('Rail swaps content', (tester) async {
       await _pumpShell(tester, CanvasStore());
 
-      expect(find.byType(PartsPalette), findsOneWidget);
-      expect(find.byType(LayersPanel), findsNothing);
-
-      await _tapRail(tester, Icons.layers);
       expect(find.byType(LayersPanel), findsOneWidget);
       expect(find.byType(PartsPalette), findsNothing);
 
-      await _tapRail(tester, Icons.add_box);
+      await _tapRail(tester, Icons.widgets_outlined);
       expect(find.byType(PartsPalette), findsOneWidget);
       expect(find.byType(LayersPanel), findsNothing);
+
+      await _tapRail(tester, Icons.account_tree_outlined);
+      expect(find.byType(LayersPanel), findsOneWidget);
+      expect(find.byType(PartsPalette), findsNothing);
     });
 
     testWidgets('Rail mounts the four theme panels', (tester) async {
       await _pumpShell(tester, CanvasStore());
 
       expect(find.byType(ColorPanel), findsNothing);
-      await _tapRail(tester, Icons.palette);
+      // The Theme destination stacks all four panels at once.
+      await _tapRail(tester, Icons.palette_outlined);
       expect(find.byType(ColorPanel), findsOneWidget);
-      await _tapRail(tester, Icons.rounded_corner);
       expect(find.byType(ShapePanel), findsOneWidget);
-      await _tapRail(tester, Icons.text_fields);
       expect(find.byType(TypePanel), findsOneWidget);
-      await _tapRail(tester, Icons.animation);
       expect(find.byType(MotionPanel), findsOneWidget);
     });
   });
