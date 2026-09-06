@@ -2008,6 +2008,377 @@ typedef AliasFn = Widget Function(BuildContext context);
         kSingleRowOnlyGolden,
       );
     });
+
+    test('nested export golden: card slots + 3-deep + row-in-card', () {
+      final doc = _nestedExportDoc();
+      final out = buildSingleFile(doc, kTestSources);
+
+      // Slot splice: the input + button render INSIDE the card chrome after
+      // the description (COMPOSITION.md §2 card slot).
+      expect(out, contains('Card('));
+      expect(out, contains('TextField('));
+      expect(
+        out.indexOf("'Shop body'"),
+        lessThan(out.indexOf("'Name'")),
+      );
+      expect(out.indexOf("'Name'"), lessThan(out.indexOf("'Go'")));
+
+      // 3-deep: card > dialog > button, each level spliced into its own slot.
+      expect(out, contains('ModalContainer('));
+      expect(
+        out.indexOf("'Deep body'"),
+        lessThan(out.indexOf("'Dlg body'")),
+      );
+      expect(out.indexOf("'Dlg body'"), lessThan(out.indexOf("'Deep Go'")));
+
+      // Row-in-card: a horizontal strip inside the third card (search from
+      // the strip card: the dialog above owns its own action Row).
+      final stripIdx = out.indexOf("'Strip body'");
+      final rowIdx = out.indexOf('Row(', stripIdx);
+      expect(rowIdx, greaterThan(stripIdx));
+      expect(out.indexOf("'A'", rowIdx), lessThan(out.indexOf("'B'", rowIdx)));
+      expect(out, contains('const SizedBox(width: 8),'));
+
+      // Per-level tiers: every responsive level keeps its own wrapper.
+      expect('LayoutBuilder'.allMatches(out).length, 3);
+      expect(out, contains("tier == 'mobile'"));
+      expect(out, contains("tier == 'tablet'"));
+      expect(out, contains("tier == 'desktop'"));
+      expect(out, contains("'Wide Go'"));
+
+      // Per-level taps: depth-1 and depth-2 buttons navigate (the desktop
+      // override branch carries its own copy of the depth-2 tap).
+      expect("pushNamed('/done')".allMatches(out).length, 3);
+      expect(out, contains('// taps -> s2'));
+
+      // Byte-stability: regeneration is deterministic and pinned.
+      expect(buildSingleFile(doc, kTestSources), out);
+      expect(out, kSingleNestedExportGolden);
+    });
+
+    test('nested chat>button splices the child into the bubble slot', () {
+      final out = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('ChatBubble('));
+      final msgIdx = out.indexOf("'Hey'");
+      final goIdx = out.indexOf("'Go'");
+      expect(msgIdx, isNot(-1));
+      expect(goIdx, isNot(-1));
+      expect(msgIdx, lessThan(goIdx));
+      expect(out, contains('const SizedBox(height: 12),'));
+    });
+
+    test('nested toast>button splices the child after the message', () {
+      final out = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'toast',
+                'title': 'TT',
+                'message': 'TM',
+              },
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('ToastEntry('));
+      final msgIdx = out.indexOf("'TM'");
+      final goIdx = out.indexOf("'Go'");
+      expect(msgIdx, lessThan(goIdx));
+      expect(out, contains('const SizedBox(height: 12),'));
+    });
+
+    test('nested validated>button splices the child before the error gap', () {
+      final out = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'validated',
+                'placeholder': 'Name',
+                'errorText': 'Req',
+              },
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('Validated<String>('));
+      final goIdx = out.indexOf("'Go'");
+      // 'Req' appears twice: the validator construction, then the error
+      // display text — the spliced child sits before the display copy.
+      final errIdx = out.lastIndexOf("'Req'");
+      expect(goIdx, isNot(-1));
+      expect(errIdx, isNot(-1));
+      // Child sits after the field (child!,) and before the error text.
+      expect(out.indexOf('child!,'), lessThan(goIdx));
+      expect(goIdx, lessThan(errIdx));
+    });
+
+    test('nested refresh_trigger>button appends rows after the prop rows', () {
+      final out = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'refresh_trigger',
+                'item1': 'R1',
+                'item2': 'R2',
+                'item3': 'R3',
+              },
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(out, contains('RefreshTrigger('));
+      final r3Idx = out.indexOf("'R3'");
+      final goIdx = out.indexOf("'Go'");
+      expect(r3Idx, lessThan(goIdx));
+      expect(out, contains('const SizedBox(height: 12),'));
+    });
+
+    test('childless D1 containers keep the historical output', () {
+      // Chat childless stays the single-line bubble.
+      final chat = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'chat', 'message': 'Hi'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(chat, contains("ChatBubble(child: Text('Hi')),"));
+      expect(chat, isNot(contains('const SizedBox(height: 12),')));
+      // Toast childless keeps the Column chrome with no slot gap.
+      final toast = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'toast',
+                'title': 'TT',
+                'message': 'TM',
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(toast, contains('ToastEntry('));
+      expect(toast, contains("'TT'"));
+      expect(toast, isNot(contains('const SizedBox(height: 12),')));
+      // Validated childless keeps field + error gap with no slot gap.
+      final validated = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'validated',
+                'placeholder': 'Name',
+                'errorText': 'Req',
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(validated, contains('Validated<String>('));
+      expect(validated, contains('child!,'));
+      expect(validated, isNot(contains('const SizedBox(height: 12),')));
+      // Refresh-trigger childless keeps the three prop rows with no slot gap.
+      final refresh = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {
+                'id': 'i1',
+                'kind': 'refresh_trigger',
+                'item1': 'R1',
+                'item2': 'R2',
+                'item3': 'R3',
+              },
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(refresh, contains('RefreshTrigger('));
+      expect(refresh, contains("'R3'"));
+      expect(refresh, isNot(contains('const SizedBox(height: 12),')));
+    });
+
+    test('chat tap + responsive interplay nests per level', () {
+      // Tap: the child navigation wraps inside the chat slot.
+      final tapDoc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {
+                'id': 'i2',
+                'kind': 'button',
+                'label': 'Go',
+                'action': {'to': 's2', 'transition': 'slide'},
+              },
+            ],
+          },
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Nest', 'brief': ''},
+      });
+      final tapOut = buildSingleFile(tapDoc, kTestSources);
+      expect(tapOut, contains('ChatBubble('));
+      expect(tapOut, contains('// taps -> s2'));
+      expect(tapOut, contains("pushNamed('/done')"));
+      expect(
+        tapOut.indexOf('ChatBubble('),
+        lessThan(tapOut.indexOf('GestureDetector(')),
+      );
+      // Responsive: both branches carry the spliced child.
+      final respOut = buildSingleFile(
+        _c3Doc([
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'breakpointValues': {
+              'desktop': {'message': 'Wide'},
+            },
+            'items': [
+              {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {'id': 'i2', 'kind': 'button', 'label': 'Kid'},
+            ],
+          },
+        ]),
+        kTestSources,
+      );
+      expect(respOut, contains('LayoutBuilder'));
+      expect(respOut, contains("tier == 'desktop'"));
+      expect("'Kid'".allMatches(respOut).length, 2);
+      expect(respOut, contains("'Wide'"));
+    });
   });
 }
 
@@ -2182,6 +2553,168 @@ List<Map<String, dynamic>> _rowInCardNodes() => [
         ],
       },
     ];
+
+/// Full nested-doc fixture for the Track D3 export golden (mirrors the
+/// COMPOSITION.md contract): card{input + button→screen} with a per-level
+/// mobile tier, a 3-deep card > dialog > button chain with per-level tablet /
+/// desktop tiers plus a depth-2 tap, and a row-in-card strip.
+List<Map<String, dynamic>> _nestedExportNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'hiddenOn': ['mobile'],
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'Shop',
+            'description': 'Shop body',
+          },
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {
+            'id': 'i2',
+            'kind': 'input',
+            'label': 'Name',
+            'placeholder': 'Type here',
+          },
+        ],
+      },
+      {
+        'id': 'n3',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 96.0,
+        'items': [
+          {
+            'id': 'i3',
+            'kind': 'button',
+            'label': 'Go',
+            'action': {'to': 's2', 'transition': 'slide'},
+          },
+        ],
+      },
+      {
+        'id': 'n4',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 144.0,
+        'items': [
+          {
+            'id': 'i4',
+            'kind': 'card',
+            'title': 'Deep',
+            'description': 'Deep body',
+          },
+        ],
+      },
+      {
+        'id': 'n5',
+        'screenId': 's1',
+        'parentId': 'n4',
+        'x': 0.0,
+        'y': 192.0,
+        'hiddenOn': ['tablet'],
+        'items': [
+          {
+            'id': 'i5',
+            'kind': 'dialog',
+            'title': 'Dlg',
+            'message': 'Dlg body',
+          },
+        ],
+      },
+      {
+        'id': 'n6',
+        'screenId': 's1',
+        'parentId': 'n5',
+        'x': 0.0,
+        'y': 240.0,
+        'breakpointValues': {
+          'desktop': {'label': 'Wide Go'},
+        },
+        'items': [
+          {
+            'id': 'i6',
+            'kind': 'button',
+            'label': 'Deep Go',
+            'action': {'to': 's2', 'transition': 'fade'},
+          },
+        ],
+      },
+      {
+        'id': 'n7',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 288.0,
+        'items': [
+          {
+            'id': 'i7',
+            'kind': 'card',
+            'title': 'Strip',
+            'description': 'Strip body',
+          },
+        ],
+      },
+      {
+        'id': 'n8',
+        'screenId': 's1',
+        'parentId': 'n7',
+        'x': 0.0,
+        'y': 336.0,
+        'isRow': true,
+        'items': <Map<String, dynamic>>[],
+      },
+      {
+        'id': 'n9',
+        'screenId': 's1',
+        'parentId': 'n8',
+        'x': 0.0,
+        'y': 384.0,
+        'items': [
+          {'id': 'i9', 'kind': 'button', 'label': 'A'},
+        ],
+      },
+      {
+        'id': 'n10',
+        'screenId': 's1',
+        'parentId': 'n8',
+        'x': 48.0,
+        'y': 384.0,
+        'items': [
+          {'id': 'i10', 'kind': 'button', 'label': 'B'},
+        ],
+      },
+    ];
+
+/// Two-screen doc around [_nestedExportNodes]: `s2` is the tap target for
+/// the nested buttons (kept empty so the golden stays focused on `s1`).
+ScreenDoc _nestedExportDoc() {
+  return ScreenDoc.fromJson({
+    'screens': [
+      {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+    ],
+    'nodes': _nestedExportNodes(),
+    'theme': {
+      'paletteKey': 'slate',
+      'dark': false,
+      'shape': 'rounded',
+      'motion': 'standard',
+    },
+    'meta': {'title': 'Nest', 'brief': ''},
+  });
+}
 
 /// A row-only doc (no containers): pins the historical row emission.
 List<Map<String, dynamic>> _rowOnlyNodes() => [
@@ -3153,6 +3686,211 @@ class CanvasScreen_Home extends StatelessWidget {
 class Button extends StatelessWidget {
   const Button({super.key});
 }
+''';
+
+/// Byte-identical golden for the Track D3 nested export doc
+/// ([_nestedExportNodes]): card{input + button→screen} with a mobile tier,
+/// a 3-deep card > dialog > button chain with tablet/desktop tiers plus a
+/// depth-2 tap, and a row-in-card strip. Regenerate only by reviewing the
+/// exporter diff.
+const kSingleNestedExportGolden = '''// generated by shadcn canvas — DO NOT EDIT.
+// pubspec: gap, data_widget
+// screens: Home, Done
+
+import 'package:flutter/widgets.dart';
+
+class CanvasScreen_Home extends StatelessWidget {
+  const CanvasScreen_Home({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // responsive (hidden on mobile)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+              if (tier == 'mobile') return const SizedBox.shrink();
+              return Card(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Shop'),
+                    const SizedBox(height: 4),
+                    Text('Shop body'),
+                    const SizedBox(height: 12),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Name'),
+                        const SizedBox(height: 6),
+                        TextField(
+                      placeholder: Text('Type here'),
+                      enabled: true,
+                      obscureText: false,
+                    ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // taps -> s2
+                    GestureDetector(
+                      onTap: () => Navigator.of(context).pushNamed('/done'), // transition: slide
+                      child: PrimaryButton(
+                        onPressed: () {},
+                        enabled: true,
+                        size: ButtonSize.normal,
+                        child: Text('Go'),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Deep'),
+                const SizedBox(height: 4),
+                Text('Deep body'),
+                const SizedBox(height: 12),
+                // responsive (hidden on tablet)
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+                    if (tier == 'tablet') return const SizedBox.shrink();
+                    return ModalContainer(
+                      filled: true,
+                      padding: const EdgeInsets.all(24),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Dlg'),
+                          const SizedBox(height: 12),
+                          Text('Dlg body'),
+                          const SizedBox(height: 12),
+                          // responsive (overrides on desktop)
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+                              // taps -> s2
+                              if (tier == 'desktop') return GestureDetector(
+                                onTap: () => Navigator.of(context).pushNamed('/done'), // transition: fade
+                                child: PrimaryButton(
+                                  onPressed: () {},
+                                  enabled: true,
+                                  size: ButtonSize.normal,
+                                  child: Text('Wide Go'),
+                                ),
+                              );
+                              // taps -> s2
+                              return GestureDetector(
+                                onTap: () => Navigator.of(context).pushNamed('/done'), // transition: fade
+                                child: PrimaryButton(
+                                  onPressed: () {},
+                                  enabled: true,
+                                  size: ButtonSize.normal,
+                                  child: Text('Deep Go'),
+                                ),
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 20),
+                          Row(
+                            children: [
+                              const Spacer(),
+                              OutlineButton(
+                                onPressed: () {},
+                                child: const Text('Close'),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Strip'),
+                const SizedBox(height: 4),
+                Text('Strip body'),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    PrimaryButton(
+                      onPressed: () {},
+                      enabled: true,
+                      size: ButtonSize.normal,
+                      child: Text('A'),
+                    ),
+                    const SizedBox(width: 8),
+                    PrimaryButton(
+                      onPressed: () {},
+                      enabled: true,
+                      size: ButtonSize.normal,
+                      child: Text('B'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class CanvasScreen_Done extends StatelessWidget {
+  const CanvasScreen_Done({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // (empty screen)
+        ],
+      ),
+    );
+  }
+}
+
+// TODO(canvas): no source for kind "card"
+
+// TODO(canvas): no source for kind "input"
+
+// from: registry/components/button/button.dart
+
+class Button extends StatelessWidget {
+  const Button({super.key});
+}
+
+// TODO(canvas): no source for kind "dialog"
 ''';
 
 /// Byte-identical golden for a row-only doc (no containers): pins the

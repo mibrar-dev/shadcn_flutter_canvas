@@ -260,6 +260,11 @@ class ScreenLabel extends StatelessWidget {
 const ValueKey<String> kFlowInsertLineKey =
     ValueKey<String>('flow-insert-line');
 
+/// Finder for the drop-preview ghost (used by drop-preview tests): the
+/// in-chrome ghost of the dragged kind rendered at the hover insertion index
+/// while a palette drag hovers a container/row/root target.
+const ValueKey<String> kDropPreviewKey = ValueKey<String>('drop-preview');
+
 /// W3 container alignment mapping: row `mainAxis` strings to
 /// [MainAxisAlignment] (`null` → start, unknown → start).
 MainAxisAlignment rowMainAxis(String? value) {
@@ -351,6 +356,11 @@ class _FlowHit {
   });
 }
 
+/// In-chrome drop-preview target (Track D3): the hovered flow target plus the
+/// dragged kind, resolved from the SAME [_FlowHit] as the landing path so the
+/// ghost and the drop agree on parent + index. Null while no drag hovers.
+typedef _DropGhostSpec = ({String? parentId, int index, String kind});
+
 /// Screen background for [screen] inside the inner components-themed canvas.
 ///
 /// `bg == 'surface'` follows the kit scheme background — read live from the
@@ -417,7 +427,9 @@ class ScreenSurface extends StatefulWidget {
   /// Live global pointer position tracked by the enclosing [DesignCanvas].
   /// When available, the drop point is derived from it (the true pointer)
   /// instead of `DragTargetDetails.offset` (the drag feedback's top-left,
-  /// which trails the pointer by the grab offset inside the tile).
+  /// which trails the pointer by the grab offset inside the tile). The hover
+  /// visuals (guides, insert line, and the D3 drop-preview ghost) resolve
+  /// their target from it each frame via the shared [_flowHit] path.
   final ValueListenable<Offset?>? dropPointer;
 
   /// `true` while the pan tool is active: leaf pointer-down selection is
@@ -783,6 +795,26 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
               }
               final hoverHit = hover;
               final hoverRect = hover?.targetRect;
+              // D3 drop preview: the dragged kind rides the DragTarget
+              // candidate list; paired with the shared _flowHit so the ghost
+              // previews exactly where the landing path would commit. Gated
+              // on both (like the insert line), so it vanishes on
+              // drop/cancel/leave with the guides.
+              String? dragKind;
+              for (final c in candidate) {
+                if (c != null) {
+                  dragKind = c;
+                  break;
+                }
+              }
+              final _DropGhostSpec? ghost =
+                  (hoverHit != null && dragKind != null)
+                      ? (
+                          parentId: hoverHit.parentId,
+                          index: hoverHit.index,
+                          kind: dragKind,
+                        )
+                      : null;
               // A hovered container-or-row carries its own wash; otherwise the
               // whole screen washes while a drag hovers it.
               final hoveringTarget = hoverHit?.parentId != null;
@@ -795,7 +827,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 onTap: widget.onSelectScreen,
                 child: Stack(
                   children: [
-                    _buildFlow(colors),
+                    _buildFlow(colors, ghost: ghost),
                   if (candidate.isNotEmpty && !hoveringTarget)
                     Positioned.fill(
                       child: ColoredBox(
@@ -886,17 +918,31 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// Tier-hidden nodes are skipped (see [_visibleNodes]). Every root builds
   /// through [_buildNodeWidget] so nesting applies at any depth; childless
   /// nodes take the exact pre-composition path.
-  Widget _buildFlow(EditorColors colors) {
+  ///
+  /// D3 drop preview: when [ghost] targets the screen root (`parentId ==
+  /// null`), the ghost splices into the root column at the hover index (same
+  /// mapping as the landing path), joined with the usual separators.
+  Widget _buildFlow(EditorColors colors, {_DropGhostSpec? ghost}) {
     final roots = _rootNodes;
+    final items = <Widget>[
+      for (final root in roots)
+        _buildNodeWidget(root, colors, {root.id}, ghost: ghost),
+    ];
+    if (ghost != null && ghost.parentId == null) {
+      items.insert(
+        ghost.index.clamp(0, items.length),
+        _DropGhostBox(colors: colors, kind: ghost.kind),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.all(kFlowScreenPadding),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.start,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (var i = 0; i < roots.length; i++) ...[
+          for (var i = 0; i < items.length; i++) ...[
             if (i > 0) const SizedBox(height: kFlowScreenGap),
-            _buildNodeWidget(roots[i], colors, {roots[i].id}),
+            items[i],
           ],
         ],
       ),
@@ -911,18 +957,31 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// semantics at any depth; containers receive built children inside their
   /// chrome; leaves with children get the fallback `Column([own,
   /// ...children])`; childless nodes return [_buildLeaf] untouched.
+  ///
+  /// D3 drop preview: [ghost] threads through every level untouched (only the
+  /// matching target splices it in). An empty container targeted by the drag
+  /// routes to [_buildContainer] so the ghost still previews inside its
+  /// chrome instead of taking the childless [_buildLeaf] path.
   Widget _buildNodeWidget(
     CanvasNode node,
     EditorColors colors,
-    Set<String> ancestors,
-  ) {
-    if (node.isRow) return _buildRow(node, colors, ancestors);
+    Set<String> ancestors, {
+    _DropGhostSpec? ghost,
+  }) {
+    if (node.isRow) return _buildRow(node, colors, ancestors: ancestors, ghost: ghost);
     final kids = _childNodes(node.id, ancestors);
-    if (kids.isEmpty) return _buildLeaf(node, colors);
-    if (_isContainerNode(node)) {
-      return _buildContainer(node, colors, ancestors, kids);
+    if (kids.isEmpty) {
+      if (ghost != null &&
+          ghost.parentId == node.id &&
+          _isContainerNode(node)) {
+        return _buildContainer(node, colors, ancestors, kids, ghost: ghost);
+      }
+      return _buildLeaf(node, colors);
     }
-    return _buildLeafFallback(node, colors, ancestors, kids);
+    if (_isContainerNode(node)) {
+      return _buildContainer(node, colors, ancestors, kids, ghost: ghost);
+    }
+    return _buildLeafFallback(node, colors, ancestors, kids, ghost: ghost);
   }
 
   /// One row container: full-width tap target (selects the row for gap
@@ -939,31 +998,61 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// stretch inside the screen Column (which measures children with
   /// unbounded height) asserts without a tight cross-axis height, and
   /// IntrinsicHeight supplies it from the tallest child.
+  ///
+  /// D3 drop preview: when [ghost] targets this row, the ghost splices into
+  /// the strip at the hover index (a [Flexible] cell like any other child,
+  /// so it takes a finite width share); an empty targeted row renders the
+  /// ghost in place of the placeholder.
   Widget _buildRow(
     CanvasNode node,
-    EditorColors colors, [
+    EditorColors colors, {
     Set<String> ancestors = const {},
-  ]) {
+    _DropGhostSpec? ghost,
+  }) {
     final next = {...ancestors, node.id};
     final kids = _childNodes(node.id, next);
     // Clamp defensive: a negative stored gap must never size a separator.
     final gap = math.max(0.0, node.gap);
     final cross = rowCrossAxis(node.crossAxis);
-    Widget row = Row(
-      mainAxisAlignment: rowMainAxis(node.mainAxis),
-      crossAxisAlignment: cross,
-      children: [
-        for (var i = 0; i < kids.length; i++) ...[
-          if (i > 0) SizedBox(width: gap),
+    final _DropGhostSpec? rowGhost =
+        (ghost != null && ghost.parentId == node.id) ? ghost : null;
+    Widget body;
+    if (kids.isEmpty && rowGhost == null) {
+      body = _EmptyRowPlaceholder(colors: colors);
+    } else {
+      final cells = <Widget>[
+        for (final kid in kids)
           wrapRowChild(
-            kids[i],
-            _buildNodeWidget(kids[i], colors, next),
+            kid,
+            _buildNodeWidget(kid, colors, next, ghost: ghost),
           ),
+      ];
+      if (rowGhost != null) {
+        cells.insert(
+          rowGhost.index.clamp(0, cells.length),
+          Flexible(
+            child: _DropGhostBox(
+              colors: colors,
+              kind: rowGhost.kind,
+              horizontal: true,
+            ),
+          ),
+        );
+      }
+      Widget row = Row(
+        mainAxisAlignment: rowMainAxis(node.mainAxis),
+        crossAxisAlignment: cross,
+        children: [
+          for (var i = 0; i < cells.length; i++) ...[
+            if (i > 0) SizedBox(width: gap),
+            cells[i],
+          ],
         ],
-      ],
-    );
-    if (cross == CrossAxisAlignment.stretch && kids.isNotEmpty) {
-      row = IntrinsicHeight(child: row);
+      );
+      if (cross == CrossAxisAlignment.stretch && cells.isNotEmpty) {
+        row = IntrinsicHeight(child: row);
+      }
+      body = row;
     }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -981,7 +1070,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
                 borderRadius: BorderRadius.circular(8),
               )
             : null,
-        child: kids.isEmpty ? _EmptyRowPlaceholder(colors: colors) : row,
+        child: body,
       ),
     );
   }
@@ -1070,17 +1159,29 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// items stack below the chrome (see [kContainerKinds]). Children build
   /// through [_buildNodeWidget] (props/tier/hidden semantics apply
   /// recursively) and stack vertically with [kFlowScreenGap] separators.
+  ///
+  /// D3 drop preview: when [ghost] targets this container, the ghost splices
+  /// into the slot's child list at the hover index, so it renders inside the
+  /// real chrome with the catalog's own separators.
   Widget _buildContainer(
     CanvasNode node,
     EditorColors colors,
     Set<String> ancestors,
-    List<CanvasNode> kids,
-  ) {
+    List<CanvasNode> kids, {
+    _DropGhostSpec? ghost,
+  }) {
     final next = {...ancestors, node.id};
     final items = _nodeItems(node);
-    final builtKids = [
-      for (final kid in kids) _buildNodeWidget(kid, colors, next),
+    final builtKids = <Widget>[
+      for (final kid in kids)
+        _buildNodeWidget(kid, colors, next, ghost: ghost),
     ];
+    if (ghost != null && ghost.parentId == node.id) {
+      builtKids.insert(
+        ghost.index.clamp(0, builtKids.length),
+        _DropGhostBox(colors: colors, kind: ghost.kind),
+      );
+    }
     return _nodeChrome(
       node,
       colors,
@@ -1099,13 +1200,15 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
   /// One leaf-with-children node (kind NOT in [kContainerKinds]): the §1
   /// fallback `Column([ownWidget, ...children])` — children stack BELOW the
   /// parent's own widget with [kFlowScreenGap] separators, never inside
-  /// chrome.
+  /// chrome. D3 drop preview: [ghost] forwards to the children (a targeted
+  /// container may nest under a leaf via the below-fallback).
   Widget _buildLeafFallback(
     CanvasNode node,
     EditorColors colors,
     Set<String> ancestors,
-    List<CanvasNode> kids,
-  ) {
+    List<CanvasNode> kids, {
+    _DropGhostSpec? ghost,
+  }) {
     final next = {...ancestors, node.id};
     return _nodeChrome(
       node,
@@ -1118,7 +1221,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
             buildCatalogItem(item.kind, item.props),
           for (var i = 0; i < kids.length; i++) ...[
             const SizedBox(height: kFlowScreenGap),
-            _buildNodeWidget(kids[i], colors, next),
+            _buildNodeWidget(kids[i], colors, next, ghost: ghost),
           ],
         ],
       ),
@@ -1159,6 +1262,56 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
       top: rect.top,
       height: rect.height,
       child: ColoredBox(color: colors.toolbarActive),
+    );
+  }
+}
+
+/// In-chrome drop-preview ghost (Track D3): a lightweight dashed box carrying
+/// the dragged kind's label, rendered at the hover insertion index INSIDE the
+/// target chrome (container slot, row strip, or root column) while a palette
+/// drag hovers. Deliberately cheaper than the dragged tile mini: no catalog
+/// build, no measurement — just chrome + label. `IgnorePointer`d so it never
+/// claims taps/selection; keyed [kDropPreviewKey] for tests. The existing
+/// insert line is untouched and stays the axis indicator.
+class _DropGhostBox extends StatelessWidget {
+  final EditorColors colors;
+  final String kind;
+
+  /// Row targets lay children out horizontally: drop the full-width fill so
+  /// the ghost takes a finite share inside the strip instead.
+  final bool horizontal;
+
+  const _DropGhostBox({
+    required this.colors,
+    required this.kind,
+    this.horizontal = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Container(
+        key: kDropPreviewKey,
+        width: horizontal ? null : double.infinity,
+        constraints: BoxConstraints(
+          minHeight: 56,
+          minWidth: horizontal ? 96 : 0,
+        ),
+        child: CustomPaint(
+          painter: _DashedOutline(
+            color: colors.toolbarActive.withValues(alpha: 0.7),
+          ),
+          child: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Text(
+                'Drop $kind here',
+                style: EditorType.field.copyWith(color: colors.toolbarActive),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

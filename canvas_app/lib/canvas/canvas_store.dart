@@ -775,6 +775,101 @@ class CanvasStore extends ChangeNotifier {
     ));
   }
 
+  /// Groups root-level nodes into a new row container in ONE undoable commit.
+  ///
+  /// Validation (all before committing, so a refusal leaves history clean):
+  /// throws [StateError] when [nodeIds] holds fewer than 2 distinct ids,
+  /// names an unknown node, spans more than one screen, or names a
+  /// non-root-level node (`parentId != null` — nested nodes must be
+  /// un-nested first; only the row's own slot rule applies, never a move
+  /// across parents).
+  ///
+  /// On success appends a row container with the [addRow] defaults (`x`/`y`
+  /// 0, empty items, `parentId` null, `isRow` true, `gap`
+  /// [kFlowRowGapDefault], null alignment/flex) at the first grouped node's
+  /// doc slot, and reparents the nodes into it in [nodeIds] order (children
+  /// land directly after the row in doc order, so the flow position is
+  /// stable). Every reparented node is rebuilt with the [reparentNode]
+  /// deep-copy precedent — all fields preserved (`hiddenOn`/
+  /// `breakpointValues`/`slots` copied, never aliased; `items` rides along
+  /// untouched) — only `parentId` changes. Returns the row id.
+  String groupIntoRow(List<String> nodeIds) {
+    final ids = nodeIds.toSet().toList();
+    if (ids.length < 2) {
+      throw StateError('groupIntoRow needs at least 2 nodes: $nodeIds');
+    }
+    final byId = {for (final n in _doc.nodes) n.id: n};
+    for (final id in ids) {
+      if (!byId.containsKey(id)) throw StateError('Unknown node: $id');
+    }
+    final screenId = byId[ids.first]!.screenId;
+    for (final id in ids) {
+      if (byId[id]!.screenId != screenId) {
+        throw StateError('cross-screen group ${ids.join(',')}');
+      }
+      if (byId[id]!.parentId != null) {
+        throw StateError('non-root node in group: $id');
+      }
+    }
+    final row = CanvasNode(
+      id: uid(),
+      screenId: screenId,
+      x: 0.0,
+      y: 0.0,
+      items: const [],
+      parentId: null,
+      isRow: true,
+      gap: kFlowRowGapDefault,
+      mainAxis: null,
+      crossAxis: null,
+      expand: null,
+      flex: null,
+    );
+    final doomed = ids.toSet();
+    // Insert slot: count of kept nodes before the first grouped node, so the
+    // row takes the first grouped node's position among the roots.
+    var at = 0;
+    for (final n in _doc.nodes) {
+      if (doomed.contains(n.id)) break;
+      at++;
+    }
+    final rest = [
+      for (final n in _doc.nodes)
+        if (!doomed.contains(n.id)) n,
+    ];
+    final children = [
+      for (final id in ids)
+        CanvasNode(
+          id: byId[id]!.id,
+          screenId: byId[id]!.screenId,
+          x: byId[id]!.x,
+          y: byId[id]!.y,
+          items: byId[id]!.items,
+          parentId: row.id,
+          isRow: byId[id]!.isRow,
+          gap: byId[id]!.gap,
+          mainAxis: byId[id]!.mainAxis,
+          crossAxis: byId[id]!.crossAxis,
+          expand: byId[id]!.expand,
+          flex: byId[id]!.flex,
+          hiddenOn: Set<String>.from(byId[id]!.hiddenOn),
+          breakpointValues: {
+            for (final entry in byId[id]!.breakpointValues.entries)
+              entry.key: Map<String, dynamic>.from(entry.value),
+          },
+          slots: Map<String, String>.from(byId[id]!.slots),
+        ),
+    ];
+    rest.insertAll(at.clamp(0, rest.length), [row, ...children]);
+    _commit(ScreenDoc(
+      screens: List.of(_doc.screens),
+      nodes: rest,
+      theme: _doc.theme,
+      meta: _doc.meta,
+    ));
+    return row.id;
+  }
+
   /// Replaces the whole doc (undoable import path for the Open dialog).
   /// Commits verbatim.
   void replaceDoc(ScreenDoc doc) {

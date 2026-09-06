@@ -86,6 +86,11 @@ const _kNewKinds = [
   'alert_dialog',
 ];
 
+/// The 4 Track D1 promoted kinds: leaves with a kit-verified generic
+/// single-child slot (`ChatBubble.child`, `ToastEntry.child`,
+/// `Validated.child`, `RefreshTrigger.child`).
+const _kTrackD1Kinds = ['chat', 'toast', 'validated', 'refresh_trigger'];
+
 Future<void> _pump(
   WidgetTester tester,
   Widget widget, {
@@ -1991,5 +1996,106 @@ void main() {
         expect(find.text('Title'), findsOneWidget);
       }
     });
+  });
+
+  group('track D1 promotion', () {
+    test('promoted kinds are migrated builders in the container set', () {
+      expect(_kTrackD1Kinds, hasLength(4));
+      for (final kind in _kTrackD1Kinds) {
+        final entry = findEntry(kind);
+        expect(entry, isNotNull, reason: 'no catalog entry $kind');
+        // Migrated 2-arg shape: buildCatalogItem recovers these via
+        // `is NodeBuilder`, so container children splice inside the chrome.
+        expect(entry!.build is NodeBuilder, isTrue, reason: kind);
+        expect(kContainerKinds.contains(kind), isTrue, reason: kind);
+      }
+      expect(kContainerKinds, hasLength(14));
+    });
+
+    /// The promoted chrome per kind (`Validated<String>` never equals the raw
+    /// `Validated` type object, so `byType` cannot match it — predicate on
+    /// the generic family instead, same idiom as the tab_pane test above).
+    Finder chromeOf(String kind) {
+      if (kind == 'validated') {
+        return find.byWidgetPredicate((w) => w is shadcn.Validated);
+      }
+      if (kind == 'chat') return find.byType(shadcn.ChatBubble);
+      if (kind == 'toast') return find.byType(shadcn.ToastEntry);
+      return find.byType(shadcn.RefreshTrigger);
+    }
+
+    /// Historical chrome prose that must survive every splice.
+    const labels = {
+      'chat': 'Hello!',
+      'toast': 'Saved',
+      'validated': 'Name',
+      'refresh_trigger': 'Row 1',
+    };
+
+    /// `skipOffstage: false` on BOTH finders: the refresh_trigger splice lands
+    /// in the 140px scroll shell, so rows past the viewport are built but
+    /// offstage — and the inner `matching` finder applies its own offstage
+    /// filter, so the outer descendant flag alone is not enough. Ancestry is
+    /// still strict (descendant of the chrome), which is what placement
+    /// proves.
+    Finder kidIn(String kind, String kid) => find.descendant(
+      of: chromeOf(kind),
+      matching: find.text(kid, skipOffstage: false),
+      skipOffstage: false,
+    );
+
+    for (final kind in _kTrackD1Kinds) {
+      group(kind, () {
+        testWidgets('0 children renders the historical tree (light + dark)', (
+          tester,
+        ) async {
+          for (final dark in [false, true]) {
+            await _pump(
+              tester,
+              buildCatalogItem(kind, {}),
+              dark: dark,
+            );
+            expect(chromeOf(kind), findsOneWidget);
+            expect(find.text(labels[kind]!), findsOneWidget);
+            expect(find.text('D1 kid 1'), findsNothing);
+            expect(find.text('D1 kid 2'), findsNothing);
+          }
+        });
+
+        testWidgets('1 child splices inside chrome (light + dark)', (
+          tester,
+        ) async {
+          for (final dark in [false, true]) {
+            await _pump(
+              tester,
+              buildCatalogItem(kind, {}, [const Text('D1 kid 1')]),
+              dark: dark,
+            );
+            expect(chromeOf(kind), findsOneWidget);
+            expect(kidIn(kind, 'D1 kid 1'), findsOneWidget);
+            expect(find.text(labels[kind]!), findsOneWidget);
+          }
+        });
+
+        testWidgets('2 children stack inside chrome (light + dark)', (
+          tester,
+        ) async {
+          for (final dark in [false, true]) {
+            await _pump(
+              tester,
+              buildCatalogItem(kind, {}, const [
+                Text('D1 kid 1'),
+                Text('D1 kid 2'),
+              ]),
+              dark: dark,
+            );
+            expect(chromeOf(kind), findsOneWidget);
+            expect(kidIn(kind, 'D1 kid 1'), findsOneWidget);
+            expect(kidIn(kind, 'D1 kid 2'), findsOneWidget);
+            expect(find.text(labels[kind]!), findsOneWidget);
+          }
+        });
+      });
+    }
   });
 }

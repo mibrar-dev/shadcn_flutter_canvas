@@ -113,6 +113,15 @@ const Set<String> kContainerKinds = {
   'hidden',
   'clickable',
   'scrollbar',
+  // Track D1 promotions (COMPOSITION.md §2 rule: kit-verified generic
+  // single-child slot + named slot + 0/1/2-children goldens): `chat`
+  // (`ChatBubble.child`), `toast` (`ToastEntry.child`), `validated`
+  // (`Validated.child` passthrough), `refresh_trigger`
+  // (`RefreshTrigger.child`).
+  'chat',
+  'toast',
+  'validated',
+  'refresh_trigger',
 };
 
 /// Vertical nested-child stack with [kFlowScreenGap] separators
@@ -757,7 +766,7 @@ Widget _buildTooltip(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildToast(Map<String, dynamic> props) {
+Widget _buildToast(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: an icon + title
   // + message notification row (the kit's preview shows a bare `Text` via
   // `ToastController.show`; the entry takes any child). The real
@@ -765,6 +774,11 @@ Widget _buildToast(Map<String, dynamic> props) {
   // `ToastEntry(autoDismiss:)` — the false default disables the dismiss
   // timer so the canvas node never self-dismisses (the kit ctor defaults to
   // true); the empty default `dismissDirections` disables swipe handling.
+  // D1 container slot (COMPOSITION.md §2): `ToastEntry.child` — the kit's
+  // single content slot (`toast_entry.dart`: `required this.child`,
+  // rendered generically through `FadeTransition` in `_toast_entry_state`).
+  // The splice lands in the catalog's message `Column` after the message
+  // (card pattern: conditional spread, so the childless tree is identical).
   final title = (props['title'] ?? 'Saved') as String;
   final message = (props['message'] ?? 'Saved successfully') as String;
   final autoDismiss = (props['autoDismiss'] ?? false) as bool;
@@ -782,7 +796,14 @@ Widget _buildToast(Map<String, dynamic> props) {
         Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: [Text(title), Text(message)],
+          children: [
+            Text(title),
+            Text(message),
+            if (children.isNotEmpty) ...[
+              const SizedBox(height: kFlowScreenGap),
+              ..._nestedStack(children),
+            ],
+          ],
         ),
       ],
     ),
@@ -1206,13 +1227,29 @@ Widget _buildTracker(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildChat(Map<String, dynamic> props) {
+Widget _buildChat(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — default invented. The real
   // `ChatBubble` requires only `child` (type/color/alignment all fall back
   // to the chat theme); the canvas-level `message` prop renders as that
   // child (same content-prop pattern as the card builder).
+  // D1 container slot (COMPOSITION.md §2): `ChatBubble.child` — the kit
+  // documents it as "The content of the chat bubble" (`chat_bubble.dart`:
+  // `required this.child`, the single content slot — no sibling sub-slots,
+  // no item roles). Label-first `Column` only when children exist (the
+  // hidden/clickable precedent), so the childless tree is byte-identical.
   final message = (props['message'] ?? 'Hello!') as String;
-  return shadcn.ChatBubble(child: Text(message));
+  if (children.isEmpty) return shadcn.ChatBubble(child: Text(message));
+  return shadcn.ChatBubble(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(message),
+        const SizedBox(height: kFlowScreenGap),
+        ..._nestedStack(children),
+      ],
+    ),
+  );
 }
 
 Widget _buildSelectable(Map<String, dynamic> props) {
@@ -1657,12 +1694,18 @@ Widget _buildSwiper(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildRefreshTrigger(Map<String, dynamic> props) {
+Widget _buildRefreshTrigger(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented: three static
   // rows. The real `RefreshTrigger` builds bare around its child; the fixed
   // height mirrors the drawer builder's fixed width (the scrollable needs
   // bounded height, which root canvas columns do not provide). Pull gestures
   // only animate at runtime; canvas shows the wrapped list.
+  // D1 container slot (COMPOSITION.md §2): `RefreshTrigger.child` — the
+  // kit's single content slot (`refresh_trigger_widget.dart`:
+  // `required this.child`; the doc example wraps
+  // `ListView(children: widgets)`). Canvas children append as further list
+  // rows after the prop rows (conditional spread, so the childless tree is
+  // identical); the 140px scroll shell keeps every depth bounded.
   final item1 = (props['item1'] ?? 'Row 1') as String;
   final item2 = (props['item2'] ?? 'Row 2') as String;
   final item3 = (props['item3'] ?? 'Row 3') as String;
@@ -1675,6 +1718,10 @@ Widget _buildRefreshTrigger(Map<String, dynamic> props) {
           Padding(padding: const EdgeInsets.all(12), child: Text(item1)),
           Padding(padding: const EdgeInsets.all(12), child: Text(item2)),
           Padding(padding: const EdgeInsets.all(12), child: Text(item3)),
+          if (children.isNotEmpty) ...[
+            const SizedBox(height: kFlowScreenGap),
+            ..._nestedStack(children),
+          ],
         ],
       ),
     ),
@@ -2334,7 +2381,7 @@ Widget _buildFormattedInput(Map<String, dynamic> props) {
   );
 }
 
-Widget _buildValidated(Map<String, dynamic> props) {
+Widget _buildValidated(Map<String, dynamic> props, [List<Widget> children = const []]) {
   // No canvas block in `components.json` — defaults invented from the
   // component's own preview (`form/validated/preview.dart`: a `TextField`
   // under a required-field validator whose builder shows the error message).
@@ -2345,6 +2392,12 @@ Widget _buildValidated(Map<String, dynamic> props) {
   // message from `ShadcnLocalizations` at attach time (null without
   // delegates — canvas nodes must build bare), so the message rides the
   // canvas-level `errorText` prop instead (same required-field semantics).
+  // D1 container slot (COMPOSITION.md §2): `Validated.child` — the kit's
+  // optional passthrough field slot (`validated.dart`: "Child widget to
+  // wrap", forwarded through `FormEntry` into `builder`; the `builder` param
+  // itself is fixed catalog chrome, not a second slot). The splice lands in
+  // the catalog builder `Column` after the field, before the error gap
+  // (conditional spread, so the childless tree is identical).
   final placeholder = (props['placeholder'] ?? 'Name') as String;
   final errorText = (props['errorText'] ?? 'Required') as String;
   return shadcn.Validated<String>(
@@ -2354,6 +2407,10 @@ Widget _buildValidated(Map<String, dynamic> props) {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         child!,
+        if (children.isNotEmpty) ...[
+          const SizedBox(height: kFlowScreenGap),
+          ..._nestedStack(children),
+        ],
         const SizedBox(height: 6),
         Text(error is shadcn.InvalidResult ? error.message : errorText),
       ],

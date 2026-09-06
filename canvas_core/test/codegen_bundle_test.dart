@@ -1619,6 +1619,344 @@ void main() {
       ]));
       expect(screen, contains('// (empty screen).'));
     });
+
+    test('nested export golden: card slots + 3-deep + row-in-card', () {
+      final doc = _bNestedExportDoc();
+      final screen = _c3bScreen(doc);
+
+      // Barrel wiring covers every nested kind (nested-only kinds still
+      // resolve: wiring sees the whole screen, not just roots).
+      for (final line in [
+        '// - button -> lib/ui/shadcn/components/control/button/button.dart',
+        '// - card -> lib/ui/shadcn/components/layout/card/card.dart',
+        '// - dialog -> lib/ui/shadcn/components/overlay/dialog/dialog.dart',
+        '// - input -> lib/ui/shadcn/components/form/input/input.dart',
+        "import '../shadcn/components/control/button/button.dart';",
+        "import '../shadcn/components/layout/card/card.dart';",
+        "import '../shadcn/components/overlay/dialog/dialog.dart';",
+        "import '../shadcn/components/form/input/input.dart';",
+      ]) {
+        expect(screen, contains(line));
+      }
+
+      // Slot splice: the input + button render INSIDE the card chrome after
+      // the description (COMPOSITION.md §2 card slot).
+      expect(screen, contains('Card('));
+      expect(screen, contains('TextField('));
+      expect(
+        screen.indexOf("'Shop body'"),
+        lessThan(screen.indexOf("'Name'")),
+      );
+      expect(screen.indexOf("'Name'"), lessThan(screen.indexOf("'Go'")));
+
+      // 3-deep: card > dialog > button, each level spliced into its own slot.
+      expect(screen, contains('ModalContainer('));
+      expect(
+        screen.indexOf("'Deep body'"),
+        lessThan(screen.indexOf("'Dlg body'")),
+      );
+      expect(
+        screen.indexOf("'Dlg body'"),
+        lessThan(screen.indexOf("'Deep Go'")),
+      );
+
+      // Row-in-card: a horizontal strip inside the third card (search from
+      // the strip card: the dialog above owns its own action Row).
+      final stripIdx = screen.indexOf("'Strip body'");
+      final rowIdx = screen.indexOf('Row(', stripIdx);
+      expect(rowIdx, greaterThan(stripIdx));
+      expect(
+        screen.indexOf("'A'", rowIdx),
+        lessThan(screen.indexOf("'B'", rowIdx)),
+      );
+      expect(screen, contains('const SizedBox(width: 8),'));
+
+      // Per-level tiers: every responsive level keeps its own wrapper.
+      expect('LayoutBuilder'.allMatches(screen).length, 3);
+      expect(screen, contains("tier == 'mobile'"));
+      expect(screen, contains("tier == 'tablet'"));
+      expect(screen, contains("tier == 'desktop'"));
+      expect(screen, contains("'Wide Go'"));
+
+      // Per-level taps: depth-1 and depth-2 buttons navigate (the desktop
+      // override branch carries its own copy of the depth-2 tap).
+      expect("pushNamed('/done')".allMatches(screen).length, 3);
+      expect('pushes /done'.allMatches(screen).length, 3);
+
+      // Byte-stability: regeneration is deterministic and pinned.
+      expect(_c3bScreen(doc), screen);
+      expect(screen, kBundleNestedExportGolden);
+    });
+
+    test('nested chat>button splices the child into the bubble slot', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+          ],
+        },
+      ]));
+      expect(screen, contains('ChatBubble('));
+      expect(screen.indexOf("'Hey'"), lessThan(screen.indexOf("'Go'")));
+      expect(screen, contains('const SizedBox(height: 12),'));
+    });
+
+    test('nested toast>button splices the child after the message', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'toast', 'title': 'TT', 'message': 'TM'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+          ],
+        },
+      ]));
+      expect(screen, contains('ToastEntry('));
+      expect(screen.indexOf("'TM'"), lessThan(screen.indexOf("'Go'")));
+      expect(screen, contains('const SizedBox(height: 12),'));
+    });
+
+    test('nested validated>button splices the child before the error gap', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'validated',
+              'placeholder': 'Name',
+              'errorText': 'Req',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+          ],
+        },
+      ]));
+      expect(screen, contains('Validated<String>('));
+      final goIdx = screen.indexOf("'Go'");
+      // 'Req' appears twice: the validator construction, then the error
+      // display text — the spliced child sits before the display copy.
+      final errIdx = screen.lastIndexOf("'Req'");
+      expect(screen.indexOf('child!,'), lessThan(goIdx));
+      expect(goIdx, lessThan(errIdx));
+    });
+
+    test('nested refresh_trigger>button appends rows after the prop rows', () {
+      final screen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'refresh_trigger',
+              'item1': 'R1',
+              'item2': 'R2',
+              'item3': 'R3',
+            },
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Go'},
+          ],
+        },
+      ]));
+      expect(screen, contains('RefreshTrigger('));
+      expect(screen.indexOf("'R3'"), lessThan(screen.indexOf("'Go'")));
+      expect(screen, contains('const SizedBox(height: 12),'));
+    });
+
+    test('childless D1 containers keep the historical output', () {
+      final chat = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'chat', 'message': 'Hi'},
+          ],
+        },
+      ]));
+      expect(chat, contains("ChatBubble(child: Text('Hi')),"));
+      expect(chat, isNot(contains('const SizedBox(height: 12),')));
+      final toast = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {'id': 'i1', 'kind': 'toast', 'title': 'TT', 'message': 'TM'},
+          ],
+        },
+      ]));
+      expect(toast, contains('ToastEntry('));
+      expect(toast, isNot(contains('const SizedBox(height: 12),')));
+      final validated = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'validated',
+              'placeholder': 'Name',
+              'errorText': 'Req',
+            },
+          ],
+        },
+      ]));
+      expect(validated, contains('Validated<String>('));
+      expect(validated, contains('child!,'));
+      expect(validated, isNot(contains('const SizedBox(height: 12),')));
+      final refresh = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'items': [
+            {
+              'id': 'i1',
+              'kind': 'refresh_trigger',
+              'item1': 'R1',
+              'item2': 'R2',
+              'item3': 'R3',
+            },
+          ],
+        },
+      ]));
+      expect(refresh, contains('RefreshTrigger('));
+      expect(refresh, isNot(contains('const SizedBox(height: 12),')));
+    });
+
+    test('chat tap + responsive interplay nests per level', () {
+      final tapDoc = ScreenDoc.fromJson({
+        'screens': [
+          {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+          {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+        ],
+        'nodes': [
+          {
+            'id': 'n1',
+            'screenId': 's1',
+            'x': 0.0,
+            'y': 0.0,
+            'items': [
+              {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+            ],
+          },
+          {
+            'id': 'n2',
+            'screenId': 's1',
+            'parentId': 'n1',
+            'x': 0.0,
+            'y': 48.0,
+            'items': [
+              {
+                'id': 'i2',
+                'kind': 'button',
+                'label': 'Go',
+                'action': {'to': 's2', 'transition': 'slide'},
+              },
+            ],
+          },
+        ],
+        'theme': {
+          'paletteKey': 'slate',
+          'dark': false,
+          'shape': 'rounded',
+          'motion': 'standard',
+        },
+        'meta': {'title': 'Nest', 'brief': ''},
+      });
+      final tapScreen = buildCleanBundle(
+        tapDoc,
+        kTestSources,
+      ).files['lib/ui/screens/home_screen.dart']!;
+      expect(tapScreen, contains('ChatBubble('));
+      expect(tapScreen, contains("pushNamed('/done')"));
+      expect(
+        tapScreen.indexOf('ChatBubble('),
+        lessThan(tapScreen.indexOf('GestureDetector(')),
+      );
+      final respScreen = _c3bScreen(_c3bDoc([
+        {
+          'id': 'n1',
+          'screenId': 's1',
+          'x': 0.0,
+          'y': 0.0,
+          'breakpointValues': {
+            'desktop': {'message': 'Wide'},
+          },
+          'items': [
+            {'id': 'i1', 'kind': 'chat', 'message': 'Hey'},
+          ],
+        },
+        {
+          'id': 'n2',
+          'screenId': 's1',
+          'parentId': 'n1',
+          'x': 0.0,
+          'y': 48.0,
+          'items': [
+            {'id': 'i2', 'kind': 'button', 'label': 'Kid'},
+          ],
+        },
+      ]));
+      expect(respScreen, contains('LayoutBuilder'));
+      expect(respScreen, contains("tier == 'desktop'"));
+      expect("Text('Kid')".allMatches(respScreen).length, 2);
+      expect(respScreen, contains("'Wide'"));
+    });
   });
 }
 
@@ -1798,6 +2136,169 @@ List<Map<String, dynamic>> _bRowInCardNodes() => [
       },
     ];
 
+/// Full nested-doc fixture for the Track D3 export golden (mirrors the
+/// COMPOSITION.md contract — same shape as the single-file
+/// `_nestedExportNodes`): card{input + button→screen} with a per-level
+/// mobile tier, a 3-deep card > dialog > button chain with per-level tablet /
+/// desktop tiers plus a depth-2 tap, and a row-in-card strip.
+List<Map<String, dynamic>> _bNestedExportNodes() => [
+      {
+        'id': 'n1',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 0.0,
+        'hiddenOn': ['mobile'],
+        'items': [
+          {
+            'id': 'i1',
+            'kind': 'card',
+            'title': 'Shop',
+            'description': 'Shop body',
+          },
+        ],
+      },
+      {
+        'id': 'n2',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 48.0,
+        'items': [
+          {
+            'id': 'i2',
+            'kind': 'input',
+            'label': 'Name',
+            'placeholder': 'Type here',
+          },
+        ],
+      },
+      {
+        'id': 'n3',
+        'screenId': 's1',
+        'parentId': 'n1',
+        'x': 0.0,
+        'y': 96.0,
+        'items': [
+          {
+            'id': 'i3',
+            'kind': 'button',
+            'label': 'Go',
+            'action': {'to': 's2', 'transition': 'slide'},
+          },
+        ],
+      },
+      {
+        'id': 'n4',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 144.0,
+        'items': [
+          {
+            'id': 'i4',
+            'kind': 'card',
+            'title': 'Deep',
+            'description': 'Deep body',
+          },
+        ],
+      },
+      {
+        'id': 'n5',
+        'screenId': 's1',
+        'parentId': 'n4',
+        'x': 0.0,
+        'y': 192.0,
+        'hiddenOn': ['tablet'],
+        'items': [
+          {
+            'id': 'i5',
+            'kind': 'dialog',
+            'title': 'Dlg',
+            'message': 'Dlg body',
+          },
+        ],
+      },
+      {
+        'id': 'n6',
+        'screenId': 's1',
+        'parentId': 'n5',
+        'x': 0.0,
+        'y': 240.0,
+        'breakpointValues': {
+          'desktop': {'label': 'Wide Go'},
+        },
+        'items': [
+          {
+            'id': 'i6',
+            'kind': 'button',
+            'label': 'Deep Go',
+            'action': {'to': 's2', 'transition': 'fade'},
+          },
+        ],
+      },
+      {
+        'id': 'n7',
+        'screenId': 's1',
+        'x': 0.0,
+        'y': 288.0,
+        'items': [
+          {
+            'id': 'i7',
+            'kind': 'card',
+            'title': 'Strip',
+            'description': 'Strip body',
+          },
+        ],
+      },
+      {
+        'id': 'n8',
+        'screenId': 's1',
+        'parentId': 'n7',
+        'x': 0.0,
+        'y': 336.0,
+        'isRow': true,
+        'items': <Map<String, dynamic>>[],
+      },
+      {
+        'id': 'n9',
+        'screenId': 's1',
+        'parentId': 'n8',
+        'x': 0.0,
+        'y': 384.0,
+        'items': [
+          {'id': 'i9', 'kind': 'button', 'label': 'A'},
+        ],
+      },
+      {
+        'id': 'n10',
+        'screenId': 's1',
+        'parentId': 'n8',
+        'x': 48.0,
+        'y': 384.0,
+        'items': [
+          {'id': 'i10', 'kind': 'button', 'label': 'B'},
+        ],
+      },
+    ];
+
+/// Two-screen doc around [_bNestedExportNodes]: `s2` is the tap target for
+/// the nested buttons (kept empty so the golden stays focused on `s1`).
+ScreenDoc _bNestedExportDoc() {
+  return ScreenDoc.fromJson({
+    'screens': [
+      {'id': 's1', 'name': 'Home', 'x': 0.0, 'y': 0.0, 'bg': 'surface'},
+      {'id': 's2', 'name': 'Done', 'x': 420.0, 'y': 0.0, 'bg': 'surface'},
+    ],
+    'nodes': _bNestedExportNodes(),
+    'theme': {
+      'paletteKey': 'slate',
+      'dark': false,
+      'shape': 'rounded',
+      'motion': 'standard',
+    },
+    'meta': {'title': 'Nest', 'brief': ''},
+  });
+}
+
 /// Stub registry with a shared/part closure: the button barrel exports an
 /// impl file, parts a sibling file, imports the shared theme barrel, and
 /// reaches a deep shared util plus a part back-edge pair — mirroring the
@@ -1857,6 +2358,205 @@ ScreenDoc _singleKindDoc(String kind, [Map<String, dynamic> props = const {}]) =
       },
       'meta': {'title': 'T', 'brief': ''},
     });
+
+/// Byte-identical golden for the Track D3 nested export doc
+/// ([_bNestedExportNodes]): card{input + button→screen} with a mobile tier,
+/// a 3-deep card > dialog > button chain with tablet/desktop tiers plus a
+/// depth-2 tap, and a row-in-card strip. Regenerate only by reviewing the
+/// exporter diff.
+const kBundleNestedExportGolden = '''// GENERATED by canvas bundle exporter — DO NOT EDIT BY HAND.
+// ignore_for_file: unused_import
+// Screen: Home (id: s1). Component bodies ship
+// separately under lib/ui/shadcn/ — wire them here:
+// - button -> lib/ui/shadcn/components/control/button/button.dart
+// - card -> lib/ui/shadcn/components/layout/card/card.dart
+// - dialog -> lib/ui/shadcn/components/overlay/dialog/dialog.dart
+// - input -> lib/ui/shadcn/components/form/input/input.dart
+import 'package:flutter/widgets.dart';
+import '../shadcn/components/control/button/button.dart';
+import '../shadcn/components/layout/card/card.dart';
+import '../shadcn/components/overlay/dialog/dialog.dart';
+import '../shadcn/components/form/input/input.dart';
+import '../shadcn/components/form/text_field/text_field.dart';
+
+/// Home screen.
+///
+/// Vanilla [StatefulWidget] with no store dependency: bring your own state
+/// management (Provider, Riverpod, Bloc, …) by lifting this `build` body
+/// into your own widget. Depends only on `package:flutter/widgets.dart`
+/// plus the shipped kit bodies.
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+      // responsive (hidden on mobile)
+      LayoutBuilder(
+        builder: (context, constraints) {
+          final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+          if (tier == 'mobile') return const SizedBox.shrink();
+          // card 'Shop' (description Shop body).
+          return Card(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Shop'),
+                const SizedBox(height: 4),
+                Text('Shop body'),
+                const SizedBox(height: 12),
+                // input 'Name'.
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Name'),
+                    const SizedBox(height: 6),
+                    TextField(
+                      placeholder: Text('Type here'),
+                      enabled: true,
+                      obscureText: false,
+                      initialValue: null,
+                      readOnly: false,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // button 'Go' — pushes /done (transition: slide).
+                GestureDetector(
+                  onTap: () => Navigator.of(context).pushNamed('/done'), // transition: slide
+                  child: PrimaryButton(
+                    onPressed: () {},
+                    enabled: true,
+                    size: ButtonSize.normal,
+                    child: Text('Go'),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+      // card 'Deep' (description Deep body).
+      Card(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Deep'),
+            const SizedBox(height: 4),
+            Text('Deep body'),
+            const SizedBox(height: 12),
+            // responsive (hidden on tablet)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+                if (tier == 'tablet') return const SizedBox.shrink();
+                // dialog 'Dlg' (message Dlg body).
+                return ModalContainer(
+                  filled: true,
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Dlg'),
+                      const SizedBox(height: 12),
+                      Text('Dlg body'),
+                      const SizedBox(height: 12),
+                      // responsive (overrides on desktop)
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          final tier = constraints.maxWidth >= 1024 ? 'desktop' : constraints.maxWidth >= 600 ? 'tablet' : 'mobile';
+                          // button 'Wide Go' — pushes /done (transition: fade).
+                          if (tier == 'desktop') return GestureDetector(
+                            onTap: () => Navigator.of(context).pushNamed('/done'), // transition: fade
+                            child: PrimaryButton(
+                              onPressed: () {},
+                              enabled: true,
+                              size: ButtonSize.normal,
+                              child: Text('Wide Go'),
+                            ),
+                          );
+                          // button 'Deep Go' — pushes /done (transition: fade).
+                          return GestureDetector(
+                            onTap: () => Navigator.of(context).pushNamed('/done'), // transition: fade
+                            child: PrimaryButton(
+                              onPressed: () {},
+                              enabled: true,
+                              size: ButtonSize.normal,
+                              child: Text('Deep Go'),
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          const Spacer(),
+                          OutlineButton(
+                            onPressed: () {},
+                            child: const Text('Close'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+      // card 'Strip' (description Strip body).
+      Card(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Strip'),
+            const SizedBox(height: 4),
+            Text('Strip body'),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // button 'A'.
+                PrimaryButton(
+                  onPressed: () {},
+                  enabled: true,
+                  size: ButtonSize.normal,
+                  child: Text('A'),
+                ),
+                const SizedBox(width: 8),
+                // button 'B'.
+                PrimaryButton(
+                  onPressed: () {},
+                  enabled: true,
+                  size: ButtonSize.normal,
+                  child: Text('B'),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+      ],
+    );
+  }
+}
+''';
 
 /// Byte-identical golden for the bundle screen scaffold on a plain doc (no
 /// actions, no responsive fields): responsive/action emission must not alter

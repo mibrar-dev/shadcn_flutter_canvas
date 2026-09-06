@@ -365,7 +365,10 @@ class _DesignCanvasState extends State<DesignCanvas> {
   Offset _pan = Offset.zero;
 
   /// Latest global pointer position, tracked so drops can land at the
-  /// pointer instead of the drag feedback's top-left corner.
+  /// pointer instead of the drag feedback's top-left corner, and so hover
+  /// visuals (alignment guides, the flow insert line, and the D3 in-chrome
+  /// drop-preview ghost) can resolve the SAME `_flowHit` target the landing
+  /// path uses.
   /// See [ScreenSurface.dropPointer].
   late final ValueNotifier<Offset?> _pointerGlobal =
       ValueNotifier<Offset?>(null);
@@ -516,6 +519,9 @@ class _DesignCanvasState extends State<DesignCanvas> {
                       parentId: parentId,
                       index: index,
                     ),
+                    // Hover-visual plumbing (D3): the same live pointer that
+                    // the accept path snaps also drives the guides, the flow
+                    // insert line, and the in-chrome drop-preview ghost.
                     dropPointer: _pointerGlobal,
                   ),
                 ],

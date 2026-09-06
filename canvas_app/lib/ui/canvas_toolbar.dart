@@ -40,6 +40,20 @@ class CanvasToolbar extends StatelessWidget {
   /// 'Delete selected' vs 'Select a part or screen to delete'.
   final bool hasSelection;
 
+  /// Whether the Group action is available (≥2 selected nodes on one screen
+  /// at root level). False renders the disabled state.
+  final bool canGroup;
+
+  /// Group the selection into a row. Null renders the disabled state.
+  final VoidCallback? onGroup;
+
+  /// Whether the Ungroup action is available (a single selected row).
+  /// False renders the disabled state.
+  final bool canUngroup;
+
+  /// Ungroup the selected row. Null renders the disabled state.
+  final VoidCallback? onUngroup;
+
   /// Open a design.
   final VoidCallback onOpen;
 
@@ -54,6 +68,10 @@ class CanvasToolbar extends StatelessWidget {
     required this.onDelete,
     required this.hasSelection,
     required this.onOpen,
+    this.canGroup = false,
+    this.onGroup,
+    this.canUngroup = false,
+    this.onUngroup,
   });
 
   @override
@@ -100,6 +118,21 @@ class CanvasToolbar extends StatelessWidget {
           onPressed: onDelete,
           tooltip:
               hasSelection ? 'Delete selected' : 'Select a part or screen to delete',
+        ),
+        const SizedBox(width: EditorMetrics.toolbarButtonGap),
+        EditorIconButton(
+          icon: Icons.group_work,
+          onPressed: canGroup ? onGroup : null,
+          tooltip: canGroup
+              ? 'Group into row'
+              : 'Select 2+ root parts on one screen to group',
+        ),
+        const SizedBox(width: EditorMetrics.toolbarButtonGap),
+        EditorIconButton(
+          icon: Icons.call_split,
+          onPressed: canUngroup ? onUngroup : null,
+          tooltip:
+              canUngroup ? 'Ungroup row' : 'Select a row to ungroup',
         ),
         const SizedBox(width: EditorMetrics.toolbarButtonGap),
         EditorIconButton(

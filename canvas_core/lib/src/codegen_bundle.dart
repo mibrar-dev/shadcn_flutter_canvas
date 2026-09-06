@@ -1115,6 +1115,14 @@ List<String> _bundleContainerBody(
       return _bundleClickable(item.props, nested);
     case 'scrollbar':
       return _bundleScrollbar(item.props, nested);
+    case 'chat':
+      return _bundleChat(item.props, nested);
+    case 'toast':
+      return _bundleToast(item.props, nested);
+    case 'validated':
+      return _bundleValidated(item.props, nested);
+    case 'refresh_trigger':
+      return _bundleRefreshTrigger(item.props, nested);
     default:
       return _bundleBody(item);
   }
@@ -1651,7 +1659,10 @@ List<String> _bundleTooltip(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleToast(Map<String, dynamic> props) {
+List<String> _bundleToast(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   return [
     'ToastEntry(',
     '  duration: const Duration(seconds: 3),',
@@ -1670,6 +1681,8 @@ List<String> _bundleToast(Map<String, dynamic> props) {
     '        children: [',
     "          Text(${_bundleStr(_bStr(props, 'title', 'Saved'))}),",
     "          Text(${_bundleStr(_bStr(props, 'message', 'Saved successfully'))}),",
+    // Track C3 slot: message Column after the message.
+    ..._spliceBundleKids(nested, '          '),
     '        ],',
     '      ),',
     '    ],',
@@ -1988,9 +2001,29 @@ List<String> _bundleTracker(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleChat(Map<String, dynamic> props) {
+List<String> _bundleChat(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
+  final message =
+      "Text(${_bundleStr(_bStr(props, 'message', 'Hello!'))})";
+  // Track C3 slot: ChatBubble.child (Column([message, ...children])).
+  if (nested.isEmpty) {
+    return [
+      'ChatBubble(child: $message),',
+    ];
+  }
   return [
-    "ChatBubble(child: Text(${_bundleStr(_bStr(props, 'message', 'Hello!'))})),",
+    'ChatBubble(',
+    '  child: Column(',
+    '    mainAxisSize: MainAxisSize.min,',
+    '    crossAxisAlignment: CrossAxisAlignment.start,',
+    '    children: [',
+    '      $message,',
+    ..._spliceBundleKids(nested, '      '),
+    '    ],',
+    '  ),',
+    '),',
   ];
 }
 
@@ -2279,7 +2312,10 @@ List<String> _bundleSwiper(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleRefreshTrigger(Map<String, dynamic> props) {
+List<String> _bundleRefreshTrigger(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   return [
     'RefreshTrigger(',
     '  onRefresh: () async {},',
@@ -2290,6 +2326,8 @@ List<String> _bundleRefreshTrigger(Map<String, dynamic> props) {
     "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'item1', 'Row 1'))})),",
     "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'item2', 'Row 2'))})),",
     "        Padding(padding: const EdgeInsets.all(12), child: Text(${_bundleStr(_bStr(props, 'item3', 'Row 3'))})),",
+    // Track C3 slot: ListView children after the prop rows.
+    ..._spliceBundleKids(nested, '        '),
     '      ],',
     '    ),',
     '  ),',
@@ -2719,7 +2757,10 @@ List<String> _bundleFormattedInput(Map<String, dynamic> props) {
   ];
 }
 
-List<String> _bundleValidated(Map<String, dynamic> props) {
+List<String> _bundleValidated(
+  Map<String, dynamic> props, [
+  List<List<String>> nested = const [],
+]) {
   // The validator rides the per-file `_CanvasRequiredValidator` helper
   // (emitted once when any screen item uses this kind); the builder closure
   // mirrors the catalog verbatim.
@@ -2732,6 +2773,8 @@ List<String> _bundleValidated(Map<String, dynamic> props) {
     '    crossAxisAlignment: CrossAxisAlignment.start,',
     '    children: [',
     '      child!,',
+    // Track C3 slot: builder Column after the field, before the error gap.
+    ..._spliceBundleKids(nested, '      '),
     '      const SizedBox(height: 6),',
     '      Text(error is InvalidResult ? error.message : ${_bundleStr(errorText)}),',
     '    ],',
@@ -2909,6 +2952,10 @@ const _bundleContainerKinds = {
   'hidden',
   'clickable',
   'scrollbar',
+  'chat',
+  'toast',
+  'validated',
+  'refresh_trigger',
 };
 
 /// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with

@@ -4459,6 +4459,10 @@ const _kContainerKinds = {
   'hidden',
   'clickable',
   'scrollbar',
+  'chat',
+  'toast',
+  'validated',
+  'refresh_trigger',
 };
 
 /// Cycle marker for corrupt docs (mirrors the `validateNesting` message, with
@@ -5773,6 +5777,91 @@ String _scrollbarExpr(Map<String, dynamic> props, List<String> nested) {
       '),';
 }
 
+String _chatExpr(Map<String, dynamic> props, List<String> nested) {
+  final message = 'Text(${_str(_prop(props, 'message', 'Hello!'))})';
+  if (nested.isEmpty) {
+    return 'ChatBubble(child: $message),';
+  }
+  // Slot: ChatBubble.child (Column([message, ...children])).
+  return 'ChatBubble(\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      $message,\n'
+      '${_spliceSlotChildren(nested, '      ')}'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _toastExpr(Map<String, dynamic> props, List<String> nested) {
+  // Slot: message Column after the message, before the close (card pattern).
+  // Childless form keeps the historical Column chrome byte-identically (the
+  // catalog/bundle Row+Icon shell is a deliberate non-mirror here — see the
+  // C3 notes above).
+  final slot = nested.isEmpty ? '' : _spliceSlotChildren(nested, '      ');
+  return 'ToastEntry(\n'
+      '  duration: const Duration(seconds: 3),\n'
+      '  animationDuration: const Duration(milliseconds: 200),\n'
+      '  animationCurve: Curves.easeOut,\n'
+      '  onDismissed: () {},\n'
+      '  autoDismiss: ${_bool(props, 'autoDismiss')},\n'
+      '  child: Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      Text(${_str(_prop(props, 'title', 'Saved'))}),\n'
+      '      Text(${_str(_prop(props, 'message', 'Saved successfully'))}),\n'
+      '$slot'
+      '    ],\n'
+      '  ),\n'
+      '),';
+}
+
+String _validatedExpr(Map<String, dynamic> props, List<String> nested) {
+  // Slot: builder Column after the field, before the error gap.
+  final slot = nested.isEmpty ? '' : _spliceSlotChildren(nested, '      ');
+  return 'Validated<String>(\n'
+      '  validator: ValidatorBuilder<String>((value) {\n'
+      '    if (value == null || value.isEmpty) {\n'
+      '      return InvalidResult(${_str(_prop(props, 'errorText', 'Required'))}, state: FormValidationMode.initial);\n'
+      '    }\n'
+      '    return null;\n'
+      '  }),\n'
+      '  builder: (context, error, child) => Column(\n'
+      '    mainAxisSize: MainAxisSize.min,\n'
+      '    crossAxisAlignment: CrossAxisAlignment.start,\n'
+      '    children: [\n'
+      '      child!,\n'
+      '$slot'
+      '      const SizedBox(height: 6),\n'
+      '      Text(error is InvalidResult ? error.message : ${_str(_prop(props, 'errorText', 'Required'))}),\n'
+      '    ],\n'
+      '  ),\n'
+      '  child: TextField(placeholder: Text(${_str(_prop(props, 'placeholder', 'Name'))})),\n'
+      '),';
+}
+
+String _refreshTriggerExpr(Map<String, dynamic> props, List<String> nested) {
+  // Slot: ListView children after the prop rows.
+  final slot = nested.isEmpty ? '' : _spliceSlotChildren(nested, '        ');
+  return 'RefreshTrigger(\n'
+      '  onRefresh: () async {},\n'
+      '  child: SizedBox(\n'
+      '    height: 140,\n'
+      '    child: ListView(\n'
+      '      children: [\n'
+      '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item1', 'Row 1'))})),\n'
+      '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item2', 'Row 2'))})),\n'
+      '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item3', 'Row 3'))})),\n'
+      '$slot'
+      '      ],\n'
+      '    ),\n'
+      '  ),\n'
+      '),';
+}
+
 /// Catalog-equivalent constructor call as text, mirroring
 /// `component_catalog.dart` prop→parameter mapping.
 ///
@@ -5930,7 +6019,7 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
           '  ],\n'
           '),';
     case 'chat':
-      return 'ChatBubble(child: Text(${_str(_prop(props, 'message', 'Hello!'))})),';
+      return _chatExpr(props, nested);
     case 'checkbox':
       final cbState = _bool(props, 'value')
           ? 'CheckboxState.checked'
@@ -6356,19 +6445,7 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
           '  ),\n'
           '),';
     case 'refresh_trigger':
-      return 'RefreshTrigger(\n'
-          '  onRefresh: () async {},\n'
-          '  child: SizedBox(\n'
-          '    height: 140,\n'
-          '    child: ListView(\n'
-          '      children: [\n'
-          '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item1', 'Row 1'))})),\n'
-          '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item2', 'Row 2'))})),\n'
-          '        Padding(padding: const EdgeInsets.all(12), child: Text(${_str(_prop(props, 'item3', 'Row 3'))})),\n'
-          '      ],\n'
-          '    ),\n'
-          '  ),\n'
-          '),';
+      return _refreshTriggerExpr(props, nested);
     case 'scaffold':
       return _scaffoldExpr(props, nested);
     case 'scrollbar':
@@ -6623,21 +6700,7 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
           '  ],\n'
           '),';
     case 'toast':
-      return 'ToastEntry(\n'
-          '  duration: const Duration(seconds: 3),\n'
-          '  animationDuration: const Duration(milliseconds: 200),\n'
-          '  animationCurve: Curves.easeOut,\n'
-          '  onDismissed: () {},\n'
-          '  autoDismiss: ${_bool(props, 'autoDismiss')},\n'
-          '  child: Column(\n'
-          '    mainAxisSize: MainAxisSize.min,\n'
-          '    crossAxisAlignment: CrossAxisAlignment.start,\n'
-          '    children: [\n'
-          '      Text(${_str(_prop(props, 'title', 'Saved'))}),\n'
-          '      Text(${_str(_prop(props, 'message', 'Saved successfully'))}),\n'
-          '    ],\n'
-          '  ),\n'
-          '),';
+      return _toastExpr(props, nested);
     case 'tooltip':
       return 'Tooltip(\n'
           '  tooltip: (context) => TooltipContainer(child: Text(${_str(_prop(props, 'tip', 'Helpful context'))})),\n'
@@ -6681,24 +6744,7 @@ String _itemExpression(CanvasItem item, [List<String> nested = const []]) {
       final tdCount = _int(props, 'count', 3).clamp(1, 9).toInt();
       return 'MoreDots(count: $tdCount),';
     case 'validated':
-      return 'Validated<String>(\n'
-          '  validator: ValidatorBuilder<String>((value) {\n'
-          '    if (value == null || value.isEmpty) {\n'
-          '      return InvalidResult(${_str(_prop(props, 'errorText', 'Required'))}, state: FormValidationMode.initial);\n'
-          '    }\n'
-          '    return null;\n'
-          '  }),\n'
-          '  builder: (context, error, child) => Column(\n'
-          '    mainAxisSize: MainAxisSize.min,\n'
-          '    crossAxisAlignment: CrossAxisAlignment.start,\n'
-          '    children: [\n'
-          '      child!,\n'
-          '      const SizedBox(height: 6),\n'
-          '      Text(error is InvalidResult ? error.message : ${_str(_prop(props, 'errorText', 'Required'))}),\n'
-          '    ],\n'
-          '  ),\n'
-          '  child: TextField(placeholder: Text(${_str(_prop(props, 'placeholder', 'Name'))})),\n'
-          '),';
+      return _validatedExpr(props, nested);
     default:
       return "Text('unknown: ${item.kind}'),";
   }
