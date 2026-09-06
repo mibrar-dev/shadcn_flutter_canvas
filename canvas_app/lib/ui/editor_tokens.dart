@@ -5,6 +5,12 @@
 ///
 /// Every value here is a measured number, not a guess. When adjusting, re-measure
 /// against the reference rather than eyeballing.
+///
+/// Track FF (BUILD_SPEC §9.3 FF1) adds `railBg`, `railActiveIndicator`,
+/// `panelBg`, `canvasBackdrop`, `selectionOutline`, `groupHeaderFg` plus the
+/// `ff*` metrics. Those are marked APPROXIMATE per the measured-spec rule
+/// (HARD rule: never eyeball-promote them) and re-measured in Track H. No
+/// pre-existing value was touched.
 library;
 
 import 'package:flutter/widgets.dart';
@@ -56,6 +62,32 @@ class EditorColors {
   /// light `#DC2626`, dark `#F87171`.
   final Color danger;
 
+  /// FlutterFlow-chrome rail background (BUILD_SPEC §9.1, FF1). APPROXIMATE,
+  /// FlutterFlow-like neutral: light `#FFFFFF`, dark `#1E1D20`.
+  final Color railBg;
+
+  /// FlutterFlow-chrome rail active-destination indicator (BUILD_SPEC §9.1,
+  /// FF1). APPROXIMATE, follows the accent ramp: light `#2563EB`,
+  /// dark `#60A5FA`.
+  final Color railActiveIndicator;
+
+  /// FlutterFlow-chrome side panel background (BUILD_SPEC §9.1, FF1).
+  /// APPROXIMATE: light `#FFFFFF`, dark `#1C1B1F`.
+  final Color panelBg;
+
+  /// FlutterFlow-chrome neutral canvas backdrop (BUILD_SPEC §9.1, FF1).
+  /// APPROXIMATE: light `#E8ECF1`, dark `#0F0E11`.
+  final Color canvasBackdrop;
+
+  /// FlutterFlow-chrome canvas selection outline (BUILD_SPEC §9.1, FF1).
+  /// APPROXIMATE, follows the accent ramp: light `#2563EB`,
+  /// dark `#60A5FA`.
+  final Color selectionOutline;
+
+  /// FlutterFlow-chrome grouped-panel section header foreground (BUILD_SPEC
+  /// §9.1, FF1). APPROXIMATE: light `#6B7280`, dark `#9CA3AF`.
+  final Color groupHeaderFg;
+
   const EditorColors({
     required this.surface,
     required this.surfaceContainer,
@@ -71,6 +103,12 @@ class EditorColors {
     required this.accent,
     required this.onAccent,
     required this.danger,
+    required this.railBg,
+    required this.railActiveIndicator,
+    required this.panelBg,
+    required this.canvasBackdrop,
+    required this.selectionOutline,
+    required this.groupHeaderFg,
   });
 
   /// Measured directly from the reference in its default (dark) theme.
@@ -89,6 +127,12 @@ class EditorColors {
     accent: Color(0xFF60A5FA),
     onAccent: Color(0xFFFFFFFF),
     danger: Color(0xFFF87171),
+    railBg: Color(0xFF1E1D20),
+    railActiveIndicator: Color(0xFF60A5FA),
+    panelBg: Color(0xFF1C1B1F),
+    canvasBackdrop: Color(0xFF0F0E11),
+    selectionOutline: Color(0xFF60A5FA),
+    groupHeaderFg: Color(0xFF9CA3AF),
   );
 
   /// Light counterpart, measured from the reference's light mode (body
@@ -109,6 +153,12 @@ class EditorColors {
     accent: Color(0xFF2563EB),
     onAccent: Color(0xFFFFFFFF),
     danger: Color(0xFFDC2626),
+    railBg: Color(0xFFFFFFFF),
+    railActiveIndicator: Color(0xFF2563EB),
+    panelBg: Color(0xFFFFFFFF),
+    canvasBackdrop: Color(0xFFE8ECF1),
+    selectionOutline: Color(0xFF2563EB),
+    groupHeaderFg: Color(0xFF6B7280),
   );
 }
 
@@ -199,6 +249,35 @@ class EditorMetrics {
 
   /// Inner screen corner radius.
   static const double phoneInnerRadius = 36;
+
+  /// FlutterFlow-chrome nav rail width. APPROXIMATE ~48px (BUILD_SPEC §9.1).
+  static const double ffRailWidth = 48;
+
+  /// FlutterFlow-chrome rail button box. APPROXIMATE ~40px (48 rail minus a
+  /// 4px inset each side, mirroring the measured 52/44 rail idiom).
+  static const double ffRailButtonSize = 40;
+
+  /// FlutterFlow-chrome rail button glyph size. APPROXIMATE ~20px.
+  static const double ffRailIconSize = 20;
+
+  /// FlutterFlow-chrome rail active-indicator bar width. APPROXIMATE ~3px.
+  static const double ffRailIndicatorWidth = 3;
+
+  /// FlutterFlow-chrome dense top bar height. APPROXIMATE 56px (BUILD_SPEC
+  /// §9.1).
+  static const double ffTopbarHeight = 56;
+
+  /// FlutterFlow-chrome rail-switched side panel width. APPROXIMATE ~280px
+  /// (BUILD_SPEC §9.1).
+  static const double ffPanelWidth = 280;
+
+  /// FlutterFlow-chrome properties panel width. APPROXIMATE ~300px
+  /// (BUILD_SPEC §9.1).
+  static const double ffInspectorWidth = 300;
+
+  /// FlutterFlow-chrome compact topbar control box (embedded device/zoom
+  /// buttons). APPROXIMATE ~28px.
+  static const double ffCompactButtonSize = 28;
 }
 
 /// Editor type scale. Measured font sizes/weights from the reference.

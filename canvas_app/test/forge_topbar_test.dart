@@ -1,21 +1,27 @@
-/// Track Y2 (FORGE.md §5): Forge topbar + Forge token tests.
+/// Track Y2 origin, Track FF3 reskin (BUILD_SPEC §9.3): dense 56px Forge
+/// topbar + page dropdown tests.
 ///
-/// Covers the six topbar zones (logo, project pill, screen tabs, undo/redo,
-/// Preview, Export — plus the §1-1g Open icon): tabs render from props,
-/// select/add/rename/delete callbacks, undo/redo disabled states, and
-/// Preview/Export/Open call-through. Also pins the three additive Y2 tokens
-/// (`accent`/`onAccent`/`danger`) in both chrome modes; the pre-existing
-/// values stay guarded by `light_theme_test.dart`.
+/// Covers the topbar zones (logo, project pill, page dropdown, undo/redo,
+/// Preview, Export — plus the §1-1g Open icon): the dropdown lists pages
+/// from props, select/add/rename/delete callbacks, undo/redo disabled
+/// states, Preview/Export/Open call-through, and the device/zoom embed
+/// wiring (hidden when unwired, live when wired). Also pins the three
+/// additive Y2 tokens (`accent`/`onAccent`/`danger`) in both chrome modes;
+/// the pre-existing values stay guarded by `light_theme_test.dart` and the
+/// FF1 values by `ff_tokens_test.dart`.
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
+import 'package:canvas_app/ui/device_picker.dart';
 import 'package:canvas_app/ui/editor_buttons.dart';
 import 'package:canvas_app/ui/editor_tokens.dart';
 import 'package:canvas_app/ui/forge_topbar.dart';
+import 'package:canvas_app/ui/zoom_controls.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  /// Reference viewport: the full topbar row (tabs + actions) is measured
-  /// for wide screens and would clip on the default 800x600 test surface.
+  /// Reference viewport: the full topbar row (dropdown + embeds + actions)
+  /// is measured for wide screens and would clip on the default 800x600
+  /// test surface.
   void useReferenceViewport(WidgetTester tester) {
     tester.view.physicalSize = const Size(1440, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -42,25 +48,45 @@ void main() {
     VoidCallback? onPreview,
     VoidCallback? onExport,
     VoidCallback? onOpen,
+    int? deviceSelectedIndex,
+    ValueChanged<int>? onDeviceSelect,
+    bool landscape = false,
+    ValueChanged<bool>? onLandscapeChanged,
+    double? zoom,
+    VoidCallback? onZoomIn,
+    VoidCallback? onZoomOut,
+    VoidCallback? onZoomFit,
     EditorColors colors = EditorColors.light,
   }) {
     return MaterialApp(
       home: Scaffold(
-        body: EditorTheme(
-          colors: colors,
-          child: ForgeTopbar(
-            projectTitle: projectTitle,
-            screens: screens,
-            selectedScreenId: selectedScreenId,
-            onSelectScreen: onSelectScreen ?? (_) {},
-            onAddScreen: onAddScreen ?? () {},
-            onRenameScreen: onRenameScreen ?? (_, __) {},
-            onDeleteScreen: onDeleteScreen ?? (_) {},
-            onUndo: onUndo,
-            onRedo: onRedo,
-            onPreview: onPreview ?? () {},
-            onExport: onExport ?? () {},
-            onOpen: onOpen ?? () {},
+        // Kit popovers (the page dropdown) need the overlay manager; the
+        // production shell provides it above the chrome — same here.
+        body: shadcn.ShadcnLayer(
+          child: EditorTheme(
+            colors: colors,
+            child: ForgeTopbar(
+              projectTitle: projectTitle,
+              screens: screens,
+              selectedScreenId: selectedScreenId,
+              onSelectScreen: onSelectScreen ?? (_) {},
+              onAddScreen: onAddScreen ?? () {},
+              onRenameScreen: onRenameScreen ?? (_, __) {},
+              onDeleteScreen: onDeleteScreen ?? (_) {},
+              onUndo: onUndo,
+              onRedo: onRedo,
+              onPreview: onPreview ?? () {},
+              onExport: onExport ?? () {},
+              onOpen: onOpen ?? () {},
+              deviceSelectedIndex: deviceSelectedIndex,
+              onDeviceSelect: onDeviceSelect,
+              landscape: landscape,
+              onLandscapeChanged: onLandscapeChanged,
+              zoom: zoom,
+              onZoomIn: onZoomIn,
+              onZoomOut: onZoomOut,
+              onZoomFit: onZoomFit,
+            ),
           ),
         ),
       ),
@@ -97,26 +123,31 @@ void main() {
     });
   });
 
-  group('Forge topbar zones', () {
-    testWidgets('renders logo, project pill, tabs, and actions at 64px',
+  group('Forge topbar zones (FF3 dense 56px bar)', () {
+    testWidgets('renders logo, project pill, dropdown, and actions',
         (tester) async {
       useReferenceViewport(tester);
       await tester.pumpWidget(harness());
       await tester.pump();
 
-      expect(tester.getSize(find.byType(ForgeTopbar)).height, 64);
+      expect(
+        tester.getSize(find.byType(ForgeTopbar)).height,
+        EditorMetrics.ffTopbarHeight,
+      );
       expect(find.text('Forge'), findsOneWidget);
       expect(find.text('My Project'), findsOneWidget);
-      for (final tab in demoTabs) {
-        expect(find.text(tab.name), findsOneWidget);
-      }
+      // The dropdown trigger shows the current page; the tab strip is gone
+      // (inactive pages live in the popup, not in the bar).
+      expect(find.text('Home'), findsOneWidget);
+      expect(find.text('Search'), findsNothing);
       expect(find.text('Preview'), findsOneWidget);
       expect(find.text('Export Flutter'), findsOneWidget);
       // Open icon (FORGE.md §1-1g) survives as a small topbar icon.
       expect(find.byIcon(Icons.folder_open), findsOneWidget);
     });
 
-    testWidgets('tapping an inactive tab selects that screen', (tester) async {
+    testWidgets('picking a page from the dropdown selects that screen',
+        (tester) async {
       useReferenceViewport(tester);
       String? selected;
       await tester.pumpWidget(
@@ -124,12 +155,17 @@ void main() {
       );
       await tester.pump();
 
+      // The kit popover follows its anchor every frame, so the scheduler
+      // never settles while it is open — drive it with bounded pumps.
+      await tester.tap(find.text('Home'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('Search'), findsOneWidget);
       await tester.tap(find.text('Search'));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       expect(selected, 's2');
     });
 
-    testWidgets('only the active tab shows the delete affordance',
+    testWidgets('only the selected page shows the delete affordance',
         (tester) async {
       useReferenceViewport(tester);
       String? deleted;
@@ -144,19 +180,31 @@ void main() {
       expect(deleted, 's1');
     });
 
+    testWidgets('no selection hides the delete affordance', (tester) async {
+      useReferenceViewport(tester);
+      await tester.pumpWidget(harness(selectedScreenId: null));
+      await tester.pump();
+
+      expect(find.byIcon(Icons.close), findsNothing);
+    });
+
     testWidgets('add button fires the add-screen callback', (tester) async {
       useReferenceViewport(tester);
       var adds = 0;
       await tester.pumpWidget(harness(onAddScreen: () => adds++));
       await tester.pump();
 
-      await tester.tap(find.byIcon(Icons.add));
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('ff-page-selector')),
+          matching: find.byIcon(Icons.add),
+        ),
+      );
       await tester.pump();
       expect(adds, 1);
     });
 
-    testWidgets('double-clicking the active tab renames inline',
-        (tester) async {
+    testWidgets('rename icon edits the selected page inline', (tester) async {
       useReferenceViewport(tester);
       final renamed = <String>[];
       await tester.pumpWidget(
@@ -166,23 +214,13 @@ void main() {
       );
       await tester.pump();
 
-      // Two taps inside the double-tap window (above kDoubleTapMinTime,
-      // below kDoubleTapTimeout); the trailing pump flushes the
-      // recognizer's min-time gate and rebuilds with the editor.
-      await tester.tap(find.text('Home'));
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.text('Home'));
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.byType(shadcn.TextField), findsOneWidget);
-
-      await tester.enterText(
-        find.byType(shadcn.TextField),
-        'Gallery',
-      );
+      await tester.tap(find.byIcon(Icons.edit));
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText), 'Gallery');
       await tester.tap(find.byIcon(Icons.check));
       await tester.pump();
       expect(renamed, ['s1=Gallery']);
-      expect(find.byType(shadcn.TextField), findsNothing);
+      expect(find.byIcon(Icons.check), findsNothing);
     });
 
     testWidgets('empty rename cancels without calling back', (tester) async {
@@ -193,31 +231,13 @@ void main() {
       );
       await tester.pump();
 
-      await tester.tap(find.text('Home'));
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.tap(find.text('Home'));
-      await tester.pump(const Duration(milliseconds: 100));
-      await tester.enterText(find.byType(shadcn.TextField), '   ');
+      await tester.tap(find.byIcon(Icons.edit));
+      await tester.pump();
+      await tester.enterText(find.byType(EditableText), '   ');
       await tester.tap(find.byIcon(Icons.check));
       await tester.pump();
       expect(calls, 0);
-      expect(find.byType(shadcn.TextField), findsNothing);
-    });
-
-    testWidgets('double-tap on an inactive tab selects, never edits',
-        (tester) async {
-      useReferenceViewport(tester);
-      String? selected;
-      await tester.pumpWidget(
-        harness(onSelectScreen: (id) => selected = id),
-      );
-      await tester.pump();
-
-      await tester.tap(find.text('Search'));
-      await tester.tap(find.text('Search'));
-      await tester.pump();
-      expect(selected, 's2');
-      expect(find.byType(shadcn.TextField), findsNothing);
+      expect(find.byIcon(Icons.check), findsNothing);
     });
   });
 
@@ -275,6 +295,78 @@ void main() {
       expect(previews, 1);
       expect(exports, 1);
       expect(opens, 1);
+    });
+  });
+
+  group('device/zoom embeds', () {
+    testWidgets('embeds stay hidden until the shell wires them',
+        (tester) async {
+      useReferenceViewport(tester);
+      await tester.pumpWidget(harness());
+      await tester.pump();
+
+      expect(find.byType(DevicePickerEmbed), findsNothing);
+      expect(find.byType(ZoomControlsEmbed), findsNothing);
+    });
+
+    testWidgets('wired device strip selects presets and rotates',
+        (tester) async {
+      useReferenceViewport(tester);
+      var selected = -1;
+      var landscape = false;
+      await tester.pumpWidget(
+        harness(
+          deviceSelectedIndex: 0,
+          onDeviceSelect: (i) => selected = i,
+          landscape: false,
+          onLandscapeChanged: (v) => landscape = v,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(DevicePickerEmbed), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.tablet_mac));
+      await tester.pump();
+      expect(selected, 1);
+      await tester.tap(find.byIcon(Icons.screen_rotation));
+      await tester.pump();
+      expect(landscape, isTrue);
+    });
+
+    testWidgets('wired zoom strip shows the readout and zooms',
+        (tester) async {
+      useReferenceViewport(tester);
+      var ins = 0;
+      var outs = 0;
+      var fits = 0;
+      await tester.pumpWidget(
+        harness(
+          zoom: 1.0,
+          onZoomIn: () => ins++,
+          onZoomOut: () => outs++,
+          onZoomFit: () => fits++,
+        ),
+      );
+      await tester.pump();
+
+      expect(find.byType(ZoomControlsEmbed), findsOneWidget);
+      expect(find.text('100%'), findsOneWidget);
+      // The page selector also carries an add glyph — scope zoom taps to
+      // the embedded strip.
+      final zoomAdd = find.descendant(
+        of: find.byType(ZoomControlsEmbed),
+        matching: find.byIcon(Icons.add),
+      );
+      expect(zoomAdd, findsOneWidget);
+      await tester.tap(zoomAdd);
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.remove));
+      await tester.pump();
+      await tester.tap(find.byIcon(Icons.fit_screen));
+      await tester.pump();
+      expect(ins, 1);
+      expect(outs, 1);
+      expect(fits, 1);
     });
   });
 }

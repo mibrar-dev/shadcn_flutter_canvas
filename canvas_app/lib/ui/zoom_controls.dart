@@ -116,3 +116,90 @@ class ZoomControls extends StatelessWidget {
     );
   }
 }
+
+/// Compact topbar-embedded zoom strip (Track FF3, BUILD_SPEC §9.1-1e).
+///
+/// Same zoom math/contracts as [ZoomControls] — zoom-in disables at or above
+/// 4.0, zoom-out disables at or below 0.25, readout keeps the
+/// [EditorMetrics.zoomLabelWidth] slot — laid out as a bare dense row of
+/// [EditorMetrics.ffCompactButtonSize] buttons (no pill card) so the FF
+/// topbar can embed it. [ZoomControls] itself is UNCHANGED (same public
+/// API); the canvas header keeps working untouched.
+class ZoomControlsEmbed extends StatelessWidget {
+  /// Current zoom fraction (1.0 means 100%).
+  final double zoom;
+
+  /// Zoom in one step.
+  final VoidCallback onZoomIn;
+
+  /// Zoom out one step.
+  final VoidCallback onZoomOut;
+
+  /// Fit the screen into view.
+  final VoidCallback onFit;
+
+  /// Whether snap guides are on. Renders the grid toggle's active state.
+  final bool showGuides;
+
+  /// Grid-icon toggle: called with the flipped [showGuides] value. Null
+  /// hides the grid button.
+  final ValueChanged<bool>? onShowGuidesChanged;
+
+  const ZoomControlsEmbed({
+    super.key,
+    required this.zoom,
+    required this.onZoomIn,
+    required this.onZoomOut,
+    required this.onFit,
+    this.showGuides = true,
+    this.onShowGuidesChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    final onToggleGuides = onShowGuidesChanged;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        EditorIconButton(
+          icon: Icons.remove,
+          size: EditorMetrics.ffCompactButtonSize,
+          onPressed: zoom <= 0.25 ? null : onZoomOut,
+          tooltip: 'Zoom out',
+        ),
+        SizedBox(
+          width: EditorMetrics.zoomLabelWidth,
+          child: Center(
+            child: Text(
+              '${(zoom * 100).round()}%',
+              style: EditorType.readout.copyWith(color: colors.onSurface),
+            ),
+          ),
+        ),
+        EditorIconButton(
+          icon: Icons.add,
+          size: EditorMetrics.ffCompactButtonSize,
+          onPressed: zoom >= 4.0 ? null : onZoomIn,
+          tooltip: 'Zoom in',
+        ),
+        EditorIconButton(
+          icon: Icons.fit_screen,
+          size: EditorMetrics.ffCompactButtonSize,
+          onPressed: onFit,
+          tooltip: 'Fit to screen',
+        ),
+        if (onToggleGuides != null)
+          EditorIconButton(
+            icon: showGuides ? Icons.grid_on : Icons.grid_off,
+            size: EditorMetrics.ffCompactButtonSize,
+            background:
+                showGuides ? colors.surfaceContainerHigh : Colors.transparent,
+            onPressed: () => onToggleGuides(!showGuides),
+            tooltip: 'Toggle snap guides',
+          ),
+      ],
+    );
+  }
+}

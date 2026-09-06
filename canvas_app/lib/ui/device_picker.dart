@@ -18,6 +18,7 @@ library;
 import 'package:flutter/material.dart';
 
 import 'editor_buttons.dart';
+import 'editor_tokens.dart';
 
 /// One preview device preset.
 ///
@@ -181,6 +182,72 @@ class DevicePicker extends StatelessWidget {
               : 'Rotate to landscape',
           // Desktop presets are frameless fluid: no landscape variant.
           onPressed: isFramed ? () => onLandscapeChanged(!landscape) : null,
+        ),
+      ],
+    );
+  }
+}
+
+/// Compact topbar-embedded device strip (Track FF3, BUILD_SPEC §9.1-1d).
+///
+/// Same presets, same [resolveDevice] landscape math, same callback contract
+/// as [DevicePicker] — dense [EditorMetrics.ffCompactButtonSize] icon buttons
+/// so the FF topbar can embed it. [DevicePicker] itself is UNCHANGED (same
+/// public API); the preview player and canvas header keep working untouched.
+///
+/// Icons/tooltips intentionally keep `Icons.smartphone` (phone) and
+/// `Icons.screen_rotation` (rotate) so embed tests address the same glyphs.
+class DevicePickerEmbed extends StatelessWidget {
+  /// Index into [kPreviewDevices] of the selected preset.
+  final int selectedIndex;
+
+  /// Called with the tapped preset index.
+  final ValueChanged<int> onSelect;
+
+  /// Whether the landscape toggle is on (phone/tablet swap dimensions).
+  final bool landscape;
+
+  /// Called when the rotate toggle flips. The toggle disables itself when a
+  /// frameless desktop preset is selected (nothing to rotate).
+  final ValueChanged<bool> onLandscapeChanged;
+
+  const DevicePickerEmbed({
+    super.key,
+    required this.selectedIndex,
+    required this.onSelect,
+    required this.landscape,
+    required this.onLandscapeChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = EditorTheme.of(context);
+    final isFramed = kPreviewDevices[selectedIndex].framed;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < kPreviewDevices.length; i++)
+          EditorIconButton(
+            icon: kPreviewDevices[i].icon,
+            size: EditorMetrics.ffCompactButtonSize,
+            tooltip: kPreviewDevices[i].label,
+            background: i == selectedIndex
+                ? colors.surfaceContainerHigh
+                : Colors.transparent,
+            foreground: i == selectedIndex
+                ? colors.onSurface
+                : colors.onSurfaceVariant,
+            onPressed: () => onSelect(i),
+          ),
+        EditorIconButton(
+          icon: Icons.screen_rotation,
+          size: EditorMetrics.ffCompactButtonSize,
+          tooltip: landscape
+              ? 'Landscape on — tap for portrait'
+              : 'Rotate to landscape',
+          // Desktop presets are frameless fluid: no landscape variant.
+          onPressed:
+              isFramed ? () => onLandscapeChanged(!landscape) : null,
         ),
       ],
     );
