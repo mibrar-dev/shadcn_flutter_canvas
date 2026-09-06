@@ -1,0 +1,1 @@
+{"meta":{"brief":"","title":"G2 responsive"},"nodes":[{"breakpointValues":{"tablet":{"height":96}},"id":"n1","items":[{"height":48,"id":"b1","kind":"sized_box"}],"screenId":"s1","x":0.0,"y":0.0}],"screens":[{"bg":"surface","id":"s1","name":"Home","x":0.0,"y":0.0}],"theme":{"dark":false,"motion":"standard","paletteKey":"slate","shape":"rounded"}}

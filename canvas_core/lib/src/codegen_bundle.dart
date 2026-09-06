@@ -56,7 +56,7 @@ import 'package:archive/archive.dart';
 
 import 'screen_doc.dart';
 import 'app_state.dart';
-import 'emit/tagged_value.dart';
+import 'emit/value_codecs.dart';
 
 /// Result of [buildCleanBundle].
 class BundleManifest {
@@ -3976,7 +3976,12 @@ List<String> _bundleRepeatedAnimationBuilder(Map<String, dynamic> props) {
 /// with color into one `BoxDecoration` (const iff no token inside).
 /// Negative dims/gaps clamp to 0 and flex to ≥ 1 (never a crash on
 /// hand-written docs).
-const _bundlePrimTheme = 'Theme.of(context)';
+/// G2: value codecs now live in `emit/value_codecs.dart` (single source for
+/// the string and AST emission paths). The `_bundlePrim*` names below stay
+/// as thin wrappers so every existing call site is untouched. (Wrappers with
+/// no remaining callers — theme/double/int/xy, now consumed only via the
+/// shared codecs — were removed; use `kPrimTheme`/`primDouble`/`primInt`/
+/// `primXy` directly.)
 
 /// Track F primitive kind set: raw Flutter (no kit barrels, no pubspec
 /// deps — see the [buildCleanBundle] skip above).
@@ -3994,299 +3999,57 @@ const _bundlePrimitiveKinds = {
 };
 
 /// Whole flow doubles print without `.0` (mirrors [_bundleFlowNum]).
-String _bundlePrimNum(double value) =>
-    value == value.roundToDouble() ? '${value.toInt()}' : '$value';
-
-double? _bundlePrimDouble(Object? value) {
-  if (value is num) return value.toDouble();
-  if (value is Map && value[r'$'] == 'double' && value['v'] is num) {
-    return (value['v'] as num).toDouble();
-  }
-  return null;
-}
-
-int _bundlePrimInt(Object? value, int fallback) =>
-    value is num ? value.toInt() : fallback;
+String _bundlePrimNum(double value) => formatPrimNum(value);
 
 /// (`code`, `themed`) color expression from any color shape; null when
 /// absent/unparseable. Map forms accept the tagged envelope AND the bare
 /// `{kind: token|literal, …}` map (same leniency as the canvas builders —
 /// canvas/codegen parity on hand-written docs).
-({String code, bool themed})? _bundlePrimColor(Object? value) {
-  final tagged = TaggedValue.parse(value);
-  if (tagged is ColorValue) {
-    return (
-      code: tagged.toDart(_bundlePrimTheme),
-      themed: tagged.token != null
-    );
-  }
-  if (value is Map) {
-    if (value['kind'] == 'token' && value['token'] is String) {
-      return (
-        code: ColorValue.token(value['token'] as String)
-            .toDart(_bundlePrimTheme),
-        themed: true
-      );
-    }
-    if (value['kind'] == 'literal' && value['argb'] is num) {
-      return (
-        code: ColorValue.literal((value['argb'] as num).toInt())
-            .toDart(_bundlePrimTheme),
-        themed: false
-      );
-    }
-    return null;
-  }
-  if (value is int) {
-    return (
-      code: ColorValue.literal(value).toDart(_bundlePrimTheme),
-      themed: false
-    );
-  }
-  if (value is String) {
-    final hex = value.startsWith('#') ? value.substring(1) : value;
-    final full = hex.length == 6 ? 'FF$hex' : hex;
-    final argb = full.length == 8 ? int.tryParse(full, radix: 16) : null;
-    if (argb == null) return null;
-    return (
-      code: ColorValue.literal(argb).toDart(_bundlePrimTheme),
-      themed: false
-    );
-  }
-  return null;
-}
+({String code, bool themed})? _bundlePrimColor(Object? value) =>
+    primColor(value);
 
 /// Collapsed `const EdgeInsets…` or null when absent/unparseable.
-String? _bundlePrimEdge(Object? value) {
-  final tagged = TaggedValue.parse(value);
-  if (tagged is EdgeInsetsValue) {
-    return 'const ${tagged.toDart(_bundlePrimTheme)}';
-  }
-  if (value is num) {
-    return 'const EdgeInsets.all(${_bundlePrimNum(value.toDouble())})';
-  }
-  if (value is Map) {
-    if (value.keys.any((k) => k == 'l' || k == 't' || k == 'r' || k == 'b')) {
-      double n(Object? x) => x is num ? x.toDouble() : 0.0;
-      final parsed = EdgeInsetsValue(
-        left: n(value['l']),
-        top: n(value['t']),
-        right: n(value['r']),
-        bottom: n(value['b']),
-      );
-      return 'const ${parsed.toDart(_bundlePrimTheme)}';
-    }
-  }
-  return null;
-}
+String? _bundlePrimEdge(Object? value) => primEdge(value);
 
 /// Collapsed `BorderRadius…` (const-eligible, so callers add no prefix) or
 /// null when absent/unparseable.
-String? _bundlePrimRadius(Object? value) {
-  final tagged = TaggedValue.parse(value);
-  if (tagged is BorderRadiusValue) return tagged.toDart(_bundlePrimTheme);
-  if (value is num) {
-    return 'BorderRadius.circular(${_bundlePrimNum(value.toDouble())})';
-  }
-  if (value is Map) {
-    if (value.keys
-        .any((k) => k == 'tl' || k == 'tr' || k == 'br' || k == 'bl')) {
-      double n(Object? x) => x is num ? x.toDouble() : 0.0;
-      final parsed = BorderRadiusValue(
-        topLeft: n(value['tl']),
-        topRight: n(value['tr']),
-        bottomRight: n(value['br']),
-        bottomLeft: n(value['bl']),
-      );
-      return parsed.toDart(_bundlePrimTheme);
-    }
-  }
-  return null;
-}
+String? _bundlePrimRadius(Object? value) => primRadius(value);
 
 /// Alignment expression (named-constant collapse) or null.
-String? _bundlePrimAlign(Object? value) {
-  final tagged = TaggedValue.parse(value);
-  if (tagged is AlignmentValue) return tagged.toDart(_bundlePrimTheme);
-  if (value is String) {
-    const names = {
-      'topLeft',
-      'topCenter',
-      'topRight',
-      'centerLeft',
-      'center',
-      'centerRight',
-      'bottomLeft',
-      'bottomCenter',
-      'bottomRight',
-    };
-    if (names.contains(value)) return 'Alignment.$value';
-    return null;
-  }
-  if (value is Map) {
-    final x = value['x'];
-    final y = value['y'];
-    if (x is num && y is num) {
-      return AlignmentValue(x.toDouble(), y.toDouble())
-          .toDart(_bundlePrimTheme);
-    }
-  }
-  return null;
-}
+String? _bundlePrimAlign(Object? value) => primAlign(value);
 
 /// (`Border.all…`, `themed`) or null when absent/unparseable.
-({String code, bool themed})? _bundlePrimBorder(Object? value) {
-  if (value is! Map) return null;
-  if (!value.containsKey('color') && !value.containsKey('width')) return null;
-  final color = _bundlePrimColor(value['color']);
-  final width = _bundlePrimDouble(value['width']) ?? 1.0;
-  return (
-    code: 'Border.all(color: ${color?.code ?? 'Color(0xFF000000)'}, '
-        'width: ${_bundlePrimNum(width)})',
-    themed: color?.themed ?? false,
-  );
-}
-
-/// Alignment expression from a raw `{x,y}` map (gradient ends) with a named
-/// fallback.
-String _bundlePrimXy(Object? value, String fallback) {
-  if (value is Map) {
-    final x = value['x'];
-    final y = value['y'];
-    if (x is num && y is num) {
-      return AlignmentValue(x.toDouble(), y.toDouble())
-          .toDart(_bundlePrimTheme);
-    }
-  }
-  return fallback;
-}
+({String code, bool themed})? _bundlePrimBorder(Object? value) =>
+    primBorder(value);
 
 /// LinearGradient lines at decoration depth (4-space base) + themed flag, or
 /// null when absent, empty, or unparseable (never a partial gradient).
-({List<String> lines, bool themed})? _bundlePrimGradient(Object? value) {
-  if (value is! Map) return null;
-  final colors = value['colors'];
-  if (colors is! List || colors.isEmpty) return null;
-  final parts = <({String code, bool themed})>[];
-  for (final c in colors) {
-    final part = _bundlePrimColor(c);
-    if (part == null) return null;
-    parts.add(part);
-  }
-  List<double>? stops;
-  if (value['stops'] is List) {
-    final raw = (value['stops'] as List).whereType<num>().toList();
-    if (raw.length == parts.length) {
-      stops = [for (final s in raw) s.toDouble()];
-    }
-  }
-  final themed = parts.any((p) => p.themed);
-  final lines = <String>[
-    '    gradient: ${themed ? '' : 'const '}LinearGradient(',
-    '      begin: ${_bundlePrimXy(value['begin'], 'Alignment.centerLeft')},',
-    '      end: ${_bundlePrimXy(value['end'], 'Alignment.centerRight')},',
-    '      colors: [',
-    for (final p in parts) '        ${p.code},',
-    '      ],',
-    if (stops != null)
-      '      stops: [${stops.map(_bundlePrimNum).join(', ')}],',
-    '    ),',
-  ];
-  return (lines: lines, themed: themed);
-}
+({List<String> lines, bool themed})? _bundlePrimGradient(Object? value) =>
+    primGradient(value);
 
 /// `boxShadow:` lines at decoration depth (4-space base) + themed flag, or
 /// null when absent/empty (unparseable entries are skipped, never a crash).
 /// Const lives on the list alone (`const` iff every stop is literal — a
 /// `const` entry inside a themed list would trip `unnecessary_const` the
 /// other way round, so entries never carry their own).
-({List<String> lines, bool themed})? _bundlePrimShadows(Object? value) {
-  if (value is! List || value.isEmpty) return null;
-  final entries = <List<String>>[];
-  var themed = false;
-  for (final s in value) {
-    if (s is! Map) continue;
-    final color = _bundlePrimColor(s['color']);
-    if (color?.themed ?? false) themed = true;
-    double n(Object? x) => x is num ? x.toDouble() : 0.0;
-    var ox = 0.0;
-    var oy = 0.0;
-    if (s['offset'] is Map) {
-      ox = n((s['offset'] as Map)['x']);
-      oy = n((s['offset'] as Map)['y']);
-    }
-    entries.add([
-      '      BoxShadow(',
-      '        color: ${color?.code ?? 'Color(0x40000000)'},',
-      '        blurRadius: ${_bundlePrimNum(_bundlePrimDouble(s['blur']) ?? 0.0)},',
-      '        spreadRadius: ${_bundlePrimNum(_bundlePrimDouble(s['spread']) ?? 0.0)},',
-      '        offset: Offset(${_bundlePrimNum(ox)}, ${_bundlePrimNum(oy)}),',
-      '      ),',
-    ]);
-  }
-  if (entries.isEmpty) return null;
-  return (
-    lines: [
-      '    boxShadow: ${themed ? '' : 'const '}[',
-      for (final entry in entries) ...entry,
-      '    ],',
-    ],
-    themed: themed,
-  );
-}
+({List<String> lines, bool themed})? _bundlePrimShadows(Object? value) =>
+    primShadows(value);
 
 /// `mainAxisAlignment:` name or null when default/unparseable (omit).
-String? _bundlePrimMainAxis(Object? value) {
-  switch (value) {
-    case 'center':
-      return 'MainAxisAlignment.center';
-    case 'end':
-      return 'MainAxisAlignment.end';
-    case 'spaceBetween':
-      return 'MainAxisAlignment.spaceBetween';
-    case 'spaceAround':
-      return 'MainAxisAlignment.spaceAround';
-    case 'spaceEvenly':
-      return 'MainAxisAlignment.spaceEvenly';
-    case 'start':
-    default:
-      return null;
-  }
-}
+String? _bundlePrimMainAxis(Object? value) => primMainAxis(value);
 
 /// `crossAxisAlignment:` name or null when default/unparseable (omit).
-String? _bundlePrimCrossAxis(Object? value) {
-  switch (value) {
-    case 'start':
-      return 'CrossAxisAlignment.start';
-    case 'end':
-      return 'CrossAxisAlignment.end';
-    case 'stretch':
-      return 'CrossAxisAlignment.stretch';
-    case 'center':
-    default:
-      return null;
-  }
-}
+String? _bundlePrimCrossAxis(Object? value) => primCrossAxis(value);
 
 /// Gap prop with fallback, clamped to ≥ 0 (negative would crash layout).
-double _bundlePrimGap(Map<String, dynamic> props, double fallback) {
-  final gap = _bundlePrimDouble(props['gap']) ?? fallback;
-  return gap < 0 ? 0 : gap;
-}
+double _bundlePrimGap(Map<String, dynamic> props, double fallback) =>
+    primGap(props, fallback);
 
 /// Non-negative dim prop (negative would crash layout) or null when absent.
-double? _bundlePrimDim(Object? value) {
-  final parsed = _bundlePrimDouble(value);
-  if (parsed == null) return null;
-  return parsed < 0 ? 0 : parsed;
-}
+double? _bundlePrimDim(Object? value) => primDim(value);
 
 /// Flex prop clamped to ≥ 1 (Flutter asserts positive).
-int _bundlePrimFlex(Object? value) {
-  final flex = _bundlePrimInt(value, 1);
-  return flex < 1 ? 1 : flex;
-}
+int _bundlePrimFlex(Object? value) => primFlex(value);
 
 /// `child:` arg lines for single-slot primitives (COMPOSITION.md §2.1): no
 /// block → [] (caller omits, or substitutes); one block → `child:` inline

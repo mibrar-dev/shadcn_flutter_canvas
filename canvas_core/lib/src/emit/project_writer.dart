@@ -28,6 +28,7 @@
 library;
 
 import '../screen_doc.dart';
+import 'emit_context.dart';
 
 /// One file of the emitted project.
 class ProjectOutFile {
@@ -66,6 +67,128 @@ const Set<String> kCertainStatefulKinds = {
 /// Whether a page using [kinds] needs a `{Page}Model`.
 bool needsModel(Iterable<String> kinds) =>
     kinds.any(kStatefulKinds.contains);
+
+/// Whole-screen item kinds for [screenId] in document order, deduped.
+///
+/// Mirrors the legacy screen walk: roots AND nested children count — a
+/// `text_field` nested inside a `container` still forces a model. THAT is
+/// the primitives-aware part of detection: layout wrappers never hide
+/// stateful leaves from [needsModel].
+List<String> pageKindsFor(ScreenDoc doc, String screenId) {
+  final seen = <String>[];
+  for (final node in doc.nodes) {
+    if (node.screenId != screenId) continue;
+    for (final item in node.items) {
+      if (!seen.contains(item.kind)) seen.add(item.kind);
+    }
+  }
+  return seen;
+}
+
+/// Planned `{Page}Model` fields: text controllers + bool state fields.
+typedef PageModelPlan = ({
+  List<String> controllers,
+  List<String> bools,
+});
+
+/// Allocates model field names for a screen's stateful items (doc order,
+/// via [names] so repeated ids stay unique): `text_field`/`text_area` gain
+/// a `<id>Controller`, `switch`/`checkbox` gain a `<id>` bool.
+///
+/// `tabs`/`tab_container`/`carousel`/`swiper` force a model via [needsModel]
+/// but get NO fields in v1 — their controllers arrive with the kit emitters
+/// in G3 (a stateful page with an empty plan still emits its model shell so
+/// the page's `model` reference resolves).
+PageModelPlan planModelFields(
+  ScreenDoc doc,
+  String screenId,
+  NameAllocator names,
+) {
+  final controllers = <String>[];
+  final bools = <String>[];
+  for (final node in doc.nodes) {
+    if (node.screenId != screenId) continue;
+    for (final item in node.items) {
+      switch (item.kind) {
+        case 'text_field':
+        case 'text_area':
+          controllers.add(names.allocate('${item.id}Controller'));
+        case 'switch':
+        case 'checkbox':
+          bools.add(names.allocate(item.id));
+      }
+    }
+  }
+  return (controllers: controllers, bools: bools);
+}
+
+/// The §8.4 responsive leaf over doc tiers: values branch, subtrees never
+/// duplicate. Mobile-first: [base] IS the mobile value; `tablet` feeds the
+/// `md:` slot, `desktop` is the fallback. Tiers beyond one `md:` override
+/// (and non-leaf subtree branching) are G3 — this stays the single
+/// constructor for the call.
+String responsiveLeafValue({
+  required String base,
+  required Map<String, String> tierCodes,
+}) {
+  final md = tierCodes['tablet'] ?? tierCodes['desktop'];
+  return responsiveLeaf(base: base, md: md);
+}
+
+/// An emitted page: the page file, plus the model file when stateful.
+typedef EmittedPage = ({ProjectOutFile page, ProjectOutFile? model});
+
+/// Assembles one §8.4 page from caller-supplied [body] (canonical depth-0
+/// widget source: first line bare after `return `, later lines +4 — see
+/// `expr_emitter._shiftForReturn`).
+///
+/// Wiring done HERE so callers cannot get it wrong: [needsModel] over [kinds]
+/// picks Stateless vs Stateful+Model; [imports] (an [ImportCollector] the
+/// emitters wrote to — priority (a)) supplies every header line beyond the
+/// shell-owned material import; [modelPlan] (or an empty plan) feeds the
+/// model shell. Stateless pages get NO model file (no empty-model ceremony).
+EmittedPage emitPage({
+  required String slug,
+  required Iterable<String> kinds,
+  required String body,
+  ImportCollector? imports,
+  PageModelPlan? modelPlan,
+}) {
+  final flag = needsModel(kinds);
+  final importLines = <String>[];
+  if (imports != null) {
+    for (final line in imports.lines) {
+      // The shell owns the material import (see buildPageFile); the
+      // collector still declares it (adapters add it) so Directive
+      // rendering and kind-level auditing stay complete.
+      if (line == "import 'package:flutter/material.dart';") continue;
+      importLines.add(line);
+    }
+  }
+  final page = ProjectOutFile(
+    pageFilePath(slug),
+    buildPageFile(
+      slug: slug,
+      needsModelFlag: flag,
+      body: body,
+      importLines: importLines,
+    ),
+  );
+  if (!flag) return (page: page, model: null);
+  final plan =
+      modelPlan ?? (controllers: const <String>[], bools: const <String>[]);
+  return (
+    page: page,
+    model: ProjectOutFile(
+      modelFilePath(slug),
+      buildModelFile(
+        slug: slug,
+        controllerNames: plan.controllers,
+        boolFields: plan.bools,
+      ),
+    ),
+  );
+}
 
 /// `Login Screen` → `login_screen`; guards leading digits and empties.
 String slugifyScreen(String name) {
