@@ -368,6 +368,29 @@ const ValueKey<String> kFlowInsertLineKey =
 /// while a palette drag hovers a container/row/root target.
 const ValueKey<String> kDropPreviewKey = ValueKey<String>('drop-preview');
 
+/// Intrinsically-sized kinds: fixed-geometry widgets (avatar circle, pills,
+/// dots, ratings) that must keep their natural size left-aligned instead of
+/// stretching full-bleed. Stretching them (Track Z1's rule applied blindly)
+/// balloons e.g. an avatar circle to the full flow width. Surface kinds
+/// (card/input/button/...) still fill. Row cells are unaffected structurally
+/// (the cell keeps its share; only the paint stays intrinsic).
+const kIntrinsicKinds = <String>{
+  'avatar',
+  'badge',
+  'chip',
+  'circular_progress_indicator',
+  'dot_indicator',
+  'triple_dots',
+  'star_rating',
+};
+
+/// Keeps intrinsically-sized kinds at their natural size, left-aligned, in
+/// stretch parents; everything else passes through untouched.
+Widget alignIntrinsicKind(String kind, Widget child) =>
+    kIntrinsicKinds.contains(kind)
+        ? Align(alignment: Alignment.centerLeft, child: child)
+        : child;
+
 /// W3 container alignment mapping: row `mainAxis` strings to
 /// [MainAxisAlignment] (`null` → start, unknown → start).
 MainAxisAlignment rowMainAxis(String? value) {
@@ -1768,7 +1791,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
-            buildCatalogItem(item.kind, item.props),
+            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
         ],
       ),
     );
@@ -1896,7 +1919,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         children: [
           buildCatalogItem(items.first.kind, items.first.props, builtKids),
           for (final item in items.skip(1))
-            buildCatalogItem(item.kind, item.props),
+            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
         ],
       ),
     );
@@ -1925,7 +1948,7 @@ class _ScreenSurfaceState extends State<ScreenSurface> {
         crossAxisAlignment: _contentCrossAxis(node),
         children: [
           for (final item in _nodeItems(node))
-            buildCatalogItem(item.kind, item.props),
+            alignIntrinsicKind(item.kind, buildCatalogItem(item.kind, item.props)),
           for (var i = 0; i < kids.length; i++) ...[
             const SizedBox(height: kFlowScreenGap),
             _buildNodeWidget(kids[i], colors, next, ghost: ghost),

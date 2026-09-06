@@ -231,6 +231,31 @@ void main() {
       expect(fixedLeft, moreOrLessEquals(autoLeft, epsilon: 1.5));
     });
 
+    testWidgets('intrinsic kinds keep natural size left-aligned', (tester) async {
+      // Regression: stretch must not balloon fixed-geometry widgets — an
+      // avatar root rendered at full flow width in a screenshot. Intrinsic
+      // kinds stay natural-size, left-aligned at the flow edge.
+      _useReferenceViewport(tester);
+      await _pumpSurface(
+        tester,
+        nodes: [
+          _node(id: 'av1', kind: 'avatar', props: {'initials': 'WD'}),
+        ],
+      );
+      final avatarBox = tester.renderObject<RenderBox>(
+        find.byType(shadcn.Avatar).first,
+      );
+      expect(avatarBox.size.width, lessThan(100));
+      expect(avatarBox.size.width, greaterThan(20));
+      final flowLeft = tester.getTopLeft(
+        find.byType(SingleChildScrollView).first,
+      ).dx + kFlowScreenPadding + 4.0;
+      expect(
+        tester.getTopLeft(find.byType(shadcn.Avatar).first).dx,
+        moreOrLessEquals(flowLeft, epsilon: 2.0),
+      );
+    });
+
     testWidgets('row shares preserved', (tester) async {
       _useReferenceViewport(tester);
       await _pumpSurface(

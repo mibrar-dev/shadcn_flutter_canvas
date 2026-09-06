@@ -59,7 +59,7 @@ import 'package:http/http.dart' as http;
 import 'package:canvas_app/canvas/component_catalog.dart';
 import 'package:canvas_app/ui/state_scope.dart';
 import 'package:canvas_app/ui/phone_frame.dart'
-    show applyNodeSize, rowCrossAxis, rowMainAxis, wrapRowChild;
+    show alignIntrinsicKind, applyNodeSize, rowCrossAxis, rowMainAxis, wrapRowChild;
 import 'package:canvas_core/canvas_core.dart';
 import 'package:canvas_app/shadcn_ui.dart' as shadcn;
 import 'package:canvas_app/ui/device_picker.dart';
@@ -737,11 +737,14 @@ class _PreviewPlayerState extends State<PreviewPlayer> {
   /// Action-less items render bare so every gesture reaches the real widget.
   /// Track R1: bound props resolve through the preview session.
   Widget _previewItem(CanvasItem item) {
-    final built = buildCatalogItem(
+    final built = alignIntrinsicKind(
       item.kind,
-      item.props,
-      const [],
-      _session,
+      buildCatalogItem(
+        item.kind,
+        item.props,
+        const [],
+        _session,
+      ),
     );
     if (item.action == null) return built;
     return _TapCatcher(onTap: () => _onItemTap(item), child: built);

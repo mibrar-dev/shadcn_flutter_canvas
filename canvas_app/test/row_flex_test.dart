@@ -238,10 +238,10 @@ void main() {
     // padding 8 → 350 strip; gap 8 → two equal cells of 171 each. Cell
     // positions prove equal sharing — and they are kit-internals-proof.
     // Track Z1 full-bleed cause: auto nodes now FILL their share via stretch
-    // content columns (badges stretch to ~163px cell interiors instead of
-    // staying intrinsic <100px). Equal-share behavior is preserved INSIDE
-    // rows (cells still 171px + 8px gap → ~179px text offset); only the
-    // cross-axis fill changed, so the width assertions now expect fill.
+    // content columns. INTRINSIC EXEMPTION (alignIntrinsicKind): badge pills
+    // keep their natural size left-aligned inside the share (a stretched
+    // full-width badge/avatar looks broken — verified by screenshot), so the
+    // badges paint intrinsic again while the CELLS still share equally.
     testWidgets('two auto row children share width equally', (tester) async {
       _useReferenceViewport(tester);
       final store = CanvasStore(initial: _squeezeDoc());
@@ -261,13 +261,16 @@ void main() {
       // Z1: content now fills its share (stretch) — with 171px cells the
       // badges paint ~163px (cell minus 8px chrome padding), so no
       // letter-by-letter wrap either, but no longer intrinsic <100px.
+      // INTRINSIC EXEMPTION: badge pills stay natural-size left-aligned
+      // (alignIntrinsicKind) — the equal shares are proven by the text
+      // offsets above, and pills must never stretch full-width.
       expect(
         tester.getSize(find.byType(shadcn.PrimaryBadge).at(0)).width,
-        greaterThan(150),
+        lessThan(100),
       );
       expect(
         tester.getSize(find.byType(shadcn.PrimaryBadge).at(1)).width,
-        greaterThan(150),
+        lessThan(100),
       );
     });
 
@@ -313,17 +316,16 @@ void main() {
       // Track X1 note: the fixed-w cell FILLS (badge stretches to the 92px
       // chrome interior) and centers its label; the cell geometry is pinned
       // (SizedBox check above).
-      // Track Z1 full-bleed cause: the AUTO sibling now also FILLS its share
-      // (stretch content column) and centers its label in ~234px instead of
-      // staying intrinsic left-aligned, so the Beta text sits ~100px further
-      // right and the text offset grows from ~108px to ~188px. Cell geometry
-      // is unchanged (fixed pin still exact); only this text-position proxy
-      // shifted with the cross-axis fill. The squeeze regression would still
-      // read ~53px here.
+      // INTRINSIC EXEMPTION (alignIntrinsicKind): badges keep natural size
+      // left-aligned everywhere, so the auto sibling's Beta text sits at its
+      // intrinsic position (~108px offset, as pre-Z1) instead of the Z1
+      // stretched ~188px. Cell geometry is unchanged (fixed pin still exact);
+      // only badge paint returned to intrinsic. The squeeze regression would
+      // still read ~53px here.
       final firstX = tester.getTopLeft(find.text('Alpha')).dx;
       final secondX = tester.getTopLeft(find.text('Beta')).dx;
-      expect(secondX - firstX, greaterThan(160));
-      expect(secondX - firstX, lessThan(210));
+      expect(secondX - firstX, greaterThan(85));
+      expect(secondX - firstX, lessThan(135));
     });
 
     testWidgets('fixed h renders an exact-height box', (tester) async {

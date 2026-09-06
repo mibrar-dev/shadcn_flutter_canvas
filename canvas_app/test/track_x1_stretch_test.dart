@@ -176,16 +176,16 @@ void main() {
         MaterialApp(home: Scaffold(body: DesignCanvas(store: store))),
       );
       await tester.pumpAndSettle();
-      // Cell pins exact pixels and the badge paint fills the chrome
-      // interior (100px cell minus the 4px node padding on each side; pre-X1
-      // the badge stayed at its ~45px intrinsic width and wrapped).
+      // Cell pins exact pixels; the badge keeps its natural pill size
+      // left-aligned (INTRINSIC EXEMPTION — alignIntrinsicKind: pills must
+      // never stretch full-width, verified by screenshot).
       expect(
         find.byWidgetPredicate((w) => w is SizedBox && w.width == 100.0),
         findsWidgets,
       );
       expect(
         tester.getSize(find.byType(shadcn.PrimaryBadge).first).width,
-        92.0,
+        lessThan(100),
       );
     });
   });
