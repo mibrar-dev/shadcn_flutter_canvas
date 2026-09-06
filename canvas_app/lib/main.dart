@@ -10,6 +10,8 @@
 /// before (no forced light — FORGE.md §5 DECISIONS); dark values are kept.
 library;
 
+import 'package:device_preview/device_preview.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -87,8 +89,72 @@ Future<void> _loadKitFontAliases() async {
   }
 }
 
+/// Track EE device-lab gate (pure, unit-testable).
+///
+/// Simulation is active only when explicitly requested AND the build can
+/// simulate (anything but release). Truth table:
+/// - release + requested → false (release never simulates)
+/// - release + not requested → false
+/// - debug/profile + requested → true
+/// - debug/profile + not requested → false (the default)
+bool shouldEnableDevicePreview({
+  required bool releaseMode,
+  required bool requested,
+}) =>
+    !releaseMode && requested;
+
+/// Opt-in switch for the Track EE device lab. Absent by default (false);
+/// enable a run with `--dart-define=DEVICE_PREVIEW=true`.
+const bool _devicePreviewRequested =
+    bool.fromEnvironment('DEVICE_PREVIEW', defaultValue: false);
+
 Future<void> main() async {
-  WidgetsFlutterBinding.ensureInitialized();
+  // Track EE — device lab (device_preview 3.0, CURRENT 3.x API).
+  //
+  // One-line integration: installs a custom WidgetsBinding that simulates
+  // device characteristics (metrics, safe areas, locale, brightness, text
+  // scale, accessibility flags, target platform) BELOW the widget layer, so
+  // no MaterialApp wrapper / builder / locale glue is needed (the 2.x
+  // `DevicePreview(builder:)`, `useInheritedMediaQuery`, `locale` and
+  // `appBuilder` API is gone in 3.x — do not re-add it).
+  //
+  // ENABLED FLAG (deliberately opt-in, default OFF):
+  // `shouldEnableDevicePreview` ANDs `!kReleaseMode` with the
+  // `--dart-define=DEVICE_PREVIEW=true` switch, so release builds NEVER
+  // simulate (zero footprint — the binding is behaviorally identical to
+  // WidgetsFlutterBinding when disabled) and debug/profile runs simulate
+  // only on request. Rationale: test-suite hermeticity (983 widget tests
+  // pump bare MaterialApps/EditorShell under the stock test binding and
+  // must never see a simulated viewport) plus product fit (the Forge
+  // editor already has per-screen device modes + preview presets in-canvas;
+  // wrapping the whole editor chrome in a simulated device by default would
+  // be confusing). Opt-in run:
+  //   flutter run -d chrome --dart-define=DEVICE_PREVIEW=true
+  //
+  // DRIVING IT (no custom device UI is built — intentionally): the control
+  // surface is the "Device Preview" tab in Flutter DevTools (device picker
+  // with framed previews, locale/a11y/orientation/text-scale/dark-mode
+  // controls, screenshot button, "New device from JSON…"). From Dart, drive
+  // the same simulation via `DevicePreview.maybeController` (null when
+  // simulation is off — never `DevicePreview.controller` from shipped code,
+  // it throws when disabled):
+  //   DevicePreview.maybeController?.applyPreset(DevicePresets.iPhone16);
+  // Presets live in the separate, tree-shakable
+  // `package:device_preview/presets.dart` (name only the presets used —
+  // `DevicePresets.all`/`byId` pull in the whole ~300KB catalog).
+  //
+  // Widget-test note: tests pump widgets directly (main() never runs under
+  // flutter_test), so this line has no test side effects. A test that wants
+  // a simulated device must use its own binding
+  // (`TestDevicePreviewBinding` + `DevicePreviewBindingMixin`, see the
+  // package README "Testing under a simulated device") — see
+  // test/device_preview_gate_test.dart for the gate coverage.
+  DevicePreview.enable(
+    enabled: shouldEnableDevicePreview(
+      releaseMode: kReleaseMode,
+      requested: _devicePreviewRequested,
+    ),
+  );
   await _loadKitFontAliases();
   runApp(const CanvasRoot());
 }
